@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Setup env vars for type checking
+        run: |
+          echo "ZEPTO_TOKEN=test-token" > .env
+          echo "EMAIL_FROM_ADDRESS=test@example.com" >> .env
+          echo "EMAIL_TO_ADDRESS=test@example.com" >> .env
+
+      - name: Sync SvelteKit (generates env types)
+        run: bun run prepare
+
+      - name: Run type check
+        run: bun run check
+
+      - name: Run linter
+        run: bun run lint
+
+      - name: Run tests
+        run: bun run test
+
+      - name: Build
+        run: bun run build

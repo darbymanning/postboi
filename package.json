@@ -1,0 +1,81 @@
+{
+  "name": "postboi",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build && npm run prepack",
+    "preview": "vite preview",
+    "prepare": "svelte-kit sync || echo ''",
+    "prepack": "svelte-kit sync && svelte-package -i src/library && publint",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.test.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.test.json --watch",
+    "format": "prettier --write .",
+    "lint": "prettier --check . && eslint .",
+    "test:unit": "vitest",
+    "test": "npm run test:unit -- --run"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/*.spec.*"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "svelte": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js"
+    },
+    "./zepto": {
+      "types": "./dist/zepto.d.ts",
+      "svelte": "./dist/zepto.js"
+    }
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "@eslint/compat": "1.4.1",
+    "@eslint/js": "9.38.0",
+    "@internationalized/date": "^3.8.1",
+    "@lucide/svelte": "^0.544.0",
+    "@sveltejs/adapter-auto": "7.0.0",
+    "@sveltejs/kit": "2.48.4",
+    "@sveltejs/package": "2.5.4",
+    "@sveltejs/vite-plugin-svelte": "6.2.1",
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/node": "24",
+    "bits-ui": "^2.11.0",
+    "chalk": "5.6.2",
+    "clsx": "^2.1.1",
+    "eslint": "9.38.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-svelte": "3.13.0",
+    "globals": "16.4.0",
+    "mode-watcher": "^1.1.0",
+    "prettier": "3.6.2",
+    "prettier-plugin-svelte": "3.4.0",
+    "prettier-plugin-tailwindcss": "^0.7.1",
+    "publint": "0.3.15",
+    "radashi": "12.7.0",
+    "svelte": "5.43.2",
+    "svelte-check": "4.3.3",
+    "svelte-sonner": "^1.0.5",
+    "tailwind-merge": "^3.3.1",
+    "tailwind-variants": "3.1.1",
+    "tailwindcss": "^4.1.14",
+    "tw-animate-css": "1.4.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.46.2",
+    "vite": "7.1.12",
+    "vitest": "4.0.5",
+    "zeptomail": "7.0.0"
+  },
+  "keywords": [
+    "svelte"
+  ]
+}
