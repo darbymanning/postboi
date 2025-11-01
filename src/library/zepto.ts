@@ -38,7 +38,7 @@ interface ZeptoError {
 			target?: string
 		}>
 		message: string
-		request_id: string
+		request_id?: string
 	}
 }
 
@@ -112,10 +112,10 @@ export default class Postboi extends ProviderBase<SendMailResponse> {
 				: undefined,
 		}
 
-		const response = await fetch("https://api.zeptomail.com/v1/emails", {
+		const response = await fetch("https://api.zeptomail.com/v1.1/email", {
 			method: "POST",
 			headers: {
-				Authorization: `Bearer ${this.#token}`,
+				Authorization: this.#token,
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(zepto_params),
@@ -123,12 +123,9 @@ export default class Postboi extends ProviderBase<SendMailResponse> {
 
 		const data = await response.json()
 
-		// throw if response contains an error (matching zeptomail SDK behavior)
-		if (this.is_error(data)) {
-			throw data
-		}
-
-		return data
+		// throw if response contains an error (matching Zeptomail SDK behavior)
+		if (this.is_error(data)) throw data
+		else return data
 	}
 
 	/**
@@ -139,7 +136,7 @@ export default class Postboi extends ProviderBase<SendMailResponse> {
 	 * }
 	 */
 	is_error(error: unknown): error is ZeptoError {
-		type Inner = { code: string; message: string; request_id: string; details: unknown[] }
+		type Inner = { code: string; message: string; request_id?: string; details: unknown[] }
 
 		const has_shape = (e: unknown): e is { error: Inner } => {
 			if (e === null || typeof e !== "object") return false
@@ -152,7 +149,7 @@ export default class Postboi extends ProviderBase<SendMailResponse> {
 			return (
 				typeof i.code === "string" &&
 				typeof i.message === "string" &&
-				typeof i.request_id === "string" &&
+				(i.request_id === undefined || typeof i.request_id === "string") &&
 				Array.isArray(i.details)
 			)
 		}
