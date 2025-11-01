@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import Postboi, { type SendMailParams } from "$library/zepto.js"
+import Postboi, { type SendParams } from "$library/zepto.js"
 
 // mock fetch globally
 const fetch = vi.fn()
@@ -80,7 +80,7 @@ describe("zepto", () => {
 
 			expect(fetch).toHaveBeenCalledOnce()
 			const calls = fetch.mock.calls
-			const body = JSON.parse(calls[0][1].body as string) as SendMailParams
+			const body = JSON.parse(calls[0][1].body as string) as SendParams
 			expect(body.to).toEqual([{ email_address: { address: "default-to@test.com" } }])
 			expect(body.from).toEqual({ address: "default@test.com" })
 		})
@@ -102,7 +102,7 @@ describe("zepto", () => {
 
 			expect(fetch).toHaveBeenCalled()
 			const calls = fetch.mock.calls
-			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
+			const args = JSON.parse(calls[0][1].body as string) as SendParams
 			expect(args.to).toEqual([{ email_address: { address: "custom@test.com" } }])
 			expect(args.subject).toBe("Test Subject")
 			expect(args.htmlbody).toContain("Darbo")
@@ -123,7 +123,7 @@ describe("zepto", () => {
 
 			expect(fetch).toHaveBeenCalledOnce()
 			const calls = fetch.mock.calls
-			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
+			const args = JSON.parse(calls[0][1].body as string) as SendParams
 			expect(args.to).toEqual([
 				{ email_address: { address: "one@test.com" } },
 				{ email_address: { address: "two@test.com" } },
@@ -146,7 +146,7 @@ describe("zepto", () => {
 
 			expect(fetch).toHaveBeenCalledOnce()
 			const calls = fetch.mock.calls
-			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
+			const args = JSON.parse(calls[0][1].body as string) as SendParams
 			expect(args.cc).toEqual([
 				{ email_address: { address: "cc1@test.com" } },
 				{ email_address: { address: "cc2@test.com" } },
@@ -169,7 +169,7 @@ describe("zepto", () => {
 
 			expect(fetch).toHaveBeenCalledOnce()
 			const calls = fetch.mock.calls
-			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
+			const args = JSON.parse(calls[0][1].body as string) as SendParams
 			expect(args.reply_to).toEqual([{ address: "reply@test.com" }])
 		})
 
@@ -189,7 +189,7 @@ describe("zepto", () => {
 
 			expect(fetch).toHaveBeenCalled()
 			const calls = fetch.mock.calls
-			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
+			const args = JSON.parse(calls[0][1].body as string) as SendParams
 			expect(args.attachments).toBeDefined()
 			expect(args.attachments).toHaveLength(1)
 			expect(args.attachments![0]).toHaveProperty("name", "test.txt")
@@ -209,7 +209,7 @@ describe("zepto", () => {
 
 			expect(fetch).toHaveBeenCalledOnce()
 			const calls = fetch.mock.calls
-			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
+			const args = JSON.parse(calls[0][1].body as string) as SendParams
 			expect(args.subject).toBe("Mail sent from website")
 		})
 

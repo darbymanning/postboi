@@ -223,10 +223,10 @@ const mail = new Postboi({
 })
 
 // send email
-await mail.send(options: SendOptions): Promise<Zepto.SendMailResponse>
+await mail.send(options: SendOptions): Promise<SendResponse>
 
 // check if error is a ZeptoMail error
-mail.is_error(error: unknown): error is Zepto.Error
+mail.is_error(error: unknown): error is SendError
 ```
 
 ### `SendOptions`
