@@ -1,6 +1,6 @@
 {
   "name": "postboi",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && npm run prepack",
@@ -72,8 +72,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.46.2",
     "vite": "7.1.12",
-    "vitest": "4.0.5",
-    "zeptomail": "7.0.0"
+    "vitest": "4.0.5"
   },
   "keywords": [
     "svelte"

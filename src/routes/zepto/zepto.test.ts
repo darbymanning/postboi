@@ -1,23 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import type { Zepto } from "zeptomail"
-import Postboi from "$library/zepto.js"
-// import actions after mocks are set up
+import Postboi, { type SendMailParams } from "$library/zepto.js"
 
-// create a shared mock function
-const zepto = {
-	send: vi.fn(),
-}
-
-vi.mock("zeptomail", async () => {
-	const actual = await vi.importActual<typeof import("zeptomail")>("zeptomail")
-
-	return {
-		...actual,
-		SendMailClient: class {
-			sendMail = zepto.send
-		},
-	}
-})
+// mock fetch globally
+const fetch = vi.fn()
+global.fetch = fetch
 
 // mock env vars
 vi.mock("$env/static/private", () => ({
@@ -32,6 +18,7 @@ describe("zepto", () => {
 
 		beforeEach(async () => {
 			vi.clearAllMocks()
+			fetch.mockClear()
 
 			mail = new Postboi({
 				token: "test-token",
@@ -45,8 +32,10 @@ describe("zepto", () => {
 		})
 
 		it("should send email with string body", async () => {
-			const response = { data: { message: "success" } }
-			zepto.send.mockResolvedValue(response)
+			const response = { data: [{ message: "success" }] }
+			fetch.mockResolvedValue({
+				json: async () => response,
+			})
 
 			const result = await mail.send({
 				to: "recipient@test.com",
@@ -55,38 +44,51 @@ describe("zepto", () => {
 				body: "Test body",
 			})
 
-			expect(zepto.send).toHaveBeenCalledOnce()
-			expect(zepto.send).toHaveBeenCalledWith({
-				to: [{ email_address: { address: "recipient@test.com" } }],
-				from: { address: "sender@test.com" },
-				subject: "Test Subject",
-				htmlbody: "Test body",
-				reply_to: undefined,
-				bcc: undefined,
-				cc: undefined,
-				attachments: undefined,
-			})
+			expect(fetch).toHaveBeenCalledOnce()
+			expect(fetch).toHaveBeenCalledWith(
+				"https://api.zeptomail.com/v1/emails",
+				expect.objectContaining({
+					method: "POST",
+					headers: expect.objectContaining({
+						Authorization: "Bearer test-token",
+						"Content-Type": "application/json",
+					}),
+					body: JSON.stringify({
+						to: [{ email_address: { address: "recipient@test.com" } }],
+						from: { address: "sender@test.com" },
+						subject: "Test Subject",
+						htmlbody: "Test body",
+						reply_to: undefined,
+						bcc: undefined,
+						cc: undefined,
+						attachments: undefined,
+					}),
+				})
+			)
 			expect(result).toEqual(response)
 		})
 
 		it("should use defaults when to/from are omitted", async () => {
-			zepto.send.mockResolvedValue({ data: {} })
+			fetch.mockResolvedValue({
+				json: async () => ({ data: [] }),
+			})
 
 			await mail.send({
 				subject: "Test",
 				body: "Body",
 			})
 
-			expect(zepto.send).toHaveBeenCalledWith(
-				expect.objectContaining({
-					to: [{ email_address: { address: "default-to@test.com" } }],
-					from: { address: "default@test.com" },
-				})
-			)
+			expect(fetch).toHaveBeenCalledOnce()
+			const calls = fetch.mock.calls
+			const body = JSON.parse(calls[0][1].body as string) as SendMailParams
+			expect(body.to).toEqual([{ email_address: { address: "default-to@test.com" } }])
+			expect(body.from).toEqual({ address: "default@test.com" })
 		})
 
 		it("should handle FormData body", async () => {
-			zepto.send.mockResolvedValue({ data: {} })
+			fetch.mockResolvedValue({
+				json: async () => ({ data: [] }),
+			})
 
 			const form_data = new FormData()
 			form_data.append("name", "Darbo")
@@ -98,8 +100,9 @@ describe("zepto", () => {
 				body: form_data,
 			})
 
-			expect(zepto.send).toHaveBeenCalled()
-			const args = zepto.send.mock.calls[0][0] as Zepto.SendMailParams
+			expect(fetch).toHaveBeenCalled()
+			const calls = fetch.mock.calls
+			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
 			expect(args.to).toEqual([{ email_address: { address: "custom@test.com" } }])
 			expect(args.subject).toBe("Test Subject")
 			expect(args.htmlbody).toContain("Darbo")
@@ -107,7 +110,9 @@ describe("zepto", () => {
 		})
 
 		it("should handle multiple recipients", async () => {
-			zepto.send.mockResolvedValue({ data: {} })
+			fetch.mockResolvedValue({
+				json: async () => ({ data: [] }),
+			})
 
 			await mail.send({
 				to: ["one@test.com", "two@test.com"],
@@ -116,18 +121,19 @@ describe("zepto", () => {
 				body: "Body",
 			})
 
-			expect(zepto.send).toHaveBeenCalledWith(
-				expect.objectContaining({
-					to: [
-						{ email_address: { address: "one@test.com" } },
-						{ email_address: { address: "two@test.com" } },
-					],
-				})
-			)
+			expect(fetch).toHaveBeenCalledOnce()
+			const calls = fetch.mock.calls
+			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
+			expect(args.to).toEqual([
+				{ email_address: { address: "one@test.com" } },
+				{ email_address: { address: "two@test.com" } },
+			])
 		})
 
 		it("should handle cc and bcc", async () => {
-			zepto.send.mockResolvedValue({ data: {} })
+			fetch.mockResolvedValue({
+				json: async () => ({ data: [] }),
+			})
 
 			await mail.send({
 				to: "to@test.com",
@@ -138,19 +144,20 @@ describe("zepto", () => {
 				body: "Body",
 			})
 
-			expect(zepto.send).toHaveBeenCalledWith(
-				expect.objectContaining({
-					cc: [
-						{ email_address: { address: "cc1@test.com" } },
-						{ email_address: { address: "cc2@test.com" } },
-					],
-					bcc: [{ email_address: { address: "bcc@test.com" } }],
-				})
-			)
+			expect(fetch).toHaveBeenCalledOnce()
+			const calls = fetch.mock.calls
+			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
+			expect(args.cc).toEqual([
+				{ email_address: { address: "cc1@test.com" } },
+				{ email_address: { address: "cc2@test.com" } },
+			])
+			expect(args.bcc).toEqual([{ email_address: { address: "bcc@test.com" } }])
 		})
 
 		it("should handle reply_to", async () => {
-			zepto.send.mockResolvedValue({ data: {} })
+			fetch.mockResolvedValue({
+				json: async () => ({ data: [] }),
+			})
 
 			await mail.send({
 				to: "to@test.com",
@@ -160,15 +167,16 @@ describe("zepto", () => {
 				body: "Body",
 			})
 
-			expect(zepto.send).toHaveBeenCalledWith(
-				expect.objectContaining({
-					reply_to: [{ address: "reply@test.com" }],
-				})
-			)
+			expect(fetch).toHaveBeenCalledOnce()
+			const calls = fetch.mock.calls
+			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
+			expect(args.reply_to).toEqual([{ address: "reply@test.com" }])
 		})
 
 		it("should handle attachments", async () => {
-			zepto.send.mockResolvedValue({ data: {} })
+			fetch.mockResolvedValue({
+				json: async () => ({ data: [] }),
+			})
 
 			const attachments = new File(["content"], "test.txt", { type: "text/plain" })
 			await mail.send({
@@ -179,8 +187,9 @@ describe("zepto", () => {
 				attachments,
 			})
 
-			expect(zepto.send).toHaveBeenCalled()
-			const args = zepto.send.mock.calls[0][0] as Zepto.SendMailParams
+			expect(fetch).toHaveBeenCalled()
+			const calls = fetch.mock.calls
+			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
 			expect(args.attachments).toBeDefined()
 			expect(args.attachments).toHaveLength(1)
 			expect(args.attachments![0]).toHaveProperty("name", "test.txt")
@@ -188,7 +197,9 @@ describe("zepto", () => {
 		})
 
 		it("should use default subject when not provided", async () => {
-			zepto.send.mockResolvedValue({ data: {} })
+			fetch.mockResolvedValue({
+				json: async () => ({ data: [] }),
+			})
 
 			await mail.send({
 				to: "to@test.com",
@@ -196,11 +207,10 @@ describe("zepto", () => {
 				body: "Body",
 			})
 
-			expect(zepto.send).toHaveBeenCalledWith(
-				expect.objectContaining({
-					subject: "Mail sent from website",
-				})
-			)
+			expect(fetch).toHaveBeenCalledOnce()
+			const calls = fetch.mock.calls
+			const args = JSON.parse(calls[0][1].body as string) as SendMailParams
+			expect(args.subject).toBe("Mail sent from website")
 		})
 
 		describe("is_error", () => {
@@ -238,7 +248,9 @@ describe("zepto", () => {
 		})
 
 		it("should return success when email is sent", async () => {
-			zepto.send.mockResolvedValue({ data: { message: "success" } })
+			fetch.mockResolvedValue({
+				json: async () => ({ data: [{ message: "success" }] }),
+			})
 
 			const { actions } = await import("./+page.server.js")
 
@@ -253,17 +265,19 @@ describe("zepto", () => {
 			const result = await actions.default({ request })
 
 			expect(result).toEqual({ success: true })
-			expect(zepto.send).toHaveBeenCalledOnce()
+			expect(fetch).toHaveBeenCalledOnce()
 		})
 
 		it("should return error when zepto error occurs", async () => {
-			zepto.send.mockRejectedValue({
-				error: {
-					code: "INVALID_EMAIL",
-					message: "Invalid email address",
-					request_id: "req-123",
-					details: [],
-				},
+			fetch.mockResolvedValue({
+				json: async () => ({
+					error: {
+						code: "INVALID_EMAIL",
+						message: "Invalid email address",
+						request_id: "req-123",
+						details: [],
+					},
+				}),
 			})
 
 			const { actions } = await import("./+page.server.js")
@@ -282,7 +296,7 @@ describe("zepto", () => {
 		})
 
 		it("should return generic error for non-zepto errors", async () => {
-			zepto.send.mockRejectedValue(new Error("something went wrong"))
+			fetch.mockRejectedValue(new Error("something went wrong"))
 
 			const { actions } = await import("./+page.server.js")
 

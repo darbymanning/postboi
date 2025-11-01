@@ -1,9 +1,57 @@
-import { SendMailClient, type Zepto } from "zeptomail"
 import type { SendOptions, CommonProviderOptions } from "./index.js"
 import { ProviderBase } from "./index.js"
 
 /** Options for the ZeptoMail provider constructor. */
-export type ZeptoOptions = CommonProviderOptions & { token: string }
+type ZeptoOptions = CommonProviderOptions & { token: string }
+
+interface EmailAddress {
+	address: string
+	name?: string
+}
+
+type Attachment =
+	| {
+			name: string
+			content: string
+			mime_type: string
+	  }
+	| { file_cache_key: string }
+
+export interface SendMailParams {
+	from: EmailAddress
+	to: Array<{ email_address: EmailAddress }>
+	reply_to?: Array<EmailAddress>
+	bcc?: Array<{ email_address: EmailAddress }>
+	cc?: Array<{ email_address: EmailAddress }>
+	attachments?: Array<Attachment>
+	subject: string
+	htmlbody: string
+}
+
+interface ZeptoError {
+	error: {
+		code: string
+		details: Array<{
+			code: string
+			message: string
+			inner_error?: { code: string; message: string }
+			target?: string
+		}>
+		message: string
+		request_id: string
+	}
+}
+
+type SendMailResponse = {
+	data: Array<{
+		code: string
+		additional_info: unknown[]
+		message: string
+	}>
+	message: string
+	request_id: string
+	object: "email"
+}
 
 /**
  * ZeptoMail provider.
@@ -23,8 +71,8 @@ export type ZeptoOptions = CommonProviderOptions & { token: string }
  * await mail.send({ body: await request.formData() })
  * ```
  */
-export default class Postboi extends ProviderBase<Zepto.SendMailResponse> {
-	#client: SendMailClient
+export default class Postboi extends ProviderBase<SendMailResponse> {
+	#token: string
 	#defaults: { from?: string; to?: string }
 
 	/**
@@ -35,7 +83,7 @@ export default class Postboi extends ProviderBase<Zepto.SendMailResponse> {
 	 */
 	constructor({ token, default_from, default_to }: ZeptoOptions) {
 		super()
-		this.#client = new SendMailClient({ url: "https://api.zeptomail.com/", token })
+		this.#token = token
 		this.#defaults = { from: default_from, to: default_to }
 	}
 
@@ -44,10 +92,10 @@ export default class Postboi extends ProviderBase<Zepto.SendMailResponse> {
 	 * - Supports string or FormData body.
 	 * - Handles grouped fields using `fieldset→field` in FormData keys.
 	 */
-	async send(_options: SendOptions): Promise<Zepto.SendMailResponse> {
+	async send(_options: SendOptions): Promise<SendMailResponse> {
 		const options = await this.prepare_send(_options, this.#defaults)
 
-		const zepto_params: Zepto.SendMailParams = {
+		const zepto_params: SendMailParams = {
 			to: this.parse_addresses(options.to).map((a) => ({ email_address: a })),
 			from: this.parse_email_address(options.from),
 			reply_to: options.reply_to ? this.parse_addresses(options.reply_to) : undefined,
@@ -64,7 +112,23 @@ export default class Postboi extends ProviderBase<Zepto.SendMailResponse> {
 				: undefined,
 		}
 
-		return await this.#client.sendMail(zepto_params)
+		const response = await fetch("https://api.zeptomail.com/v1/emails", {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${this.#token}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(zepto_params),
+		})
+
+		const data = await response.json()
+
+		// throw if response contains an error (matching zeptomail SDK behavior)
+		if (this.is_error(data)) {
+			throw data
+		}
+
+		return data
 	}
 
 	/**
@@ -74,7 +138,7 @@ export default class Postboi extends ProviderBase<Zepto.SendMailResponse> {
 	 *   if (mail.is_error(e)) console.error(e.error.message)
 	 * }
 	 */
-	is_error(error: unknown): error is Zepto.Error {
+	is_error(error: unknown): error is ZeptoError {
 		type Inner = { code: string; message: string; request_id: string; details: unknown[] }
 
 		const has_shape = (e: unknown): e is { error: Inner } => {
