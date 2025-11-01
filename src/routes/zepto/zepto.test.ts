@@ -46,11 +46,11 @@ describe("zepto", () => {
 
 			expect(fetch).toHaveBeenCalledOnce()
 			expect(fetch).toHaveBeenCalledWith(
-				"https://api.zeptomail.com/v1/emails",
+				"https://api.zeptomail.com/v1.1/email",
 				expect.objectContaining({
 					method: "POST",
 					headers: expect.objectContaining({
-						Authorization: "Bearer test-token",
+						Authorization: "test-token",
 						"Content-Type": "application/json",
 					}),
 					body: JSON.stringify({

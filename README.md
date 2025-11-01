@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./static/logo.svg" alt="Postboi" width="250" />
+  <img src="https://raw.githubusercontent.com/darbymanning/postboi/refs/heads/main/static/logo.svg" alt="Postboi" width="250" />
 
 **Gotta emails son? This here ya boi**
 
