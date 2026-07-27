@@ -213,6 +213,71 @@ describe("ProviderBase", () => {
 			expect(body).toContain("<li>oxc</li>")
 		})
 
+		it("escapes HTML in submitted values", async () => {
+			const form = new FormData()
+			form.append("message", '<a href="https://evil.example">Verify your account</a>')
+			form.append("name", "<img src=x onerror=alert(1)>")
+
+			const { options } = await provider.form(form)
+			const body = options.body as string
+			// public forms feed this straight into the email the site owner reads,
+			// so a link or tracking pixel must not survive as live markup
+			expect(body).not.toContain("<a href")
+			expect(body).not.toContain("<img")
+			expect(body).toContain("&lt;a href=&quot;https://evil.example&quot;&gt;")
+			expect(body).toContain("&lt;img src=x onerror=alert(1)&gt;")
+		})
+
+		it("escapes HTML in submitted field names", async () => {
+			const form = new FormData()
+			// nothing stops a raw POST naming its fields whatever it likes
+			form.append("<img src=x>", "value")
+			form.append("<b>set</b>→<i>field</i>", "value")
+
+			const { options } = await provider.form(form)
+			const body = options.body as string
+			expect(body).not.toContain("<img")
+			expect(body).not.toContain("<b>")
+			expect(body).not.toContain("<i>")
+			// title-cased by the default formatter, hence the loose match
+			expect(body).toContain("&lt;img")
+			expect(body).toContain("&lt;b&gt;set&lt;/b&gt;")
+		})
+
+		it("escapes HTML in repeated values rendered as a list", async () => {
+			const form = new FormData()
+			form.append("interests", "svelte")
+			form.append("interests", "<script>alert(1)</script>")
+
+			const { options } = await provider.form(form)
+			const body = options.body as string
+			expect(body).toContain("<li>svelte</li>")
+			expect(body).not.toContain("<script>")
+			expect(body).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
+		})
+
+		it("escapes formatter output rather than trusting it as markup", async () => {
+			const form = new FormData()
+			form.append("contact→name", "Darby")
+
+			const { options } = await provider.form(form, {
+				fieldset: () => "<b>Contact</b>",
+				name: () => "<i>Name</i>",
+			})
+			const body = options.body as string
+			expect(body).not.toContain("<b>")
+			expect(body).not.toContain("<i>")
+		})
+
+		it("leaves the derived plain-text body reading as typed", async () => {
+			const form = new FormData()
+			form.append("message", 'Tom & Jerry <3 "quotes"')
+
+			const { options } = await provider.form(form)
+			const { html_to_text } = await import("$library/utils.js")
+			expect(html_to_text(options.body as string)).toContain('Tom & Jerry <3 "quotes"')
+		})
+
 		it("collects non-empty file inputs as attachments", async () => {
 			const form = new FormData()
 			form.append("resume", new File(["pdf-bytes"], "resume.pdf", { type: "application/pdf" }))

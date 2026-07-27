@@ -61,6 +61,20 @@ Use the `fieldset→field` syntax to group related fields into sections:
 This produces sectioned tables in the email body: one section per fieldset (`contact`,
 `order`), with a row per field.
 
+## Escaping
+
+Field names and values are HTML-escaped before they reach the table, so a submission
+can't inject markup into the email. This matters because the form is usually public:
+without escaping, anyone could put a `<a href>` or a tracking pixel into the
+notification you read, arriving from your own sending domain.
+
+Escape nothing yourself on the way in — you'd get visible `&amp;lt;` entities. The
+derived plain-text body decodes back to exactly what the sender typed.
+
+Escaping applies to the **table renderer** only. An HTML string passed as `body` is
+yours and is sent verbatim, so sanitise that yourself if any part of it came from a
+user.
+
 ## Attachments
 
 Attachments work from file inputs (`details→files`) or via `attachments: File | File[]` on

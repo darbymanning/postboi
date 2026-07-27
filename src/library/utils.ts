@@ -66,6 +66,29 @@ export async function pooled_map<T, R>(
 }
 
 /**
+ * Escape a string for interpolation into HTML text or a quoted attribute.
+ *
+ * Every value rendered into the FormData table goes through this. Submissions come
+ * from public forms, so both the values *and* the field names are attacker-controlled
+ * — without escaping, anyone could plant a link or a tracking pixel in the
+ * notification email the site owner reads.
+ *
+ * The entities chosen are exactly the ones {@link html_to_text} decodes, so the
+ * derived plain-text body still shows what the sender actually typed.
+ *
+ * @example
+ * escape_html('<a href="x">hi</a>') // => "&lt;a href=&quot;x&quot;&gt;hi&lt;/a&gt;"
+ */
+export function escape_html(value: string): string {
+	return value
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#39;")
+}
+
+/**
  * Derive a readable plain-text body from an HTML string. Drops `<style>`/`<script>`
  * blocks, turns block-level tags and `<br>` into line breaks, strips remaining tags,
  * decodes the common HTML entities and collapses excess whitespace.

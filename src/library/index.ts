@@ -1,4 +1,4 @@
-import { title, html_to_text, pooled_map } from "./utils.js"
+import { title, escape_html, html_to_text, pooled_map } from "./utils.js"
 import { get_config, merge_hooks } from "./config.js"
 import { check_captcha, type CaptchaOptions } from "./captcha.js"
 import { ensure_env_loaded } from "./env.js"
@@ -1106,16 +1106,19 @@ export abstract class ProviderBase<TResponse = unknown> {
 			for (const [fieldset, fields] of grouped) {
 				if (fields.size > 0) {
 					if (fieldset !== "general") {
-						const header_label = format_fieldset(fieldset)
+						// Labels derive from submitted field names, so they need escaping too —
+						// and formatters are documented as label→label string transforms, not
+						// a way to inject markup.
+						const header_label = escape_html(format_fieldset(fieldset))
 						rows.push(
 							`<tr><td colspan="2" style="padding: 15px 0 10px 0; font-weight: bold; font-size: 16px; border-bottom: 1px solid #ccc;">${header_label}</td></tr>`
 						)
 					}
 					const field_rows = Array.from(fields.entries()).map(([field, value]) => {
-						const label = format_name(field)
+						const label = escape_html(format_name(field))
 						const display = Array.isArray(value)
-							? `<ul style="margin: 0; padding-left: 20px;">${value.map((v) => `<li>${v}</li>`).join("")}</ul>`
-							: value
+							? `<ul style="margin: 0; padding-left: 20px;">${value.map((v) => `<li>${escape_html(v)}</li>`).join("")}</ul>`
+							: escape_html(value)
 						return `<tr><td style="padding: 5px 10px 5px 0; vertical-align: top;">${label}</td><td style="padding: 5px 0;">${display}</td></tr>`
 					})
 					rows.push(...field_rows)

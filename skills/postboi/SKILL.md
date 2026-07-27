@@ -46,7 +46,9 @@ await mail({ to: "contact@example.com", subject: "Hi", body: "<p>Hello</p>" })
 
 ## Contact forms (FormData)
 
-Passing `FormData` as `body` renders a tidy HTML table. Conventions:
+Passing `FormData` as `body` renders a tidy HTML table. Field names and values are
+HTML-escaped, so a public form can't inject markup into the email you read — don't
+escape them yourself on the way in. Conventions:
 
 - Field names use `fieldset→field` (literal `→` character) to group fields into sections: `name="contact→email"`.
 - Special fields set send options instead of appearing in the table: `_to`, `_from`, `_subject`, `_reply_to`, `_cc`, `_bcc`. Standard pattern: a hidden `_reply_to` bound to the submitter's email so replies go to them.
@@ -104,7 +106,7 @@ The lean path, in order. At every step the goal is **deleting code**, not wrappi
    - `let { form } = $props()` result handling → `mail.result` (`{ success: true }` or `{ success: false, error }`); pending UI → `mail.pending`.
    - Manual honeypot input → keep `<Captcha />` or rename the raw input to `_honey` (remote forms reject `🍯` and other non-path names).
    - Add `optimizeDeps: { exclude: ["postboi/remote"] }` to `vite.config` if `postboi init` hasn't already.
-4. **Never** hand-write what the library owns: FormData parsing, HTML tables, honeypot/captcha checks, provider error normalisation, webhook signature verification. If migrated code still contains any of those, the migration isn't finished.
+4. **Never** hand-write what the library owns: FormData parsing, HTML tables, HTML escaping, honeypot/captcha checks, provider error normalisation, webhook signature verification. If migrated code still contains any of those, the migration isn't finished.
 
 ## Spam protection
 

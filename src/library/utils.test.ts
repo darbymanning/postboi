@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { capitalize, title, html_to_text } from "$library/utils.js"
+import { capitalize, title, escape_html, html_to_text } from "$library/utils.js"
 
 describe("capitalize", () => {
 	it("capitalises the first letter and lower-cases the rest", () => {
@@ -96,5 +96,32 @@ describe("html_to_text", () => {
 
 	it("collapses excess whitespace and blank lines", () => {
 		expect(html_to_text("<p>One</p><p></p><p>Two</p>")).toBe("One\n\nTwo")
+	})
+})
+
+describe("escape_html", () => {
+	it("neutralises tags", () => {
+		expect(escape_html("<img src=x onerror=alert(1)>")).toBe("&lt;img src=x onerror=alert(1)&gt;")
+	})
+
+	it("escapes quotes so values can't break out of an attribute", () => {
+		expect(escape_html('" onmouseover="alert(1)')).toBe("&quot; onmouseover=&quot;alert(1)")
+		expect(escape_html("it's")).toBe("it&#39;s")
+	})
+
+	it("escapes ampersands first so entities aren't double-decodable", () => {
+		// naive ordering would turn this into "&lt;" and html_to_text would then
+		// decode it back to a live "<"
+		expect(escape_html("&lt;script&gt;")).toBe("&amp;lt;script&amp;gt;")
+	})
+
+	it("leaves ordinary text untouched", () => {
+		expect(escape_html("Darby Manning")).toBe("Darby Manning")
+		expect(escape_html("")).toBe("")
+	})
+
+	it("round-trips through html_to_text back to what was typed", () => {
+		const typed = '<a href="https://evil.example">click</a> & "quoted"'
+		expect(html_to_text(escape_html(typed))).toBe(typed)
 	})
 })
