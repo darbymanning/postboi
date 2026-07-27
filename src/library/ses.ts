@@ -1,6 +1,23 @@
-import { createHash, createHmac } from "node:crypto"
 import type { PreparedMessage, CommonProviderOptions, ProviderError, RequestSpec } from "./index.js"
-import { ProviderBase } from "./index.js"
+import { ProviderBase, PostboiError } from "./index.js"
+
+// Loaded lazily (same pattern as env.ts) so bundlers targeting non-node platforms —
+// Convex, workers without nodejs_compat — can bundle the zero-config send() without
+// resolving node:crypto. esbuild demotes an unresolvable dynamic import to a warning
+// only when it sits in a try block, so the try is load-bearing.
+let node_crypto: typeof import("node:crypto") | undefined
+async function load_crypto(): Promise<typeof import("node:crypto")> {
+	if (node_crypto) return node_crypto
+	try {
+		return (node_crypto = await import("node:crypto"))
+	} catch {
+		throw new PostboiError({
+			provider: "ses",
+			message: "The SES provider needs a Node.js runtime — node:crypto is unavailable here.",
+			code: "node_required",
+		})
+	}
+}
 
 /** Options for the Amazon SES (v2) provider constructor. */
 type Options = CommonProviderOptions & {
@@ -41,10 +58,6 @@ export interface SendParams {
 }
 
 type SendResponse = { MessageId: string }
-
-const sha256 = (data: string) => createHash("sha256").update(data, "utf8").digest("hex")
-const hmac = (key: string | Buffer, data: string) =>
-	createHmac("sha256", key).update(data, "utf8").digest()
 
 /**
  * Amazon SES v2 SendEmail provider — https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_SendEmail.html
@@ -124,13 +137,17 @@ export default class SES extends ProviderBase<SendResponse> {
 		const body = JSON.stringify(params)
 		return {
 			url: `https://${this.#host}${this.#path}`,
-			headers: this.#sign(body),
+			headers: await this.#sign(body),
 			body,
 		}
 	}
 
 	/** Build SigV4-signed headers for a POST of `body` to the SES endpoint. */
-	#sign(body: string): Record<string, string> {
+	async #sign(body: string): Promise<Record<string, string>> {
+		const { createHash, createHmac } = await load_crypto()
+		const sha256 = (data: string) => createHash("sha256").update(data, "utf8").digest("hex")
+		const hmac = (key: string | Buffer, data: string) =>
+			createHmac("sha256", key).update(data, "utf8").digest()
 		// e.g. 20260629T120000Z / 20260629
 		const amz_date = new Date().toISOString().replace(/[:-]|\.\d{3}/g, "")
 		const date = amz_date.slice(0, 8)

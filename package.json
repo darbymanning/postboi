@@ -41,6 +41,10 @@
       "svelte": "./dist/postboi.js",
       "default": "./dist/postboi.js"
     },
+    "./postboi": {
+      "types": "./dist/postboi_provider.d.ts",
+      "default": "./dist/postboi_provider.js"
+    },
     "./zepto": {
       "types": "./dist/zepto.d.ts",
       "svelte": "./dist/zepto.js",

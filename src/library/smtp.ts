@@ -1,6 +1,5 @@
-import net from "node:net"
-import tls from "node:tls"
-import { randomBytes } from "node:crypto"
+import type { Socket } from "node:net"
+import type { TLSSocket } from "node:tls"
 import type {
 	SendOptions,
 	BatchOptions,
@@ -34,6 +33,34 @@ type Options = CommonProviderOptions & {
 
 /** The final SMTP server reply after a successful DATA, e.g. "2.0.0 OK: queued as ABC123". */
 type SendResponse = { response: string }
+
+// node:net/node:tls are loaded lazily (same pattern as env.ts) so bundlers targeting
+// non-node platforms — Convex, workers without nodejs_compat — can bundle the zero-config
+// send() without resolving them. esbuild demotes an unresolvable dynamic import to a
+// warning only when it sits in a try block, so the try is load-bearing. Every socket is
+// created via Connection.connect, which loads both before anything touches them.
+let net: typeof import("node:net") | undefined
+let tls: typeof import("node:tls") | undefined
+async function load_node(): Promise<void> {
+	if (net && tls) return
+	try {
+		net = await import("node:net")
+		tls = await import("node:tls")
+	} catch {
+		throw new PostboiError({
+			provider: "smtp",
+			message:
+				"The SMTP provider needs a Node.js runtime — node:net/node:tls are unavailable here. Use an HTTP-based provider instead.",
+			code: "node_required",
+		})
+	}
+}
+
+/** Hex string of `bytes` random bytes, via the WebCrypto global (works everywhere node:crypto doesn't). */
+const random_hex = (bytes: number): string =>
+	Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) =>
+		b.toString(16).padStart(2, "0")
+	).join("")
 
 /** Strip CR/LF from a header value — the trust boundary that blocks header injection. */
 const clean = (value: string): string => value.replace(/[\r\n]/g, " ")
@@ -80,7 +107,7 @@ function attachment_part(a: MailAttachment): Part {
 
 /** Combine parts under a multipart/* container with a fresh boundary. */
 function multipart(subtype: string, parts: Array<Part>): Part {
-	const boundary = `=_postboi_${randomBytes(12).toString("hex")}`
+	const boundary = `=_postboi_${random_hex(12)}`
 	const lines: Array<string> = []
 	for (const p of parts) {
 		lines.push(`--${boundary}`, ...p.headers, "", p.body)
@@ -97,19 +124,19 @@ function multipart(subtype: string, parts: Array<Part>): Part {
  * single in-flight reader is enough. Owns the socket, STARTTLS upgrade and reply parsing.
  */
 class Connection {
-	#socket: net.Socket | tls.TLSSocket
+	#socket: Socket | TLSSocket
 	#buffer = ""
 	#waiter: { resolve: (r: Reply) => void; reject: (e: Error) => void } | null = null
 	#failure: Error | null = null
 	encrypted: boolean
 
-	private constructor(socket: net.Socket | tls.TLSSocket, encrypted: boolean) {
+	private constructor(socket: Socket | TLSSocket, encrypted: boolean) {
 		this.#socket = socket
 		this.encrypted = encrypted
 		this.#attach(socket)
 	}
 
-	#attach(socket: net.Socket | tls.TLSSocket): void {
+	#attach(socket: Socket | TLSSocket): void {
 		socket.setEncoding("utf8")
 		socket.on("data", (chunk: string) => {
 			this.#buffer += chunk
@@ -182,7 +209,8 @@ class Connection {
 	/** Upgrade an established plaintext socket to TLS (after a 220 STARTTLS reply). */
 	upgrade(host: string): Promise<void> {
 		return new Promise((resolve, reject) => {
-			const secure = tls.connect({ socket: this.#socket, servername: host }, () => {
+			// tls! — a Connection only exists after Connection.connect ran load_node().
+			const secure = tls!.connect({ socket: this.#socket, servername: host }, () => {
 				this.#buffer = ""
 				this.#socket = secure
 				this.encrypted = true
@@ -198,16 +226,17 @@ class Connection {
 	}
 
 	/** Open a connection and read the server greeting. */
-	static connect(opts: {
+	static async connect(opts: {
 		host: string
 		port: number
 		secure: boolean
 		timeout: number
 	}): Promise<Connection> {
+		await load_node()
 		return new Promise((resolve, reject) => {
 			const socket = opts.secure
-				? tls.connect({ host: opts.host, port: opts.port, servername: opts.host })
-				: net.connect({ host: opts.host, port: opts.port })
+				? tls!.connect({ host: opts.host, port: opts.port, servername: opts.host })
+				: net!.connect({ host: opts.host, port: opts.port })
 			socket.setTimeout(opts.timeout)
 			const event = opts.secure ? "secureConnect" : "connect"
 			socket.once("error", reject)
@@ -314,7 +343,7 @@ export default class SMTP extends ProviderBase<SendResponse> {
 		headers.push(
 			`Subject: ${enc_word(message.subject)}`,
 			`Date: ${new Date().toUTCString()}`,
-			`Message-ID: <${randomBytes(16).toString("hex")}@${from.address.split("@")[1] ?? "postboi"}>`,
+			`Message-ID: <${random_hex(16)}@${from.address.split("@")[1] ?? "postboi"}>`,
 			"MIME-Version: 1.0"
 		)
 		for (const [name, value] of Object.entries(message.headers ?? {})) {
@@ -339,6 +368,7 @@ export default class SMTP extends ProviderBase<SendResponse> {
 			secure: this.#secure,
 			timeout: this.#timeout,
 		}).catch((e: Error) => {
+			if (e instanceof PostboiError) throw e // e.g. node_required from load_node
 			throw new PostboiError({
 				provider: "smtp",
 				message: `SMTP connection failed: ${e.message}`,
