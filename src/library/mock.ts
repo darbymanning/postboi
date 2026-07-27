@@ -51,6 +51,13 @@ type SendResponse = { id: string; message: SentMessage }
  */
 export default class Mock extends ProviderBase<SendResponse> {
 	protected readonly provider = "mock"
+	/**
+	 * Nothing to verify a Turnstile token against, and no credentials by design — so a token
+	 * is dropped rather than raising `captcha_misconfigured`. That keeps <Captcha /> forms
+	 * sendable in local dev and tests. The honeypot still runs, and an explicit secret or
+	 * `turnstile: true` is still honoured.
+	 */
+	protected override readonly captcha_mode = "none" as const
 	#fail: boolean
 	#counter = 0
 

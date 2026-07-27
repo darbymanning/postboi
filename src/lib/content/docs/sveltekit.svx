@@ -194,10 +194,11 @@ export const send = form(schema, async (data) => {
 `_captcha` rather than `cf-turnstile-response`: remote-form field names must be valid JS
 paths, so the managed loader renames the token field. postboi strips both before rendering.
 
-> Sending through a **non-Postboi provider** while `<Captcha />` is on the page fails with
-> `captcha_misconfigured` — a token arrived with no secret to verify it against. Managed
-> captcha needs the Postboi provider; on any other one, configure Turnstile yourself or opt
-> out with `captcha: { turnstile: false }`.
+> Sending through a **bring-your-own provider** while `<Captcha />` is on the page fails
+> with `captcha_misconfigured` — a token arrived with no secret to verify it against.
+> Managed captcha needs the Postboi provider; on any other one, configure Turnstile
+> yourself or opt out with `captcha: { turnstile: false }`. The **mock** provider is the
+> exception: it's credential-free by design, so it drops the token and sends anyway.
 
 For a custom provider or forced fields, build your own in a `.remote.ts` file with
 `remote()` from `postboi/kit` — the remote counterpart of `action()`:

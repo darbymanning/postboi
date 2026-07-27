@@ -1,6 +1,6 @@
 import { title, escape_html, escape_lines, html_to_text, pooled_map } from "./utils.js"
 import { get_config, merge_hooks } from "./config.js"
-import { check_captcha, merge_captcha, type CaptchaOptions } from "./captcha.js"
+import { check_captcha, merge_captcha, type CaptchaMode, type CaptchaOptions } from "./captcha.js"
 import { ensure_env_loaded } from "./env.js"
 
 // Global configuration (`postboi.config.ts`) is part of the public surface from the package root.
@@ -466,7 +466,7 @@ export abstract class ProviderBase<TResponse = unknown> {
 	 * captcha). When true and no local secret is configured, FormData sends forward the
 	 * token on {@link PreparedMessage.captcha} instead of verifying client-side.
 	 */
-	protected readonly managed_captcha: boolean = false
+	protected readonly captcha_mode: CaptchaMode = "byo"
 
 	protected defaults: Defaults
 	#timeout: number
@@ -1146,7 +1146,7 @@ export abstract class ProviderBase<TResponse = unknown> {
 		overrides?: CaptchaOptions
 	): Promise<{ token?: string; remoteip?: string } | undefined> {
 		const captcha = merge_captcha(this.#captcha, overrides)
-		const verdict = await check_captcha(form, captcha, this.managed_captcha)
+		const verdict = await check_captcha(form, captcha, this.captcha_mode)
 		// The IP rides along so managed verification can pass it to siteverify — the send
 		// leaves our server, so the API would otherwise only ever see the server's address.
 		if (verdict.ok)

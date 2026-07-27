@@ -99,6 +99,16 @@ export type CaptchaVerdict =
 	| { ok: true; token?: string; managed?: boolean }
 	| { ok: false; code: "spam" | "captcha_failed" | "captcha_misconfigured"; message: string }
 
+/**
+ * How a provider can verify a Turnstile token.
+ *
+ * - `byo` — verify locally against a configured secret (the default)
+ * - `managed` — no local secret; the token rides along and the API verifies it
+ * - `none` — no verifier and no credentials (the mock provider); a token that can't be
+ *   checked against anything is dropped rather than treated as a misconfiguration
+ */
+export type CaptchaMode = "byo" | "managed" | "none"
+
 /** The subset of the Turnstile siteverify response we act on. */
 type SiteverifyResponse = { success?: boolean; "error-codes"?: Array<string> }
 
@@ -118,7 +128,7 @@ type SiteverifyResponse = { success?: boolean; "error-codes"?: Array<string> }
 export async function check_captcha(
 	form: FormData,
 	options: CaptchaOptions = {},
-	managed = false
+	mode: CaptchaMode = "byo"
 ): Promise<CaptchaVerdict> {
 	if (options.honeypot !== false) {
 		const names = options.honeypot ? [options.honeypot] : [HONEYPOT_FIELD, HONEYPOT_LEGACY_FIELD]
@@ -148,7 +158,12 @@ export async function check_captcha(
 	const secret = explicit ?? read_env("TURNSTILE_SECRET_KEY")
 
 	// Managed captcha: no local secret needed — a BYO secret (above) still wins when set.
-	if (!secret && managed) return { ok: true, token, managed: true }
+	if (!secret && mode === "managed") return { ok: true, token, managed: true }
+
+	// No verifier at all (the mock provider). It's credential-free by design, so demanding a
+	// Turnstile secret would make <Captcha /> break every local send. An explicit
+	// `turnstile: true` still errors, since that's someone asking for enforcement outright.
+	if (!secret && mode === "none" && options.turnstile !== true) return { ok: true }
 
 	// No secret, no token, not forced on — Turnstile isn't in play for this send.
 	if (!secret && !token && options.turnstile !== true) return { ok: true }

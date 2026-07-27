@@ -226,3 +226,34 @@ describe("Mock provider", () => {
 		expect(failing.sent).toHaveLength(0)
 	})
 })
+
+describe("captcha on the mock provider", () => {
+	const mail = () => new Mock({ default: { from: "a@b.co", to: "c@d.co" } })
+	const form = (fields: Record<string, string>) => {
+		const f = new FormData()
+		for (const [k, v] of Object.entries(fields)) f.set(k, v)
+		return f
+	}
+
+	it("drops a Turnstile token instead of demanding a secret", async () => {
+		// <Captcha /> puts a token in every submission; mock is credential-free by design,
+		// so local sends must not fail with captcha_misconfigured
+		const m = mail()
+		await m.send({ body: form({ name: "Ada", _captcha: "tok" }) })
+		expect(m.sent).toHaveLength(1)
+		expect(m.sent[0].html).not.toContain("tok")
+	})
+
+	it("still catches the honeypot", async () => {
+		const m = mail()
+		await expect(m.send({ body: form({ name: "Ada", _honey: "bot" }) })).rejects.toThrow()
+		expect(m.sent).toHaveLength(0)
+	})
+
+	it("still honours an explicit turnstile: true", async () => {
+		const m = mail()
+		await expect(
+			m.send({ body: form({ name: "Ada" }), captcha: { turnstile: true } })
+		).rejects.toMatchObject({ code: "captcha_misconfigured" })
+	})
+})

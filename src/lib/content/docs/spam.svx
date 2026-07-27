@@ -202,6 +202,11 @@ await mail.send({ body, captcha: { turnstile: { secret_key: env.TURNSTILE_SECRET
 Testing? Cloudflare provides [dummy keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/):
 the `1x…` secret always passes, the `2x…` secret always fails.
 
+The [mock provider](/providers) never verifies Turnstile — it has no credentials by design,
+so a token from `<Captcha />` is dropped rather than raising `captcha_misconfigured`, and
+local sends keep working. The honeypot still runs, and an explicit `secret_key` or
+`turnstile: true` is still honoured, so you can exercise the real path when you want to.
+
 ### The visitor's IP
 
 Cloudflare accepts the submitting visitor's IP (`remoteip`) and uses it to reject a token

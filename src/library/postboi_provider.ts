@@ -317,7 +317,7 @@ export default class Postboi extends ProviderBase<SendResponse> {
 	protected override readonly requires_from = false
 	// Turnstile tokens are verified by the API against the account's managed widget —
 	// FormData sends need no local secret key.
-	protected override readonly managed_captcha = true
+	protected override readonly captcha_mode = "managed" as const
 	#token: string | undefined
 	#host: string
 
