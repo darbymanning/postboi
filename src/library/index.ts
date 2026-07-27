@@ -15,6 +15,9 @@ export {
 } from "./captcha.js"
 // The publishable key `bunx postboi sync` bakes in for the <Captcha /> components.
 export { captcha_key } from "./register.js"
+// The table renderer escapes for you; this is for hand-rolled HTML bodies that
+// interpolate user input, so callers don't reinvent it (usually incompletely).
+export { escape_html } from "./utils.js"
 
 /**
  * A concrete email address used by providers.

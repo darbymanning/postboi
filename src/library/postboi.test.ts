@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import Postboi, { mail, is_error, PostboiError } from "$library/postboi.js"
+import Postboi, { escape_html, mail, is_error, PostboiError } from "$library/postboi.js"
 
 const fetch = vi.fn()
 global.fetch = fetch
@@ -530,5 +530,13 @@ describe("top-level mail() — provider-agnostic dispatch", () => {
 	it("re-exports is_error from the root", () => {
 		expect(is_error(new PostboiError({ provider: "postboi", message: "x" }))).toBe(true)
 		expect(is_error(new Error("nope"))).toBe(false)
+	})
+})
+
+describe("escape_html", () => {
+	it("is reachable from the package root for hand-rolled HTML bodies", () => {
+		// the FormData table escapes itself; this is for callers interpolating user
+		// input into their own `body` string, so they don't reinvent it badly
+		expect(escape_html('<a href="x">hi</a>')).toBe("&lt;a href=&quot;x&quot;&gt;hi&lt;/a&gt;")
 	})
 })
