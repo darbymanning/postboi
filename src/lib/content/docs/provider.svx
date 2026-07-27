@@ -230,7 +230,7 @@ await mail.contacts.add("ada@example.com", { name: "Ada", data: { plan: "pro" } 
 const ada = await mail.contacts.get("ada@example.com") // contact + its memberships
 await mail.contacts.update("ada@example.com", { data: { plan: "team" } }) // global; last write wins
 await mail.contacts.lists("ada@example.com") // which lists is Ada on?
-await mail.contacts.all({ list: "Newsletter", status: "subscribed" }) // page (and follow) the audience
+await mail.contacts.all({ list: "Newsletter", status: "subscribed", search: "ada" }) // page (and follow) the audience
 await mail.contacts.remove("ada@example.com") // drops the contact and all its memberships
 ```
 

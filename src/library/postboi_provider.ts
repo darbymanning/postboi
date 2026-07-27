@@ -572,10 +572,11 @@ export default class Postboi extends ProviderBase<SendResponse> {
 
 		/**
 		 * The whole audience, newest first — following pagination for you. Narrow with
-		 * `list` (a name or id) and/or a membership `status`.
+		 * `list` (a name or id), a membership `status`, and/or a case-insensitive
+		 * `search` over email and name.
 		 */
 		all: async (
-			options: { list?: string; status?: MembershipStatus } = {}
+			options: { list?: string; status?: MembershipStatus; search?: string } = {}
 		): Promise<Array<Contact>> => {
 			const out: Array<Contact> = []
 			let cursor: string | undefined
@@ -583,6 +584,7 @@ export default class Postboi extends ProviderBase<SendResponse> {
 				const params = new URLSearchParams()
 				if (options.list) params.set("list", options.list)
 				if (options.status) params.set("status", options.status)
+				if (options.search) params.set("search", options.search)
 				if (cursor) params.set("cursor", cursor)
 				const query = params.toString()
 				const page = await this.#api<{ contacts: Array<Contact>; cursor: string | null }>(

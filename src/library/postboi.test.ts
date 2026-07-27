@@ -349,6 +349,12 @@ describe("the Postboi provider — account API", () => {
 		)
 	})
 
+	it("contacts.all passes a search term", async () => {
+		fetch.mockResolvedValueOnce(respond({ json: { contacts: [], cursor: null } }))
+		await provider().contacts.all({ search: "ada lovelace" })
+		expect(sent_url()).toBe("https://postboi.email/v1/contacts?search=ada+lovelace")
+	})
+
 	it("lists.update toggles confirmation and renames; lists.create takes options", async () => {
 		fetch.mockResolvedValue(
 			respond({ json: { id: "l1", name: "my list", confirmation: { enabled: true } } })
