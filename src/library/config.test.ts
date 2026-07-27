@@ -189,3 +189,25 @@ describe("global config", () => {
 		}
 	})
 })
+
+describe("missing-config hint on a missing default", () => {
+	beforeEach(() => reset_config())
+	afterEach(() => reset_config())
+
+	it("explains that no config loaded, since that's a different fix", async () => {
+		const mail = new Mock({})
+		// The confusing production case: postboi.config sets default.to, but the file never
+		// reached the runtime, so the bare error sends you looking in the wrong place.
+		await expect(mail.send({ from: "a@b.co", body: "hi" })).rejects.toThrow(
+			/No postboi.config was loaded/
+		)
+	})
+
+	it("stays quiet when a config did load and simply has no default", async () => {
+		configure({ default: { from: "a@b.co" } })
+		const mail = new Mock({})
+		const error = await mail.send({ body: "hi" }).catch((e: Error) => e)
+		expect(error.message).toContain("No recipient address provided")
+		expect(error.message).not.toContain("No postboi.config was loaded")
+	})
+})

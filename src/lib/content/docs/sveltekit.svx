@@ -138,7 +138,7 @@ kit: { experimental: { remoteFunctions: true } }
 optimizeDeps: { exclude: ['postboi/remote'] }
 ```
 
-> The [`postboi/vite`](/config#edge-runtimes) plugin sets that exclude itself, so if you're
+> The [`postboi/vite`](/config#bundled-and-deployed-servers) plugin sets that exclude itself, so if you're
 > already using it (for edge deploys, say) you can drop the line.
 
 Worth knowing:

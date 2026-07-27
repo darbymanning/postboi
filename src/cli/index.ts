@@ -24,6 +24,7 @@ import {
 import {
 	detect_package_manager,
 	add_remote_exclude,
+	add_vite_plugin,
 	has_dependency,
 	type PackageJson,
 	install_command,
@@ -389,6 +390,20 @@ function ensure_remote_exclude(files: Array<string>): void {
 	if (!has_dependency(pkg, "@sveltejs/kit")) return
 
 	const source = readFileSync(vite, "utf8")
+
+	// Prefer the plugin: it supplies the optimizeDeps exclude *and* bundles postboi.config
+	// into the server build, which a hand-written exclude doesn't.
+	const plugin = add_vite_plugin(source)
+	if (plugin === "present") return
+	if (plugin !== "unable") {
+		writeFileSync(vite, plugin)
+		console.log(
+			`${green("✓")} added the ${bold("postboi()")} Vite plugin ${dim(`(${vite} — bundles postboi.config into the server build)`)}`
+		)
+		return
+	}
+
+	// Couldn't place the plugin safely — fall back to the exclude alone.
 	const result = add_remote_exclude(source)
 	if (result === "present") return
 	if (result === "unable") {

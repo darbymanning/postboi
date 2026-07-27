@@ -121,6 +121,19 @@ export function config(config: PostboiConfig): PostboiConfig {
 }
 
 /** The current effective config (disk config underneath anything set via {@link configure}). */
+/**
+ * Did a `postboi.config.*` actually get loaded — from disk or bundled in?
+ *
+ * Used to sharpen the "no recipient / no sender" errors. A config that silently didn't load
+ * is the difference between "you forgot to set a default" and "your defaults exist but never
+ * reached the runtime", and those have completely different fixes.
+ */
+export function config_loaded(): boolean {
+	// `explicit` counts: configure() is the documented way to supply config where a file
+	// can't be auto-loaded, so someone who called it has configured postboi.
+	return bundled !== null || Object.keys(disk).length > 0 || Object.keys(explicit).length > 0
+}
+
 export function get_config(): PostboiConfig {
 	return merge(disk, explicit)
 }

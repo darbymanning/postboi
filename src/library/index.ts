@@ -1,5 +1,5 @@
 import { title, escape_html, escape_lines, html_to_text, pooled_map } from "./utils.js"
-import { get_config, merge_hooks } from "./config.js"
+import { config_loaded, get_config, merge_hooks } from "./config.js"
 import { check_captcha, merge_captcha, type CaptchaMode, type CaptchaOptions } from "./captcha.js"
 import { ensure_env_loaded } from "./env.js"
 
@@ -451,6 +451,24 @@ export type Hooks = {
  * (recognise a provider error body). The base owns everything else: default/FormData
  * handling, timeouts, opt-in retries and normalized error throwing.
  */
+/**
+ * Explain a missing default when no config file ever loaded.
+ *
+ * The confusing case: `postboi.config.ts` sets `default.to`, it works locally, and every
+ * send fails in production. The file is found by walking up from `process.cwd()`, but a
+ * deployed serverless function doesn't contain it — nothing imports it, so file tracing
+ * never includes it. The defaults are real, they just never reach the runtime, and the bare
+ * "no recipient" error sends you looking in entirely the wrong place.
+ */
+function missing_config_hint(): string {
+	if (config_loaded()) return ""
+	return (
+		". No postboi.config was loaded — if it sets this default, it isn't reaching the " +
+		"runtime: add postboi() from postboi/vite (Vite/SvelteKit), import the config from " +
+		"your server entry, or call configure() at startup."
+	)
+}
+
 export abstract class ProviderBase<TResponse = unknown> {
 	/** Stable provider identifier used in thrown errors. */
 	protected abstract readonly provider: string
@@ -1193,7 +1211,7 @@ export abstract class ProviderBase<TResponse = unknown> {
 		if (!to) {
 			throw new PostboiError({
 				provider: this.provider,
-				message: "No recipient address provided (to or default.to)",
+				message: `No recipient address provided (to or default.to)${missing_config_hint()}`,
 			})
 		}
 		if (!from && this.requires_from) {

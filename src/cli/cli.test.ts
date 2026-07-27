@@ -22,6 +22,7 @@ import { detect_env_targets, format_line, upsert_env, remove_env, is_gitignored 
 import { detect_hosts, detect_adapter_host, push_spec, manual_hint } from "./deploy.js"
 import {
 	add_remote_exclude,
+	add_vite_plugin,
 	detect_package_manager,
 	has_dependency,
 	install_command,
@@ -654,5 +655,54 @@ describe("add_remote_exclude", () => {
 			add_remote_exclude("defineConfig({ optimizeDeps: { esbuildOptions: { plugins: [] } } })")
 		).toBe("unable")
 		expect(add_remote_exclude("export default { plugins: [] }")).toBe("unable")
+	})
+})
+
+describe("add_vite_plugin", () => {
+	it("inserts the plugin into an existing plugins array, with its import", () => {
+		const result = add_vite_plugin(
+			'import { sveltekit } from "@sveltejs/kit/vite"\nimport { defineConfig } from "vite"\n\nexport default defineConfig({\n\tplugins: [sveltekit()],\n})\n'
+		)
+		expect(result).toContain('import { postboi } from "postboi/vite"')
+		expect(result).toContain("postboi(),")
+		expect(result).toContain("sveltekit()")
+		// the import must land after the existing ones, not inside the config
+		expect(result.indexOf('from "postboi/vite"')).toBeLessThan(
+			(result as string).indexOf("defineConfig({")
+		)
+	})
+
+	it("creates a plugins array when there isn't one", () => {
+		const result = add_vite_plugin(
+			'import { defineConfig } from "vite"\n\nexport default defineConfig({\n\tbuild: {},\n})\n'
+		)
+		expect(result).toContain("plugins: [postboi()]")
+		expect(result).toContain("build: {}")
+	})
+
+	it("adds the import at the top when the file has none", () => {
+		const result = add_vite_plugin("export default defineConfig({ plugins: [] })")
+		expect((result as string).startsWith('import { postboi } from "postboi/vite"')).toBe(true)
+	})
+
+	it("reports an already-present plugin", () => {
+		expect(
+			add_vite_plugin(
+				'import { postboi } from "postboi/vite"\ndefineConfig({ plugins: [postboi()] })'
+			)
+		).toBe("present")
+	})
+
+	it("refuses shapes it can't edit safely", () => {
+		expect(add_vite_plugin("export default { build: {} }")).toBe("unable")
+	})
+
+	it("produces a config that still parses as TypeScript-ish source", () => {
+		const result = add_vite_plugin(
+			'import { defineConfig } from "vite"\n\nexport default defineConfig({\n\tplugins: [a(), b()],\n})\n'
+		) as string
+		// balanced brackets is a cheap proxy for "didn't mangle the array"
+		expect((result.match(/\[/g) ?? []).length).toBe((result.match(/\]/g) ?? []).length)
+		expect((result.match(/\{/g) ?? []).length).toBe((result.match(/\}/g) ?? []).length)
 	})
 })

@@ -17,7 +17,10 @@ Always start with the CLI — it picks a provider, writes secrets to `.env` and 
 bunx postboi init   # or npx
 ```
 
-Don't hand-write provider wiring unless the runtime demands it (see Edge runtimes). The config split is a hard rule: **API keys/tokens → env file; provider name, defaults, non-secret options → `postboi.config.ts`**.
+Don't hand-write provider wiring unless the runtime demands it (see Edge runtimes).
+Building with Vite, add `postboi()` from `postboi/vite` to `vite.config` — nothing imports
+`postboi.config.*`, so a deployed bundle won't contain it and its defaults/hooks silently
+vanish in production. `bunx postboi init` adds the plugin for you. The config split is a hard rule: **API keys/tokens → env file; provider name, defaults, non-secret options → `postboi.config.ts`**.
 
 ```ts
 // postboi.config.ts (committed)

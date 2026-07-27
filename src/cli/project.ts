@@ -69,14 +69,60 @@ export function install_command(
 }
 
 /**
- * Insert `optimizeDeps: { exclude: ["postboi/remote"] }` into a Vite config's source.
- * Remote-function modules must reach the SvelteKit transform, not Vite's dependency
- * prebundle (which serves them empty) — and pre-adding the exclude is harmless when
- * remote functions aren't in use, since Vite only consults it for imported specifiers.
+ * Add the `postboi()` Vite plugin to a Vite config's source.
  *
- * Text edits only, and only shapes we're sure about: returns `"present"` when the
- * exclude is already there, the updated source when a safe insertion point exists, and
- * `"unable"` otherwise (the caller prints a manual hint instead of guessing).
+ * The plugin does two things a hand-written `optimizeDeps` block can't. It excludes
+ * `postboi/remote` from Vite's dependency prebundle (which would serve those modules
+ * empty instead of letting the SvelteKit transform see them), *and* it inlines
+ * `postboi.config.*` into the server build.
+ *
+ * That second half is why this exists. Without it the config is only found by walking up
+ * from `process.cwd()` at runtime — fine locally, but a deployed serverless function
+ * doesn't contain the file at all (nothing imports it, so tracing never includes it), so
+ * `default.from` / `default.to` / `hooks` silently vanish in production.
+ *
+ * Text edits only, and only shapes we're sure about: returns `"present"` when the plugin
+ * is already there, the updated source when a safe insertion point exists, and `"unable"`
+ * otherwise (the caller prints a manual hint rather than guessing).
+ */
+export function add_vite_plugin(source: string): string | "present" | "unable" {
+	if (source.includes("postboi/vite")) return "present"
+
+	const IMPORT = 'import { postboi } from "postboi/vite"'
+	const COMMENT =
+		"\t// Bundles postboi.config into the server build, and keeps postboi/remote out of\n\t// Vite's dependency prebundle."
+
+	// Insert the plugin into an existing plugins array, right after the opening bracket.
+	const plugins = source.match(/plugins\s*:\s*\[/)
+	if (plugins) {
+		const with_plugin = source.replace(plugins[0], `${plugins[0]}\n${COMMENT}\n\t\tpostboi(),`)
+		return add_import(with_plugin, IMPORT)
+	}
+
+	// No plugins array — add one at the top of the config object literal.
+	if (source.includes("defineConfig({")) {
+		const with_plugin = source.replace(
+			"defineConfig({",
+			`defineConfig({\n${COMMENT}\n\tplugins: [postboi()],`
+		)
+		return add_import(with_plugin, IMPORT)
+	}
+	return "unable"
+}
+
+/** Put an import after the file's existing imports, or at the top if it has none. */
+function add_import(source: string, statement: string): string {
+	const imports = [...source.matchAll(/^import .*$/gm)]
+	const last = imports.at(-1)
+	if (!last?.index) return `${statement}\n${source}`
+	const end = last.index + last[0].length
+	return `${source.slice(0, end)}\n${statement}${source.slice(end)}`
+}
+
+/**
+ * Insert `optimizeDeps: { exclude: ["postboi/remote"] }` into a Vite config's source.
+ * Kept for configs the plugin can't be added to safely — the plugin supplies the same
+ * exclude, so this is only the fallback.
  */
 export function add_remote_exclude(source: string): string | "present" | "unable" {
 	if (source.includes("postboi/remote")) return "present"
