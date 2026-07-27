@@ -202,24 +202,6 @@ await mail.send({ body, captcha: { turnstile: { secret_key: env.TURNSTILE_SECRET
 Testing? Cloudflare provides [dummy keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/):
 the `1x…` secret always passes, the `2x…` secret always fails.
 
-### The visitor's IP
-
-Cloudflare accepts the submitting visitor's IP (`remoteip`) and uses it to reject a token
-replayed from somewhere else. Postboi sends it for you: the `postboi/kit` form action and
-remote form read it from the request, and it's forwarded for managed captcha too — without
-it the verifier only ever sees your *server's* address, since that's where the send comes
-from.
-
-In a hand-written handler, set it yourself:
-
-```typescript
-await mail({ body, captcha: { remoteip: getClientAddress() } })
-```
-
-It sits beside `turnstile` rather than inside it on purpose. Captcha options merge per key,
-so an IP nested in there would replace a configured `{ secret_key }` wholesale and quietly
-switch verification off.
-
 ## Configuration
 
 Both layers work with zero config, but everything is adjustable: globally in
