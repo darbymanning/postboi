@@ -109,13 +109,19 @@ export function escape_lines(value: string): string {
  * blocks, turns block-level tags and `<br>` into line breaks, strips remaining tags,
  * decodes the common HTML entities and collapses excess whitespace.
  *
+ * Table cells end a line too. Without that, the FormData table's `<td>Label</td>
+ * <td>Value</td>` collapsed to `LabelValue` in every plain-text alternative. A `": "`
+ * separator would read better for label/value pairs specifically, but this runs over
+ * *any* HTML body — it would turn an invoice's row into `Item: Qty: Price:`.
+ *
  * @example
  * html_to_text("<p>Hello</p><p>World</p>") // => "Hello\nWorld"
+ * html_to_text("<tr><td>Name</td><td>Ada</td></tr>") // => "Name\nAda"
  */
 export function html_to_text(html: string): string {
 	return html
 		.replace(/<(style|script)[\s\S]*?<\/\1>/gi, "")
-		.replace(/<\/(p|div|tr|h[1-6]|li|ul|ol|table)>/gi, "\n")
+		.replace(/<\/(p|div|tr|td|th|h[1-6]|li|ul|ol|table)>/gi, "\n")
 		.replace(/<br\s*\/?>/gi, "\n")
 		.replace(/<[^>]+>/g, "")
 		.replace(/&nbsp;/gi, " ")

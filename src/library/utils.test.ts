@@ -150,3 +150,24 @@ describe("escape_lines", () => {
 		expect(html_to_text(escape_lines("line one\r\nline two"))).toBe("line one\nline two")
 	})
 })
+
+describe("html_to_text table cells", () => {
+	it("separates label and value instead of jamming them together", () => {
+		// regression: this used to come back as "NameAda"
+		expect(html_to_text("<tr><td>Name</td><td>Ada</td></tr>")).toBe("Name\nAda")
+	})
+
+	it("keeps a blank line between rows", () => {
+		expect(html_to_text("<tr><td>A</td><td>1</td></tr><tr><td>B</td><td>2</td></tr>")).toBe(
+			"A\n1\n\nB\n2"
+		)
+	})
+
+	it("handles header cells the same way", () => {
+		expect(html_to_text("<tr><th>Item</th><th>Qty</th></tr>")).toBe("Item\nQty")
+	})
+
+	it("keeps multi-line values readable under their label", () => {
+		expect(html_to_text("<tr><td>Message</td><td>one<br>two</td></tr>")).toBe("Message\none\ntwo")
+	})
+})
