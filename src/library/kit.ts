@@ -6,11 +6,11 @@ import {
 	type RemoteForm,
 	type RemoteFormInput,
 } from "@sveltejs/kit"
-import { form } from "$app/server"
+import { form, getRequestEvent } from "$app/server"
 // From ./mail.js directly, not the package root — the root statically re-exports the
 // Postboi provider class, which must stay a dynamic-only leaf (see LOADERS in mail.ts).
 import { mail as zero_config_mail } from "./mail.js"
-import { is_error, is_spam, type SendOptions } from "./index.js"
+import { is_error, is_spam, type CaptchaOptions, type SendOptions } from "./index.js"
 // Type-only — the webhooks module itself is loaded lazily inside the handler, so
 // action-only users never pull the adapters or crypto into their bundle.
 import type { WebhookEvent, ReceiveOptions } from "./webhooks/index.js"
@@ -67,6 +67,27 @@ export interface ActionOptions {
  * export const actions = { default: action(mail, { fields: { to: "team@example.com" } }) }
  * ```
  */
+/**
+ * Fill in the visitor's IP for Turnstile verification, so callers get it without threading
+ * `getClientAddress()` through themselves. An explicit `remoteip` always wins.
+ *
+ * `getRequestEvent()` throws outside a request (a build-time or test call), which must not
+ * take a send down — the IP sharpens verification, it is never a precondition for it.
+ */
+function with_remoteip(
+	captcha: CaptchaOptions | undefined,
+	event?: RequestEvent
+): CaptchaOptions | undefined {
+	if (captcha?.remoteip) return captcha
+	let remoteip: string | undefined
+	try {
+		remoteip = (event ?? getRequestEvent()).getClientAddress()
+	} catch {
+		return captcha
+	}
+	return { ...captcha, remoteip }
+}
+
 export function action(options?: ActionOptions): FormAction
 export function action(mailer: Mailer, options?: ActionOptions): FormAction
 export function action(a?: Mailer | ActionOptions, b: ActionOptions = {}): FormAction {
@@ -76,10 +97,14 @@ export function action(a?: Mailer | ActionOptions, b: ActionOptions = {}): FormA
 	const dispatch = mailer ? (o: SendOptions) => mailer.send(o) : zero_config_mail
 	const status = options.status ?? 400
 
-	return async ({ request }) => {
+	return async (event) => {
 		try {
-			const body = await request.formData()
-			await dispatch({ ...options.fields, body })
+			const body = await event.request.formData()
+			await dispatch({
+				...options.fields,
+				body,
+				captcha: with_remoteip(options.fields?.captcha, event),
+			})
 			return { success: true }
 		} catch (error) {
 			// A tripped honeypot pretends to succeed — no email is sent, and the bot learns nothing.
@@ -169,7 +194,11 @@ export function remote(
 
 	return form("unchecked", async (data: RemoteFormInput) => {
 		try {
-			await dispatch({ ...options.fields, body: remote_form_data(data) })
+			await dispatch({
+				...options.fields,
+				body: remote_form_data(data),
+				captcha: with_remoteip(options.fields?.captcha),
+			})
 			return { success: true as const }
 		} catch (error) {
 			// A tripped honeypot pretends to succeed — no email is sent, and the bot learns nothing.

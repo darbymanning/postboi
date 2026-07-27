@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import {
 	check_captcha,
+	merge_captcha,
 	HONEYPOT_FIELD,
 	TURNSTILE_FIELD,
 	TURNSTILE_REMOTE_FIELD,
@@ -277,5 +278,76 @@ describe("provider integration", () => {
 		// …and a per-send override can turn the check off entirely.
 		await mail.send({ body: form({ nectar: "spam" }), captcha: { honeypot: false } })
 		expect(mail.sent).toHaveLength(1)
+	})
+})
+
+describe("merge_captcha", () => {
+	it("keeps a configured secret when an override touches only another field", () => {
+		// the fail-open: a plain spread dropped secret_key here, so Turnstile was skipped
+		const merged = merge_captcha({ turnstile: { secret_key: "s" } }, { remoteip: "1.2.3.4" })
+		expect(merged.turnstile).toEqual({ secret_key: "s" })
+		expect(merged.remoteip).toBe("1.2.3.4")
+	})
+
+	it("merges two turnstile objects field by field", () => {
+		const merged = merge_captcha({ turnstile: { secret_key: "base" } }, { turnstile: {} })
+		expect(merged.turnstile).toEqual({ secret_key: "base" })
+	})
+
+	it("lets an override secret win", () => {
+		const merged = merge_captcha(
+			{ turnstile: { secret_key: "base" } },
+			{ turnstile: { secret_key: "override" } }
+		)
+		expect(merged.turnstile).toEqual({ secret_key: "override" })
+	})
+
+	it("treats booleans as explicit intent and replaces wholesale", () => {
+		expect(merge_captcha({ turnstile: { secret_key: "s" } }, { turnstile: false }).turnstile).toBe(
+			false
+		)
+		expect(
+			merge_captcha({ turnstile: true }, { turnstile: { secret_key: "s" } }).turnstile
+		).toEqual({ secret_key: "s" })
+	})
+})
+
+describe("remoteip", () => {
+	it("is forwarded to siteverify as remoteip", async () => {
+		const fetch_spy = vi.fn(async () => ({ json: async () => ({ success: true }) }) as never)
+		const original = global.fetch
+		global.fetch = fetch_spy as never
+		try {
+			const form = new FormData()
+			form.set(TURNSTILE_FIELD, "tok")
+			const verdict = await check_captcha(form, {
+				turnstile: { secret_key: "s" },
+				remoteip: "1.2.3.4",
+			})
+			expect(verdict.ok).toBe(true)
+			const body = JSON.parse(
+				(fetch_spy.mock.calls[0] as never as [string, RequestInit])[1].body as string
+			)
+			expect(body).toEqual({ secret: "s", response: "tok", remoteip: "1.2.3.4" })
+		} finally {
+			global.fetch = original
+		}
+	})
+
+	it("is omitted from the payload when not set", async () => {
+		const fetch_spy = vi.fn(async () => ({ json: async () => ({ success: true }) }) as never)
+		const original = global.fetch
+		global.fetch = fetch_spy as never
+		try {
+			const form = new FormData()
+			form.set(TURNSTILE_FIELD, "tok")
+			await check_captcha(form, { turnstile: { secret_key: "s" } })
+			const body = JSON.parse(
+				(fetch_spy.mock.calls[0] as never as [string, RequestInit])[1].body as string
+			)
+			expect(body).toEqual({ secret: "s", response: "tok" })
+		} finally {
+			global.fetch = original
+		}
 	})
 })

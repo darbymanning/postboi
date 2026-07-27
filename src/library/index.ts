@@ -1,6 +1,6 @@
 import { title, escape_html, escape_lines, html_to_text, pooled_map } from "./utils.js"
 import { get_config, merge_hooks } from "./config.js"
-import { check_captcha, type CaptchaOptions } from "./captcha.js"
+import { check_captcha, merge_captcha, type CaptchaOptions } from "./captcha.js"
 import { ensure_env_loaded } from "./env.js"
 
 // Global configuration (`postboi.config.ts`) is part of the public surface from the package root.
@@ -264,7 +264,7 @@ export interface PreparedMessage {
 	 * managed verification (the Postboi provider): `token` is the widget's Turnstile token when one
 	 * arrived. Providers without managed captcha never see this set.
 	 */
-	captcha?: { token?: string }
+	captcha?: { token?: string; remoteip?: string }
 }
 
 /** A provider-agnostic description of the HTTP request to send. */
@@ -486,7 +486,7 @@ export abstract class ProviderBase<TResponse = unknown> {
 		this.#retry_delay = options.retry_delay ?? s.retry_delay ?? 500
 		this.#auto_text = options.auto_text ?? s.auto_text ?? true
 		this.#hooks = merge_hooks(s.hooks, options.hooks)
-		this.#captcha = { ...s.captcha, ...options.captcha }
+		this.#captcha = merge_captcha(s.captcha, options.captcha)
 	}
 
 	/** Map a prepared message into the provider's HTTP request. */
@@ -1144,13 +1144,13 @@ export abstract class ProviderBase<TResponse = unknown> {
 	protected async enforce_captcha(
 		form: FormData,
 		overrides?: CaptchaOptions
-	): Promise<{ token?: string } | undefined> {
-		const verdict = await check_captcha(
-			form,
-			{ ...this.#captcha, ...overrides },
-			this.managed_captcha
-		)
-		if (verdict.ok) return verdict.managed ? { token: verdict.token } : undefined
+	): Promise<{ token?: string; remoteip?: string } | undefined> {
+		const captcha = merge_captcha(this.#captcha, overrides)
+		const verdict = await check_captcha(form, captcha, this.managed_captcha)
+		// The IP rides along so managed verification can pass it to siteverify — the send
+		// leaves our server, so the API would otherwise only ever see the server's address.
+		if (verdict.ok)
+			return verdict.managed ? { token: verdict.token, remoteip: captcha.remoteip } : undefined
 		if (verdict.code === "spam") throw new SpamError(verdict.message)
 		throw new PostboiError({
 			provider: this.provider,
@@ -1175,7 +1175,7 @@ export abstract class ProviderBase<TResponse = unknown> {
 		// FormData — or a plain object of fields (Express/multer's `req.body`) — is parsed into
 		// extracted header fields plus a rendered HTML table (honouring any formatter).
 		const form = this.to_form_data(body)
-		let captcha: { token?: string } | undefined
+		let captcha: { token?: string; remoteip?: string } | undefined
 		if (form) {
 			// Spam checks run first, and strip their plumbing fields so they never reach the email.
 			captcha = await this.enforce_captcha(form, options.captcha)

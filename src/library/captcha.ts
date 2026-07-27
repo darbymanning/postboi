@@ -59,6 +59,35 @@ export type CaptchaOptions = {
 	 * for a send even when a secret is set.
 	 */
 	turnstile?: { secret_key?: string } | boolean
+	/**
+	 * The submitting visitor's IP, forwarded to Turnstile verification (`remoteip`) so a token
+	 * replayed from elsewhere is rejected. `postboi/kit`'s form actions fill this in from the
+	 * request automatically; set it yourself only in a hand-written handler.
+	 *
+	 * Deliberately a sibling of {@link turnstile} rather than a field inside it: an auto-filled
+	 * IP nested there would replace a configured `{ secret_key }` wholesale and silently switch
+	 * verification off.
+	 */
+	remoteip?: string
+}
+
+/**
+ * Merge captcha options, treating `turnstile` as a nested object rather than an opaque value.
+ *
+ * A plain spread lets a partial override — `{ turnstile: {} }` with no `secret_key` — discard a
+ * configured secret, which skips Turnstile entirely and sends anyway. Spam checks must fail
+ * closed, so overriding one field can't drop the others.
+ */
+export function merge_captcha(
+	base: CaptchaOptions = {},
+	override: CaptchaOptions = {}
+): CaptchaOptions {
+	const merged: CaptchaOptions = { ...base, ...override }
+	// Booleans are an explicit force-on / force-off and replace wholesale; two objects combine.
+	if (typeof base.turnstile === "object" && typeof override.turnstile === "object") {
+		merged.turnstile = { ...base.turnstile, ...override.turnstile }
+	}
+	return merged
 }
 
 /**
@@ -145,7 +174,11 @@ export async function check_captcha(
 		const response = await fetch(TURNSTILE_VERIFY_URL, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ secret, response: token }),
+			body: JSON.stringify(
+				options.remoteip
+					? { secret, response: token, remoteip: options.remoteip }
+					: { secret, response: token }
+			),
 		})
 		const data = (await response.json()) as SiteverifyResponse
 		if (data.success === true) return { ok: true }

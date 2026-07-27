@@ -49,6 +49,11 @@ export interface SendParams {
 	tracking?: { opens?: boolean; clicks?: boolean }
 	/** Managed-captcha Turnstile token from the form, verified server-side by the API. */
 	captcha_token?: string
+	/**
+	 * The submitting visitor's IP, passed to siteverify as `remoteip`. The send comes from the
+	 * caller's server, so without this the API only ever sees that server's address.
+	 */
+	captcha_ip?: string
 	/** True when the send originated from a form submission — the only sends captcha gates. */
 	form?: boolean
 }
@@ -710,6 +715,7 @@ export default class Postboi extends ProviderBase<SendResponse> {
 			scheduled_at: message.scheduled_at?.toISOString(),
 			tracking: message.tracking,
 			captcha_token: message.captcha?.token,
+			captcha_ip: message.captcha?.remoteip,
 			form: message.captcha ? true : undefined,
 		}
 	}
