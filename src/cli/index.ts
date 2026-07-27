@@ -455,6 +455,49 @@ function ensure_prepare(): void {
  * `postboi.config.*` is the offline source of truth for the key, so tokenless builds
  * (CI) keep the captcha — only the `from` types need the token.
  */
+/**
+ * Warn when a `postboi.config.*` carries runtime settings but the Vite plugin isn't wired up.
+ *
+ * The config is found by walking up from `process.cwd()` at runtime, which covers local dev
+ * but not a deployed bundle — nothing imports the file, so tracing leaves it out of a
+ * serverless function. Defaults and hooks then silently vanish in production while working
+ * perfectly on the developer's machine.
+ *
+ * Only warns when something in the config actually matters at send time. `provider` is
+ * usually redundant (POSTBOI_TOKEN selects the provider on its own) and `captcha.key` is
+ * baked into the installed package at build time, so a config holding just those loses
+ * nothing by not being bundled.
+ */
+function warn_unbundled_config(): void {
+	const config_file = CONFIG_FILES.find((f) => existsSync(f))
+	if (!config_file) return
+
+	const vite = ["vite.config.ts", "vite.config.js"].find((f) => existsSync(f))
+	if (!vite) return
+	if (readFileSync(vite, "utf8").includes("postboi/vite")) return
+
+	const source = readFileSync(config_file, "utf8")
+	// Strip comments, then drop empty objects: every scaffolded config ships a `hooks` block
+	// containing nothing but commented-out examples, and warning about that would fire on
+	// every project while nothing is actually at risk.
+	const live = source
+		.replace(/\/\*[\s\S]*?\*\//g, "")
+		.replace(/\/\/.*$/gm, "")
+		.replace(/\b\w+\s*:\s*\{\s*\}\s*,?/g, "")
+	const runtime = ["default", "hooks", "options", "timeout", "retries", "retry_delay", "auto_text"]
+	const used = runtime.filter((key) => new RegExp(`\\b${key}\\s*:`).test(live))
+	if (used.length === 0) return
+
+	console.log(
+		`${yellow("!")} ${bold(config_file)} sets ${bold(used.join(", "))}, but ${bold(vite)} is missing the ${bold("postboi()")} plugin.`
+	)
+	console.log(
+		dim(
+			`  Without it the config isn't bundled, so those settings work locally and vanish once deployed.\n  Add: import { postboi } from "postboi/vite" — then postboi() in plugins.`
+		)
+	)
+}
+
 async function sync(): Promise<void> {
 	await ensure_env_loaded()
 	if (!existsSync(TYPES_TARGET)) {
@@ -462,6 +505,7 @@ async function sync(): Promise<void> {
 		return
 	}
 	refresh_skill()
+	warn_unbundled_config()
 
 	const config_file = CONFIG_FILES.find((f) => existsSync(f))
 	const config_source = config_file ? readFileSync(config_file, "utf8") : undefined

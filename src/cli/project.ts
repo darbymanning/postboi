@@ -89,21 +89,30 @@ export function add_vite_plugin(source: string): string | "present" | "unable" {
 	if (source.includes("postboi/vite")) return "present"
 
 	const IMPORT = 'import { postboi } from "postboi/vite"'
-	const COMMENT =
-		"\t// Bundles postboi.config into the server build, and keeps postboi/remote out of\n\t// Vite's dependency prebundle."
+	const NOTE = [
+		"// Bundles postboi.config into the server build, and keeps postboi/remote out of",
+		"// Vite's dependency prebundle.",
+	]
+	/** The note, indented for the context it's being inserted into. */
+	const comment = (tabs: string) => NOTE.map((line) => `${tabs}${line}`).join("\n")
 
 	// Insert the plugin into an existing plugins array, right after the opening bracket.
 	const plugins = source.match(/plugins\s*:\s*\[/)
 	if (plugins) {
-		const with_plugin = source.replace(plugins[0], `${plugins[0]}\n${COMMENT}\n\t\tpostboi(),`)
+		// Inside a plugins array, so two levels in.
+		const with_plugin = source.replace(
+			plugins[0],
+			`${plugins[0]}\n${comment("\t\t")}\n\t\tpostboi(),`
+		)
 		return add_import(with_plugin, IMPORT)
 	}
 
 	// No plugins array — add one at the top of the config object literal.
 	if (source.includes("defineConfig({")) {
+		// Top level of the config object, so one level in.
 		const with_plugin = source.replace(
 			"defineConfig({",
-			`defineConfig({\n${COMMENT}\n\tplugins: [postboi()],`
+			`defineConfig({\n${comment("\t")}\n\tplugins: [postboi()],`
 		)
 		return add_import(with_plugin, IMPORT)
 	}
