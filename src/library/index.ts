@@ -1,4 +1,4 @@
-import { title, escape_html, html_to_text, pooled_map } from "./utils.js"
+import { title, escape_html, escape_lines, html_to_text, pooled_map } from "./utils.js"
 import { get_config, merge_hooks } from "./config.js"
 import { check_captcha, type CaptchaOptions } from "./captcha.js"
 import { ensure_env_loaded } from "./env.js"
@@ -15,9 +15,9 @@ export {
 } from "./captcha.js"
 // The publishable key `bunx postboi sync` bakes in for the <Captcha /> components.
 export { captcha_key } from "./register.js"
-// The table renderer escapes for you; this is for hand-rolled HTML bodies that
-// interpolate user input, so callers don't reinvent it (usually incompletely).
-export { escape_html } from "./utils.js"
+// The table renderer escapes for you; these are for hand-rolled HTML bodies that
+// interpolate user input, so callers don't reinvent them (usually incompletely).
+export { escape_html, escape_lines } from "./utils.js"
 
 /**
  * A concrete email address used by providers.
@@ -1120,8 +1120,8 @@ export abstract class ProviderBase<TResponse = unknown> {
 					const field_rows = Array.from(fields.entries()).map(([field, value]) => {
 						const label = escape_html(format_name(field))
 						const display = Array.isArray(value)
-							? `<ul style="margin: 0; padding-left: 20px;">${value.map((v) => `<li>${escape_html(v)}</li>`).join("")}</ul>`
-							: escape_html(value)
+							? `<ul style="margin: 0; padding-left: 20px;">${value.map((v) => `<li>${escape_lines(v)}</li>`).join("")}</ul>`
+							: escape_lines(value)
 						return `<tr><td style="padding: 5px 10px 5px 0; vertical-align: top;">${label}</td><td style="padding: 5px 0;">${display}</td></tr>`
 					})
 					rows.push(...field_rows)

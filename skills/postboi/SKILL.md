@@ -48,8 +48,10 @@ await mail({ to: "contact@example.com", subject: "Hi", body: "<p>Hello</p>" })
 
 Passing `FormData` as `body` renders a tidy HTML table. Field names and values are
 HTML-escaped, so a public form can't inject markup into the email you read — don't
-escape them yourself on the way in. Building a `body` string by hand instead? Use
-`escape_html` from `postboi` on any interpolated user input. Conventions:
+escape them yourself on the way in. Multi-line values keep their line
+breaks as `<br>`. Building a `body` string by hand instead? Use `escape_html` (or
+`escape_lines` for multi-line values) from `postboi` on any interpolated user input.
+Conventions:
 
 - Field names use `fieldset→field` (literal `→` character) to group fields into sections: `name="contact→email"`.
 - Special fields set send options instead of appearing in the table: `_to`, `_from`, `_subject`, `_reply_to`, `_cc`, `_bcc`. Standard pattern: a hidden `_reply_to` bound to the submitter's email so replies go to them.

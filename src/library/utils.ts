@@ -89,6 +89,22 @@ export function escape_html(value: string): string {
 }
 
 /**
+ * {@link escape_html}, then turn line breaks into `<br>`.
+ *
+ * For multi-line values (a textarea, an address). HTML collapses raw newlines, so
+ * without this a three-line message arrives as one run-on paragraph. Browsers submit
+ * textareas with CRLF, so `\r\n`, lone `\r` and lone `\n` are all handled.
+ *
+ * Escaping happens first, so the `<br>` tags this adds survive.
+ *
+ * @example
+ * escape_lines("line one\r\nline two") // => "line one<br>line two"
+ */
+export function escape_lines(value: string): string {
+	return escape_html(value).replace(/\r\n?|\n/g, "<br>")
+}
+
+/**
  * Derive a readable plain-text body from an HTML string. Drops `<style>`/`<script>`
  * blocks, turns block-level tags and `<br>` into line breaks, strips remaining tags,
  * decodes the common HTML entities and collapses excess whitespace.

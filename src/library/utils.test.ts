@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { capitalize, title, escape_html, html_to_text } from "$library/utils.js"
+import { capitalize, title, escape_html, escape_lines, html_to_text } from "$library/utils.js"
 
 describe("capitalize", () => {
 	it("capitalises the first letter and lower-cases the rest", () => {
@@ -123,5 +123,30 @@ describe("escape_html", () => {
 	it("round-trips through html_to_text back to what was typed", () => {
 		const typed = '<a href="https://evil.example">click</a> & "quoted"'
 		expect(html_to_text(escape_html(typed))).toBe(typed)
+	})
+})
+
+describe("escape_lines", () => {
+	it("turns CRLF, lone CR and lone LF into <br>", () => {
+		// browsers submit textareas with CRLF, so all three have to work
+		expect(escape_lines("a\r\nb")).toBe("a<br>b")
+		expect(escape_lines("a\rb")).toBe("a<br>b")
+		expect(escape_lines("a\nb")).toBe("a<br>b")
+	})
+
+	it("keeps blank lines as consecutive breaks", () => {
+		expect(escape_lines("a\r\n\r\nb")).toBe("a<br><br>b")
+	})
+
+	it("still escapes, and the <br> it adds survives", () => {
+		expect(escape_lines("<b>x</b>\ny")).toBe("&lt;b&gt;x&lt;/b&gt;<br>y")
+	})
+
+	it("does not let a submitted <br> through as markup", () => {
+		expect(escape_lines("a<br>b")).toBe("a&lt;br&gt;b")
+	})
+
+	it("round-trips through html_to_text back to real newlines", () => {
+		expect(html_to_text(escape_lines("line one\r\nline two"))).toBe("line one\nline two")
 	})
 })

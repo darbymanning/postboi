@@ -278,6 +278,36 @@ describe("ProviderBase", () => {
 			expect(html_to_text(options.body as string)).toContain('Tom & Jerry <3 "quotes"')
 		})
 
+		it("renders multi-line values as <br> breaks", async () => {
+			const form = new FormData()
+			// what a browser actually submits for a three-line textarea
+			form.append("message", "Line one\r\nLine two\r\n\r\nAfter a blank line")
+
+			const { options } = await provider.form(form)
+			const body = options.body as string
+			expect(body).toContain("Line one<br>Line two<br><br>After a blank line")
+			// raw newlines would collapse to one run-on line in every mail client
+			expect(body).not.toContain("\r\n")
+			expect(body).not.toContain("\n")
+		})
+
+		it("escapes a submitted <br> rather than honouring it", async () => {
+			const form = new FormData()
+			form.append("message", "a<br>b")
+
+			const { options } = await provider.form(form)
+			expect(options.body as string).toContain("a&lt;br&gt;b")
+		})
+
+		it("keeps the derived plain-text body's line breaks", async () => {
+			const form = new FormData()
+			form.append("message", "Line one\r\nLine two")
+
+			const { options } = await provider.form(form)
+			const { html_to_text } = await import("$library/utils.js")
+			expect(html_to_text(options.body as string)).toContain("Line one\nLine two")
+		})
+
 		it("collects non-empty file inputs as attachments", async () => {
 			const form = new FormData()
 			form.append("resume", new File(["pdf-bytes"], "resume.pdf", { type: "application/pdf" }))

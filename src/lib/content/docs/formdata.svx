@@ -71,18 +71,31 @@ notification you read, arriving from your own sending domain.
 Escape nothing yourself on the way in — you'd get visible `&amp;lt;` entities. The
 derived plain-text body decodes back to exactly what the sender typed.
 
+## Multi-line values
+
+Line breaks in a value become `<br>`, so a textarea arrives laid out the way it was
+typed rather than collapsed into one run-on line. Browsers submit textareas with CRLF;
+`\r\n`, lone `\r` and lone `\n` are all handled, and blank lines survive as
+consecutive breaks. A `<br>` someone *submits* is still escaped — only the breaks
+Postboi adds are real markup.
+
+## Hand-rolled bodies
+
 Escaping applies to the **table renderer** only. An HTML string passed as `body` is
 yours and is sent verbatim, so sanitise that yourself if any part of it came from a
-user. For that, the same helper is exported:
+user. The same two helpers are exported for that:
 
 ```typescript
-import { escape_html, mail } from "postboi"
+import { escape_html, escape_lines, mail } from "postboi"
 
 await mail({
 	subject: "New enquiry",
-	body: `<p>From ${escape_html(name)}</p>`,
+	body: `<p>From ${escape_html(name)}</p><p>${escape_lines(message)}</p>`,
 })
 ```
+
+`escape_html` for single-line values and attributes, `escape_lines` when the value may
+contain newlines.
 
 ## Attachments
 
