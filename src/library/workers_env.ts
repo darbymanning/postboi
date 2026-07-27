@@ -9,6 +9,11 @@
  */
 export async function workers_env(): Promise<Record<string, string>> {
 	const out: Record<string, string> = {}
+	// Only attempt the import when actually on workerd (it sets this exact user agent).
+	// The try/catch below is not enough on its own: some isolate runtimes (Convex) treat a
+	// runtime dynamic import of an unknown scheme as a fatal loader error, not a catchable
+	// rejection — the guard has to be not reaching import() at all.
+	if (globalThis.navigator?.userAgent !== "Cloudflare-Workers") return out
 	try {
 		const specifier = "cloudflare:" + "workers"
 		const module = (await import(/* @vite-ignore */ specifier)) as {
