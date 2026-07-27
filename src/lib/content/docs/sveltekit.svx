@@ -161,6 +161,44 @@ Worth knowing:
   remote-safe name, and the managed captcha detects remote forms automatically. A tripped
   honeypot still reports `{ success: true }` to the bot.
 
+### Writing your own remote form
+
+`remote()` uses SvelteKit's `unchecked` mode, so it accepts whatever the form submits and
+the spam fields arrive intact. Writing your own `form(schema, ...)` instead — for typed
+fields and `issues()` — changes that: **SvelteKit validates against your schema first and
+drops anything undeclared, silently.** Leave the spam fields out and the honeypot is inert
+and the captcha token never arrives, with no error to tell you.
+
+Declare them, and forward them to `mail()`:
+
+```ts
+// contact.schema.ts
+export const schema = v.object({
+	name: v.pipe(v.string(), v.minLength(1)),
+	email: v.pipe(v.string(), v.email()),
+	_honey: v.optional(v.string()), // HONEYPOT_FIELD
+	_captcha: v.optional(v.string()) // TURNSTILE_REMOTE_FIELD
+})
+```
+
+```ts
+// contact.remote.ts
+export const send = form(schema, async (data) => {
+	const body: Record<string, string> = { name: data.name, email: data.email }
+	if (data._honey) body._honey = data._honey
+	if (data._captcha) body._captcha = data._captcha
+	await mail({ body })
+})
+```
+
+`_captcha` rather than `cf-turnstile-response`: remote-form field names must be valid JS
+paths, so the managed loader renames the token field. postboi strips both before rendering.
+
+> Sending through a **non-Postboi provider** while `<Captcha />` is on the page fails with
+> `captcha_misconfigured` — a token arrived with no secret to verify it against. Managed
+> captcha needs the Postboi provider; on any other one, configure Turnstile yourself or opt
+> out with `captcha: { turnstile: false }`.
+
 For a custom provider or forced fields, build your own in a `.remote.ts` file with
 `remote()` from `postboi/kit` — the remote counterpart of `action()`:
 
