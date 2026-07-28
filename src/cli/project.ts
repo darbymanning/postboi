@@ -89,32 +89,30 @@ export function add_vite_plugin(source: string): string | "present" | "unable" {
 	if (source.includes("postboi/vite")) return "present"
 
 	const IMPORT = 'import { postboi } from "postboi/vite"'
-	const NOTE = [
-		"// Bundles postboi.config into the server build, and keeps postboi/remote out of",
-		"// Vite's dependency prebundle.",
-	]
-	/** The note, indented for the context it's being inserted into. */
-	const comment = (tabs: string) => NOTE.map((line) => `${tabs}${line}`).join("\n")
 
-	// Insert the plugin into an existing plugins array, right after the opening bracket.
+	// Insert the plugin at the head of an existing plugins array, matching how it's laid out:
+	// a one-liner stays a one-liner, a multi-line array gets its own line at the same
+	// indentation as the entries already there.
 	const plugins = source.match(/plugins\s*:\s*\[/)
-	if (plugins) {
-		// Inside a plugins array, so two levels in.
-		const with_plugin = source.replace(
-			plugins[0],
-			`${plugins[0]}\n${comment("\t\t")}\n\t\tpostboi(),`
-		)
-		return add_import(with_plugin, IMPORT)
+	if (plugins?.index !== undefined) {
+		const at = plugins.index + plugins[0].length
+		const rest = source.slice(at)
+		const multiline = rest.match(/^[ \t]*\r?\n([ \t]*)/)
+		const insert = multiline
+			? `\n${multiline[1]}postboi(),`
+			: // An empty array takes no separator, or we'd leave a dangling comma.
+				/^\s*\]/.test(rest)
+				? "postboi()"
+				: "postboi(), "
+		return add_import(source.slice(0, at) + insert + rest, IMPORT)
 	}
 
 	// No plugins array — add one at the top of the config object literal.
 	if (source.includes("defineConfig({")) {
-		// Top level of the config object, so one level in.
-		const with_plugin = source.replace(
-			"defineConfig({",
-			`defineConfig({\n${comment("\t")}\n\tplugins: [postboi()],`
+		return add_import(
+			source.replace("defineConfig({", "defineConfig({\n\tplugins: [postboi()],"),
+			IMPORT
 		)
-		return add_import(with_plugin, IMPORT)
 	}
 	return "unable"
 }

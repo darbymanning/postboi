@@ -659,12 +659,35 @@ describe("add_remote_exclude", () => {
 })
 
 describe("add_vite_plugin", () => {
+	it("keeps a single-line plugins array on one line", () => {
+		const result = add_vite_plugin(
+			'import { defineConfig } from "vite"\nexport default defineConfig({\n\tplugins: [sveltekit(), svg(), tailwindcss()],\n})\n'
+		) as string
+		expect(result).toContain("plugins: [postboi(), sveltekit(), svg(), tailwindcss()],")
+		// no comment, and no newline jammed in mid-array
+		expect(result).not.toContain("//")
+	})
+
+	it("gives a multi-line array its own line, matching the existing indentation", () => {
+		const result = add_vite_plugin(
+			'import { defineConfig } from "vite"\nexport default defineConfig({\n    plugins: [\n        sveltekit(),\n    ],\n})\n'
+		) as string
+		expect(result).toContain("plugins: [\n        postboi(),\n        sveltekit(),")
+	})
+
+	it("adds no separator to an empty array", () => {
+		const result = add_vite_plugin(
+			'import { defineConfig } from "vite"\nexport default defineConfig({\n\tplugins: [],\n})\n'
+		) as string
+		expect(result).toContain("plugins: [postboi()],")
+	})
+
 	it("inserts the plugin into an existing plugins array, with its import", () => {
 		const result = add_vite_plugin(
 			'import { sveltekit } from "@sveltejs/kit/vite"\nimport { defineConfig } from "vite"\n\nexport default defineConfig({\n\tplugins: [sveltekit()],\n})\n'
 		)
 		expect(result).toContain('import { postboi } from "postboi/vite"')
-		expect(result).toContain("postboi(),")
+		expect(result).toContain("postboi()")
 		expect(result).toContain("sveltekit()")
 		// the import must land after the existing ones, not inside the config
 		expect(result.indexOf('from "postboi/vite"')).toBeLessThan(
