@@ -36,7 +36,7 @@ Beyond provider-specific codes passed through on `.code`, postboi itself uses a 
 | Code | Meaning |
 | ---- | ------- |
 | `skipped` / `spam` | The send was intentionally cancelled: a `before.send` hook or the [honeypot](/spam). |
-| `no_provider` / `no_token` / `unknown_provider` / `missing_env` | Zero-config resolution failed. See [Quick start](/quick-start). In development a missing credential [logs instead of throwing](/providers#no-credential-yet). |
+| `no_provider` / `unknown_provider` / `missing_env` | Zero-config resolution failed. See [Quick start](/quick-start). |
 | `cancel_not_supported` | [`cancel()`](/scheduling#cancelling-a-scheduled-send) on a provider without a cancellation API. |
 | `webhooks_not_supported` | [`receive()`](/webhooks) for a provider that emits no delivery events. |
 | `invalid_payload` | A webhook body that doesn't parse. |

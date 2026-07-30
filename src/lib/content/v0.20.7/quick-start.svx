@@ -33,10 +33,6 @@ import { mail } from 'postboi'
 await mail({ to: 'contact@example.com', subject: 'Hi', body: '<p>Hello</p>' })
 ```
 
-You don't need the token to start building: until one is set, `mail()`
-[prints each message to the console](/providers#no-credential-yet) in development instead
-of failing, and only throws once you deploy.
-
 That's the setup. Mail sends from your account's `you@send.postboi.email` address — a real
 deliverable address, but not an inbox, so set `reply_to` if you want replies — until you
 [verify a domain](/provider#sending-from-your-own-domain) of your own.

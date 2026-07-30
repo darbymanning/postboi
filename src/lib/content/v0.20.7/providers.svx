@@ -78,41 +78,6 @@ await mail.send({ to: 'contact@example.com', subject: 'Hi', body: '<p>Hello</p>'
 expect(mail.sent).toHaveLength(1)
 ```
 
-Pass `log: true` to print each message as it is captured — subject, addresses, attachment
-names, and the body in full, so a magic link or confirmation code is readable in the
-terminal. It is off by default so test suites stay quiet.
-
-`mail()` turns it on whenever it resolves the mock itself, which happens two ways:
-
-- **No credential in development** — see [below](#no-credential-yet).
-- **`provider: 'mock'`** in [`postboi.config.ts`](/config) or `POSTBOI_PROVIDER`. Choosing
-  the mock is choosing not to send, so printing is the only way to observe it.
-
-Constructing `new Mock()` yourself stays silent — that is the test path, where the point is
-asserting on `sent` rather than printing to the run.
-
-## No credential yet
-
-A fresh clone has no token, and that is the normal state of a checkout. Rather than
-failing, `mail()` logs the message to the console and carries on, so sign-in links and
-receipts are readable and app code needs no `if (token)` branch around every send:
-
-```
-postboi: no POSTBOI_TOKEN configured — logging mail to the console instead of sending. Run `bunx postboi init` to send for real.
-postboi (mock): Your sign-in link
-  to:   partner@example.com
-  from: Acme <no-reply@example.com>
-
-Click to sign in: https://example.com/verify?token=abc123
-```
-
-This only happens when the environment identifies itself as development
-(`NODE_ENV=development`). Anywhere else a missing credential throws
-[`no_token` or `no_provider`](/errors) — including when the environment is unset or
-unrecognised. The asymmetry is deliberate: a real deploy that lost its secret must fail
-loudly, because mail that silently becomes a console line locks people out with no error
-anywhere. `NODE_ENV=test` throws too, so suites keep asserting the real failure.
-
 ## Custom headers & tags
 
 `headers` and `tags` on [`send()`](/api#sendoptions) are forwarded to each provider's
