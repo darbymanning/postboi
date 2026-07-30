@@ -517,6 +517,70 @@ describe("top-level mail() — provider-agnostic dispatch", () => {
 		expect(fetch).not.toHaveBeenCalled()
 	})
 
+	it("logs instead of sending when NODE_ENV=development and nothing is configured", async () => {
+		vi.stubEnv("POSTBOI_PROVIDER", "")
+		vi.stubEnv("POSTBOI_TOKEN", "")
+		vi.stubEnv("POSTBOI_FROM", "from@test.com")
+		vi.stubEnv("NODE_ENV", "development")
+		const log = vi.spyOn(console, "log").mockImplementation(() => {})
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+		const result = await mail({ to: "to@test.com", subject: "Sign in", body: "<p>link</p>" })
+
+		expect(fetch).not.toHaveBeenCalled()
+		expect(result).toMatchObject({ id: "mock-1" })
+		// The body must survive to the terminal — it is the reason to read a dev mail at all.
+		expect(log.mock.calls.at(-1)![0]).toMatch(/Sign in[\s\S]*link/)
+		expect(warn.mock.calls.at(-1)![0]).toMatch(/logging mail to the console/)
+		log.mockRestore()
+		warn.mockRestore()
+	})
+
+	it("logs when a token is missing but the config names the postboi provider", async () => {
+		vi.stubEnv("POSTBOI_PROVIDER", "postboi")
+		vi.stubEnv("POSTBOI_TOKEN", "")
+		vi.stubEnv("POSTBOI_FROM", "from@test.com")
+		vi.stubEnv("NODE_ENV", "development")
+		const log = vi.spyOn(console, "log").mockImplementation(() => {})
+		vi.spyOn(console, "warn").mockImplementation(() => {})
+
+		await mail({ to: "to@test.com", subject: "Hi", body: "x" })
+
+		expect(fetch).not.toHaveBeenCalled()
+		expect(log).toHaveBeenCalled()
+		vi.restoreAllMocks()
+	})
+
+	it("still throws without a token outside development", async () => {
+		for (const node_env of ["production", "staging", ""]) {
+			vi.stubEnv("POSTBOI_PROVIDER", "postboi")
+			vi.stubEnv("POSTBOI_TOKEN", "")
+			vi.stubEnv("NODE_ENV", node_env)
+
+			const error = await mail({ to: "to@test.com", body: "x" }).catch((e) => e)
+
+			expect(error, `NODE_ENV=${node_env} must not silently log`).toBeInstanceOf(PostboiError)
+			expect(error.code).toBe("no_token")
+			expect(fetch).not.toHaveBeenCalled()
+		}
+	})
+
+	it("logs when the mock is chosen explicitly, in any environment", async () => {
+		// Choosing the mock is choosing not to send — printing is the only way to observe it.
+		for (const node_env of ["development", "production", ""]) {
+			vi.stubEnv("POSTBOI_PROVIDER", "mock")
+			vi.stubEnv("POSTBOI_FROM", "from@test.com")
+			vi.stubEnv("NODE_ENV", node_env)
+			const log = vi.spyOn(console, "log").mockImplementation(() => {})
+
+			await mail({ to: "to@test.com", subject: "Explicit mock", body: "x" })
+
+			expect(log.mock.calls.at(-1)![0], `NODE_ENV=${node_env}`).toMatch(/Explicit mock/)
+			expect(fetch).not.toHaveBeenCalled()
+			log.mockRestore()
+		}
+	})
+
 	it("throws when the provider's required env var is missing", async () => {
 		vi.stubEnv("POSTBOI_PROVIDER", "resend")
 		vi.stubEnv("RESEND_API_KEY", "")

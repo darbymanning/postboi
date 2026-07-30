@@ -29,9 +29,40 @@ export interface SentMessage {
 type Options = CommonProviderOptions & {
 	/** When true, every `send` rejects with a simulated {@link PostboiError}. */
 	fail?: boolean
+	/**
+	 * Print each captured message to the console. Off by default so tests stay quiet.
+	 * `mail()` turns it on whenever it resolves the mock itself — the development fallback
+	 * for a missing credential, or an explicit `provider: "mock"` — because there the whole
+	 * point is seeing the mail you would have sent (a magic link, a confirmation code).
+	 */
+	log?: boolean
 }
 
 type SendResponse = { id: string; message: SentMessage }
+
+const address_list = (list: Array<MailAddress>) =>
+	list.map((a) => (a.name ? `${a.name} <${a.address}>` : a.address)).join(", ")
+
+/**
+ * Print a captured message. The body goes out as-is rather than truncated: the reason to
+ * read a dev mail in the terminal is usually a link or a code inside it, and a cut-off
+ * line is the one thing that makes the output useless.
+ */
+function log_message(message: SentMessage): void {
+	const lines = [
+		`postboi (mock): ${message.subject}`,
+		`  to:   ${address_list(message.to)}`,
+		`  from: ${address_list([message.from])}`,
+	]
+	if (message.cc?.length) lines.push(`  cc:   ${address_list(message.cc)}`)
+	if (message.bcc?.length) lines.push(`  bcc:  ${address_list(message.bcc)}`)
+	if (message.attachments.length) {
+		lines.push(`  files: ${message.attachments.map((a) => a.name).join(", ")}`)
+	}
+	const body = message.text ?? message.html
+	if (body) lines.push("", body.trim())
+	console.log(lines.join("\n"))
+}
 
 /**
  * In-memory mock provider for tests. It runs the same normalization/validation as
@@ -59,6 +90,7 @@ export default class Mock extends ProviderBase<SendResponse> {
 	 */
 	protected override readonly captcha_mode = "none" as const
 	#fail: boolean
+	#log: boolean
 	#counter = 0
 
 	/** Every message captured by this instance, in send order. */
@@ -67,9 +99,10 @@ export default class Mock extends ProviderBase<SendResponse> {
 	/** Ids passed to `cancel`, in call order. */
 	readonly canceled: Array<string> = []
 
-	constructor({ fail, ...options }: Options = {}) {
+	constructor({ fail, log, ...options }: Options = {}) {
 		super(options)
 		this.#fail = fail ?? false
+		this.#log = log ?? false
 	}
 
 	/** The most recently captured message, or undefined if nothing has been sent. */
@@ -130,6 +163,7 @@ export default class Mock extends ProviderBase<SendResponse> {
 			}
 
 			this.sent.push(captured)
+			if (this.#log) log_message(captured)
 			return { id: `mock-${++this.#counter}`, message: captured }
 		})
 	}

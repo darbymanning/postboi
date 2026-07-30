@@ -13,7 +13,7 @@ import { PostboiError } from "./index.js"
 import type Postboi from "./postboi_provider.js"
 import { find_provider } from "./registry.js"
 import { load_config } from "./config.js"
-import { ensure_env_loaded, env_defaults, read_env } from "./env.js"
+import { ensure_env_loaded, env_defaults, is_development, read_env } from "./env.js"
 
 type ProviderConstructor = new (options: Record<string, unknown>) => ProviderBase<unknown>
 
@@ -56,6 +56,7 @@ const LOADERS: Record<string, () => Promise<ProviderConstructor>> = {
 }
 
 let warned_shadowed_from = false
+let warned_dev_fallback = false
 
 /** Construct the provider named by `POSTBOI_PROVIDER` from environment variables. */
 async function resolve_provider(): Promise<ProviderBase<unknown>> {
@@ -83,12 +84,28 @@ async function resolve_provider(): Promise<ProviderBase<unknown>> {
 		read_env("POSTBOI_PROVIDER") ??
 		config.provider ??
 		(read_env("POSTBOI_TOKEN") ? "postboi" : undefined)
-	if (!key) {
+
+	// Nothing to send with. In development that is the normal state of a fresh clone, so
+	// log the mail instead of failing and let the app code stay unconditional. Anywhere
+	// else it is a broken deploy: throw, because a magic link or receipt that silently
+	// becomes a console line locks people out with no error anywhere.
+	if (!key || (key === "postboi" && !read_env("POSTBOI_TOKEN"))) {
+		if (is_development()) {
+			if (!warned_dev_fallback) {
+				warned_dev_fallback = true
+				console.warn(
+					`postboi: no ${key === "postboi" ? "POSTBOI_TOKEN" : "provider"} configured — logging mail to the console instead of sending. Run \`bunx postboi init\` to send for real.`
+				)
+			}
+			const Mock = await import("./mock.js").then((m) => m.default)
+			return new Mock({ log: true, default: env_defaults() })
+		}
 		throw new PostboiError({
 			provider: "postboi",
-			code: "no_provider",
-			message:
-				'No provider configured. Run `bunx postboi init` (it sets POSTBOI_TOKEN or POSTBOI_PROVIDER), set `provider` in postboi.config.ts, or import one directly, e.g. `import Resend from "postboi/resend"`.',
+			code: key ? "no_token" : "no_provider",
+			message: key
+				? "No Postboi token found. Run `bunx postboi init`, set POSTBOI_TOKEN, or pass { token }."
+				: 'No provider configured. Run `bunx postboi init` (it sets POSTBOI_TOKEN or POSTBOI_PROVIDER), set `provider` in postboi.config.ts, or import one directly, e.g. `import Resend from "postboi/resend"`.',
 		})
 	}
 
@@ -116,6 +133,11 @@ async function resolve_provider(): Promise<ProviderBase<unknown>> {
 		}
 		options[field.arg] = value
 	}
+
+	// A mock reached through `provider: "mock"` or POSTBOI_PROVIDER is there for a human to
+	// read, so it logs. `new Mock()` stays silent — that is the test path, where the point is
+	// asserting on `sent`, not printing to the run.
+	if (key === "mock") options.log = true
 
 	const Provider = await load()
 	return new Provider(options)

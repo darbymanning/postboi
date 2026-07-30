@@ -113,3 +113,15 @@ export function env_defaults(): Defaults {
 	}
 	return out
 }
+
+/**
+ * True only when the environment positively identifies itself as development. Deliberately
+ * one-way: an unknown environment is treated as production, because the caller uses this to
+ * decide whether a missing credential is a convenience (log it) or a fault (throw). Guessing
+ * "development" wrong turns real mail into console noise; guessing "production" wrong only
+ * costs a developer one clear error telling them to set a token. `test` is excluded so suites
+ * keep asserting the real failure.
+ */
+export function is_development(): boolean {
+	return read_env("NODE_ENV") === "development"
+}

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import Mock from "$library/mock.js"
 import { SkipSendError } from "$library/index.js"
 
@@ -7,6 +7,32 @@ describe("Mock provider", () => {
 
 	beforeEach(() => {
 		mail = new Mock({ default: { from: "default@test.com", to: "default-to@test.com" } })
+	})
+
+	it("stays silent by default so test suites are not noisy", async () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => {})
+		await mail.send({ to: "a@test.com", subject: "Hi", body: "x" })
+		expect(log).not.toHaveBeenCalled()
+		log.mockRestore()
+	})
+
+	it("prints the message when log is on", async () => {
+		const quiet = vi.spyOn(console, "log").mockImplementation(() => {})
+		const logging = new Mock({ default: { from: "Sender <from@test.com>" }, log: true })
+		await logging.send({
+			to: "to@test.com",
+			cc: "cc@test.com",
+			subject: "Your sign-in link",
+			body: "<p>https://example.test/magic?token=abc&next=/</p>",
+		})
+
+		const output = quiet.mock.calls.at(-1)![0] as string
+		expect(output).toContain("Your sign-in link")
+		expect(output).toContain("Sender <from@test.com>")
+		expect(output).toContain("cc@test.com")
+		// The link is the payload: it must not be truncated or entity-mangled.
+		expect(output).toContain("https://example.test/magic?token=abc&next=/")
+		quiet.mockRestore()
 	})
 
 	it("records a sent message", async () => {
