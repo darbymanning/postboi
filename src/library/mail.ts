@@ -12,8 +12,9 @@ import { PostboiError } from "./index.js"
 // (see the LOADERS note below).
 import type Postboi from "./postboi_provider.js"
 import { find_provider } from "./registry.js"
-import { load_config } from "./config.js"
+import { load_config, type PostboiConfig } from "./config.js"
 import { ensure_env_loaded, env_defaults, is_development, read_env } from "./env.js"
+import { resolve_inbox } from "./inbox.js"
 
 type ProviderConstructor = new (options: Record<string, unknown>) => ProviderBase<unknown>
 
@@ -57,14 +58,47 @@ const LOADERS: Record<string, () => Promise<ProviderConstructor>> = {
 
 let warned_shadowed_from = false
 let warned_dev_fallback = false
+let announced_inbox = false
 
-/** Construct the provider named by `POSTBOI_PROVIDER` from environment variables. */
-async function resolve_provider(): Promise<ProviderBase<unknown>> {
+/**
+ * The local dev inbox standing in for whatever is configured, or null when none is
+ * listening. Deliberately outranks a fully-credentialled provider: a laptop shouldn't be
+ * able to mail a real customer by accident, which is the entire reason tools like Mailpit
+ * exist. Running the inbox is the opt-in; `dev: { inbox: false }` or `POSTBOI_INBOX=off`
+ * is the way back out.
+ */
+async function resolve_dev_inbox(config: PostboiConfig): Promise<ProviderBase<unknown> | null> {
+	if (!is_development() || config.dev?.inbox === false) return null
+	const inbox = await resolve_inbox()
+	if (!inbox) return null
+	if (!announced_inbox) {
+		announced_inbox = true
+		console.log(`postboi: capturing mail in the dev inbox — read it at ${inbox.url}`)
+	}
+	const Mock = await import("./mock.js").then((m) => m.default)
+	return new Mock({ sink: inbox.deliver, default: env_defaults() })
+}
+
+/**
+ * Construct the provider named by `POSTBOI_PROVIDER` from environment variables.
+ *
+ * `intercept` is set on the send path only. The `mail.lists` / `mail.contacts` namespaces
+ * resolve without it, so managing an audience in dev still talks to the real API — it's
+ * sending that we stand in front of, not everything the token can do.
+ */
+async function resolve_provider({ intercept = false } = {}): Promise<ProviderBase<unknown>> {
 	// Load global config (postboi.config.ts / package.json) first, so hooks and the
 	// `provider` fallback are available; ProviderBase merges the rest at construction.
 	const config = await load_config()
 	// Make `.env` values visible in dev (SvelteKit etc. don't put them on process.env).
 	await ensure_env_loaded()
+
+	// Before any credential is looked at: with an inbox open, what's configured doesn't
+	// matter, and neither does a missing credential.
+	if (intercept) {
+		const inbox = await resolve_dev_inbox(config)
+		if (inbox) return inbox
+	}
 
 	// The classic trap: a leftover POSTBOI_FROM silently beats the committed config
 	// default. Say so once instead of sending from the wrong address in silence.
@@ -157,7 +191,7 @@ async function send_mail(
 	options: SendOptions | BatchOptions | Array<SendOptions>,
 	batch: { concurrency?: number } = {}
 ): Promise<unknown> {
-	const provider = await resolve_provider()
+	const provider = await resolve_provider({ intercept: true })
 	if (Array.isArray(options)) return provider.send(options, batch)
 	return provider.send(options as SendOptions)
 }
@@ -175,7 +209,9 @@ async function send_mail(
  * ```
  */
 export async function cancel(id: string): Promise<CancelResponse> {
-	const provider = await resolve_provider()
+	// Interception included: with the inbox open the id came from the mock, so the real
+	// provider has never heard of it.
+	const provider = await resolve_provider({ intercept: true })
 	return provider.cancel(id)
 }
 

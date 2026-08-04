@@ -40,6 +40,9 @@ describe("package exports", () => {
 			"mail.ts",
 			"captcha.ts", // spam protection, reached via the root export
 			"register.ts", // generated-types placeholder, reached via the root export
+			"inbox.ts", // dev inbox discovery, reached via mail.ts (and patched by postboi/vite)
+			"inbox_server.ts", // dev inbox HTTP surface, mounted by postboi/vite and the CLI
+			"inbox_ui.ts", // the dev inbox document, served by inbox_server.ts
 		])
 		const providers = readdirSync(`${root}src/library`).filter(
 			(f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !internal.has(f)

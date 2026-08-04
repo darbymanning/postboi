@@ -36,6 +36,12 @@ type Options = CommonProviderOptions & {
 	 * point is seeing the mail you would have sent (a magic link, a confirmation code).
 	 */
 	log?: boolean
+	/**
+	 * Hand each captured message somewhere it can be read — the local dev inbox, in
+	 * practice. Returning false means it didn't arrive, and the message is printed instead,
+	 * so a stopped inbox degrades to the console rather than swallowing the mail.
+	 */
+	sink?: (message: SentMessage) => boolean | Promise<boolean>
 }
 
 type SendResponse = { id: string; message: SentMessage }
@@ -91,6 +97,7 @@ export default class Mock extends ProviderBase<SendResponse> {
 	protected override readonly captcha_mode = "none" as const
 	#fail: boolean
 	#log: boolean
+	#sink?: (message: SentMessage) => boolean | Promise<boolean>
 	#counter = 0
 
 	/** Every message captured by this instance, in send order. */
@@ -99,10 +106,11 @@ export default class Mock extends ProviderBase<SendResponse> {
 	/** Ids passed to `cancel`, in call order. */
 	readonly canceled: Array<string> = []
 
-	constructor({ fail, log, ...options }: Options = {}) {
+	constructor({ fail, log, sink, ...options }: Options = {}) {
 		super(options)
 		this.#fail = fail ?? false
 		this.#log = log ?? false
+		this.#sink = sink
 	}
 
 	/** The most recently captured message, or undefined if nothing has been sent. */
@@ -163,7 +171,10 @@ export default class Mock extends ProviderBase<SendResponse> {
 			}
 
 			this.sent.push(captured)
-			if (this.#log) log_message(captured)
+			// The console is the fallback, not a duplicate: printing as well as delivering
+			// would put the whole body in the terminal on every send with the inbox open.
+			const delivered = this.#sink ? await this.#sink(captured) : false
+			if (this.#log || (this.#sink && !delivered)) log_message(captured)
 			return { id: `mock-${++this.#counter}`, message: captured }
 		})
 	}

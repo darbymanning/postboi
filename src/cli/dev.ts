@@ -1,0 +1,90 @@
+import { createServer } from "node:http"
+import { mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import process, { cwd, pid } from "node:process"
+import { INBOX_DISCOVERY, INBOX_PATH } from "../library/inbox.js"
+import { create_inbox_store, inbox_middleware } from "../library/inbox_server.js"
+
+/**
+ * `postboi dev` — the dev inbox as a standalone server.
+ *
+ * The `postboi/vite` plugin already serves this inside the dev server for anything built on
+ * Vite (SvelteKit, Astro, Nuxt, Remix), and that's the better experience: no second command,
+ * no second port. This is for everything else — Express, Hono, Next.js, bare `wrangler dev`
+ * — where there's no Vite to hang it off.
+ */
+
+/** Where the inbox listens by default. Shared with maildev/MailCatcher, and rarely taken. */
+const DEFAULT_PORT = 1080
+
+/** Listen, stepping up a port at a time when one's already taken. */
+function listen(
+	server: ReturnType<typeof createServer>,
+	port: number,
+	attempts = 10
+): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const on_error = (error: NodeJS.ErrnoException) => {
+			if (error.code !== "EADDRINUSE" || attempts <= 0) return reject(error)
+			server.removeListener("error", on_error)
+			listen(server, port + 1, attempts - 1).then(resolve, reject)
+		}
+		server.once("error", on_error)
+		server.listen(port, "127.0.0.1", () => {
+			server.removeListener("error", on_error)
+			resolve(port)
+		})
+	})
+}
+
+/**
+ * Start the inbox and advertise its port, so a `mail()` in another process finds it with
+ * nothing configured. Runs until interrupted.
+ */
+export async function dev_command(args: Array<string>): Promise<void> {
+	const flag = args.indexOf("--port")
+	const requested = flag === -1 ? DEFAULT_PORT : Number(args[flag + 1])
+	if (!Number.isInteger(requested) || requested < 1 || requested > 65535) {
+		throw new Error(`Invalid --port "${args[flag + 1]}".`)
+	}
+
+	const store = create_inbox_store()
+	const middleware = inbox_middleware(store)
+	const server = createServer((request, response) => {
+		middleware(request, response, () => {
+			response.statusCode = 404
+			response.end("Not found")
+		})
+	})
+
+	const port = await listen(server, requested)
+	const file = join(cwd(), INBOX_DISCOVERY)
+	try {
+		mkdirSync(dirname(file), { recursive: true })
+		writeFileSync(file, JSON.stringify({ port, pid }))
+	} catch {
+		// No node_modules yet, or a read-only checkout. The inbox still works — it just has to
+		// be pointed at by hand, which the notice below covers.
+	}
+
+	const cleanup = () => {
+		try {
+			rmSync(file, { force: true })
+		} catch {
+			// A leftover file costs one failed POST, which falls back to printing the mail.
+		}
+	}
+	process.once("exit", cleanup)
+	for (const signal of ["SIGINT", "SIGTERM"] as const) {
+		process.once(signal, () => {
+			cleanup()
+			server.close(() => process.exit(0))
+		})
+	}
+
+	const url = `http://localhost:${port}${INBOX_PATH}`
+	console.log(`\n  Postboi dev inbox: ${url}`)
+	console.log(`  Mail from this project is captured here instead of being sent.`)
+	console.log(`  In another runtime or directory, set POSTBOI_INBOX=${port}.\n`)
+	console.log(`  Press Ctrl+C to stop.`)
+}

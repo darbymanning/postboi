@@ -59,6 +59,7 @@ import {
 } from "./typegen.js"
 import { offer_skill, refresh_skill } from "./skill.js"
 import { api_command } from "./api.js"
+import { dev_command } from "./dev.js"
 import { ensure_env_loaded, read_env } from "../library/env.js"
 
 const CONFIG_FILES = [
@@ -87,6 +88,8 @@ ${dim(`  v${version()}`)}
 ${bold("Usage")}
   ${cyan("bunx postboi init")}     Set up the Postboi provider or a provider of your own
   ${cyan("bunx postboi sync")}     Refresh the generated from types from your Postboi domains
+  ${cyan("bunx postboi dev")}      Local inbox for mail sent in development ${dim("· --port <n>")}
+  ${dim("                          (Vite projects already serve it at /__postboi)")}
 
 ${bold("Account")} ${dim("(Postboi provider — full reference: https://api.postboi.email)")}
   ${cyan("bunx postboi whoami")}          The account behind your token
@@ -793,6 +796,7 @@ async function main(): Promise<void> {
 	if (command === "-V" || command === "--version") return console.log(version())
 	if (command === "init") return init()
 	if (command === "sync") return sync()
+	if (command === "dev") return dev_command(argv.slice(3))
 	if (command && (await api_command(command, argv.slice(3)))) return
 	help()
 	if (command && command !== "-h" && command !== "--help") {
