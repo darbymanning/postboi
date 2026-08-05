@@ -95,6 +95,15 @@ describe("inbox middleware", () => {
 		expect(await response.text()).toContain("You've Got")
 	})
 
+	it("ships the CRT on, and a way to turn it off", async () => {
+		const html = await (await fetch(`http://127.0.0.1:${inbox.port}${INBOX_PATH}`)).text()
+		// Scanlines over a message you're checking the design of are the opposite of useful,
+		// so the toggle is not optional decoration — it's what keeps the inbox usable.
+		expect(html).toContain('<html lang="en" class="crt">')
+		expect(html).toContain('id="crt-toggle"')
+		expect(html).toContain("prefers-reduced-motion")
+	})
+
 	it("accepts, lists and clears messages", async () => {
 		const posted = await fetch(`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/messages`, {
 			method: "POST",

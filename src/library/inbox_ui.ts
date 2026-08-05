@@ -7,11 +7,87 @@
 const CSS = `
 * { box-sizing: border-box }
 body {
-	margin: 0; padding: 12px; height: 100vh; overflow: hidden;
-	background: #008080;
+	margin: 0; padding: 0; height: 100vh; overflow: hidden;
+	background: #0a0b0c;
 	font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif;
 	color: #000;
 	-webkit-font-smoothing: none;
+}
+
+/*
+ * The CRT. Everything below is decoration over a normal DOM — no canvas, no shader, because
+ * the message preview is an iframe and you can't put an iframe through a fragment shader.
+ * All of it hangs off .crt on <html> so the toolbar toggle is one class away.
+ */
+#bezel {
+	height: 100vh; padding: 18px;
+	background: radial-gradient(120% 90% at 50% 0%, #23262a, #101113 60%, #0a0b0c);
+}
+.crt #bezel {
+	padding: 26px;
+	background:
+		radial-gradient(120% 90% at 50% 0%, #2a2d31, #141517 55%, #0a0b0c),
+		#0a0b0c;
+}
+#screen {
+	position: relative; height: 100%; overflow: hidden;
+	background: #008080;
+	padding: 12px;
+}
+/* Curvature is faked: a rounded, inset-lit tube plus the vignette below. Real barrel
+   distortion would need a shader, and would bend the mail you're trying to read. */
+.crt #screen {
+	border-radius: 26px / 38px;
+	box-shadow:
+		0 0 0 2px #000,
+		0 0 0 12px #17191c,
+		0 0 0 13px #34383d,
+		inset 0 0 30px rgba(0, 0, 0, .5),
+		inset 0 0 90px rgba(0, 0, 0, .35),
+		/* Light spilling onto the bezel is what reads as "emitting", more than any overlay. */
+		0 0 60px 6px rgba(0, 210, 200, .30),
+		0 0 160px 40px rgba(0, 150, 160, .20),
+		0 26px 80px rgba(0, 0, 0, .85);
+}
+/* Bloom + a touch of chromatic fringing, the two things shader.se actually does. */
+.crt #window { filter: contrast(1.12) saturate(1.2) brightness(1.06) }
+.crt #title, .crt #gotmail .shout, .crt #count { text-shadow: .4px 0 rgba(255,0,60,.45), -.4px 0 rgba(0,190,255,.45), 0 0 6px rgba(180,220,255,.28) }
+
+#crt { display: none }
+.crt #crt {
+	display: block; position: absolute; inset: 0; z-index: 90; pointer-events: none;
+	border-radius: 22px / 32px;
+}
+/* Scanlines (3px pitch) and the aperture-grille mask, in one layer each. */
+.crt #crt::before {
+	content: ""; position: absolute; inset: 0;
+	background:
+		repeating-linear-gradient(0deg, rgba(0,0,0,.26) 0 1.5px, rgba(0,0,0,0) 1.5px 3px),
+		/* Kept faint: at the .05 it wants to be, the mask greys the whole picture out. */
+		repeating-linear-gradient(90deg, rgba(255,0,0,.03) 0 1px, rgba(0,255,0,.03) 1px 2px, rgba(0,0,255,.03) 2px 3px);
+	animation: flicker 6.5s steps(1) infinite;
+}
+/* Vignette, plus the glass highlight that sells the curve more than the radius does. */
+.crt #crt::after {
+	content: ""; position: absolute; inset: 0;
+	background:
+		/* Corner falloff does the work curvature can't: an ellipse tighter than the box, so
+		   the four corners darken hardest — the shape a tube actually has. */
+		radial-gradient(ellipse 78% 76% at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,.34) 80%, rgba(0,0,0,.85) 100%),
+		linear-gradient(198deg, rgba(255,255,255,.13) 0%, rgba(255,255,255,.03) 20%, rgba(255,255,255,0) 38%);
+}
+/* The slow vertical roll of a tube slightly out of sync. */
+.crt #roll {
+	position: absolute; left: 0; right: 0; height: 34%; z-index: 91; pointer-events: none;
+	background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.035) 50%, rgba(255,255,255,0) 100%);
+	animation: roll 7s linear infinite;
+}
+@keyframes flicker { 0%, 97% { opacity: 1 } 98% { opacity: .86 } 99% { opacity: 1 } 100% { opacity: .93 } }
+@keyframes roll { 0% { top: -34% } 100% { top: 100% } }
+/* Motion is the part that makes people ill; the static texture is harmless, so keep it. */
+@media (prefers-reduced-motion: reduce) {
+	.crt #crt::before { animation: none }
+	.crt #roll { display: none }
 }
 /* Win95 bevels: light source top-left, two tones each way. */
 .raised { border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff }
@@ -262,6 +338,22 @@ document.getElementById("clear").onclick = function () {
 	})
 }
 
+/*
+ * The tube is on by default, but scanlines over a message you're checking the design of are
+ * the opposite of useful — so it's one click off, and the choice sticks.
+ */
+var crt_toggle = document.getElementById("crt-toggle")
+function apply_crt(on) {
+	document.documentElement.className = on ? "crt" : ""
+	crt_toggle.style.fontWeight = on ? "bold" : "normal"
+}
+apply_crt(localStorage.getItem("postboi:crt") !== "off")
+crt_toggle.onclick = function () {
+	var on = document.documentElement.className !== "crt"
+	localStorage.setItem("postboi:crt", on ? "on" : "off")
+	apply_crt(on)
+}
+
 new EventSource(api + "/events").onmessage = function () { load() }
 load()
 `
@@ -269,7 +361,7 @@ load()
 /** The inbox document. Built per request — it's a dev server, and a string is cheap. */
 export function inbox_ui(): string {
 	return `<!doctype html>
-<html lang="en">
+<html lang="en" class="crt">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -277,6 +369,8 @@ export function inbox_ui(): string {
 <style>${CSS}</style>
 </head>
 <body>
+<div id="bezel">
+<div id="screen">
 <div id="window" class="raised">
 	<div id="title">
 		<span>&#9993;</span>
@@ -289,6 +383,7 @@ export function inbox_ui(): string {
 		<button class="tb" id="refresh"><span class="ico">&#128229;</span>Read</button>
 		<button class="tb" id="markall"><span class="ico">&#9993;</span>Mark Read</button>
 		<button class="tb" id="clear"><span class="ico">&#128465;</span>Delete All</button>
+		<button class="tb" id="crt-toggle"><span class="ico">&#128250;</span>CRT</button>
 		<span class="spacer"></span>
 		<span id="count"></span>
 	</div>
@@ -332,6 +427,10 @@ export function inbox_ui(): string {
 		<div class="grow" id="stat">Waiting for mail&#8230;</div>
 		<div>Postboi dev inbox</div>
 	</div>
+</div>
+<div id="roll"></div>
+<div id="crt"></div>
+</div>
 </div>
 <script>${SCRIPT}</script>
 </body>

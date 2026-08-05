@@ -127,6 +127,18 @@ you expected, this is where you find out.
 
 Messages live in memory for the life of the dev server. Restarting it empties the inbox.
 
+### The CRT
+
+The whole thing renders inside a cathode-ray tube — scanlines, an aperture-grille mask,
+corner falloff, a glass highlight and phosphor glow spilling onto the bezel. It's CSS over
+the normal DOM rather than a shader, because the message preview is an iframe and an iframe
+can't go through one.
+
+Scanlines across an email you're checking the design of are the opposite of useful, so the
+**CRT** button in the toolbar turns it off, and the choice is remembered. Flicker and the
+rolling band also respect `prefers-reduced-motion`; the static texture stays, since it's
+the movement that makes people queasy.
+
 ## Tests still use the mock
 
 The inbox is for reading mail with your eyes. In tests, keep using
