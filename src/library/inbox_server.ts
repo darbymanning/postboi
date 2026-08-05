@@ -1,7 +1,8 @@
 import type { SentMessage } from "./mock.js"
 import type { InboxMessage } from "./inbox.js"
 import { INBOX_PATH } from "./inbox.js"
-import { inbox_ui } from "./inbox_ui.js"
+import { inbox_ui, type InboxUiOptions } from "./inbox_ui.js"
+import { SOUNDS } from "./inbox_sounds.js"
 
 /**
  * The dev inbox's storage and HTTP surface. Kept apart from the transport that mounts it:
@@ -131,7 +132,11 @@ function body_document(message: InboxMessage): string {
  * The inbox's HTTP surface, mounted under {@link INBOX_PATH}. Requests for anything else
  * fall through to `next()`, so this is safe to stack in front of an app's own routes.
  */
-export function inbox_middleware(store: InboxStore, base: string = INBOX_PATH): InboxMiddleware {
+export function inbox_middleware(
+	store: InboxStore,
+	base: string = INBOX_PATH,
+	ui: InboxUiOptions = {}
+): InboxMiddleware {
 	return (request, response, next) => {
 		const url = request.url ?? ""
 		const path = url.split("?")[0].replace(/\/+$/, "") || "/"
@@ -143,7 +148,18 @@ export function inbox_middleware(store: InboxStore, base: string = INBOX_PATH): 
 			response.statusCode = 200
 			response.setHeader("content-type", "text/html; charset=utf-8")
 			response.setHeader("cache-control", "no-store")
-			return void response.end(inbox_ui())
+			return void response.end(inbox_ui(ui))
+		}
+
+		const sound_match = /^\/api\/sounds\/([a-z]+)$/.exec(route)
+		if (sound_match && method === "GET") {
+			const wav = SOUNDS[sound_match[1]]
+			if (!wav) return void send_json(response, 404, { error: "no such sound" })
+			response.statusCode = 200
+			response.setHeader("content-type", "audio/wav")
+			// The bytes never change for a given build, so let the browser keep them.
+			response.setHeader("cache-control", "max-age=86400")
+			return void response.end(Buffer.from(wav, "base64"))
 		}
 
 		if (route === "/api/messages" && method === "POST") {

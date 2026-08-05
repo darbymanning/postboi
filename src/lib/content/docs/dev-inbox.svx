@@ -144,6 +144,31 @@ Scanlines across an email you're checking the design of are the opposite of usef
 the rolling band also respect `prefers-reduced-motion`; the static texture stays, since it's
 the movement that makes people queasy.
 
+### Sound
+
+New mail announces itself, and there's a greeting on load and a sign-off on Shut Down — the
+real 1990s ones. The **Sound** button in the toolbar mutes it, and the choice is remembered,
+because a dev tool that says "Welcome!" in an open-plan office is a dev tool people
+uninstall. Browsers won't play anything until you've clicked the page once, so the first
+greeting usually waits for you.
+
+### Configuring the defaults
+
+Both the CRT and the sound can start off, for everyone on the project:
+
+```ts
+// vite.config.ts
+postboi({ inbox: { crt: false, sounds: false } })
+```
+
+```bash
+bunx postboi dev --no-crt --no-sound
+```
+
+These set what the page *starts* with. The toolbar toggles still work, and a viewer's own
+choice is remembered and wins — so muting the project doesn't stop anyone turning it back on
+for themselves. `inbox: false` disables the whole thing.
+
 ### Yes, there's a Start menu
 
 Press the **Windows key** (**Cmd** on macOS) and Windows 98's Start menu opens, with Check

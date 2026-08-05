@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { createServer, type Server } from "node:http"
 import { create_inbox_store, inbox_middleware } from "./inbox_server.js"
 import { resolve_inbox, set_inbox_port, INBOX_PATH } from "./inbox.js"
+import { inbox_ui } from "./inbox_ui.js"
 import Mock from "./mock.js"
 
 /** Stand the inbox up on a real port, so the delivery path is exercised end to end. */
@@ -95,13 +96,42 @@ describe("inbox middleware", () => {
 		expect(await response.text()).toContain("You've Got")
 	})
 
-	it("ships the CRT on, and a way to turn it off", async () => {
+	it("ships the CRT and sound on, and a way to turn each off", async () => {
 		const html = await (await fetch(`http://127.0.0.1:${inbox.port}${INBOX_PATH}`)).text()
-		// Scanlines over a message you're checking the design of are the opposite of useful,
-		// so the toggle is not optional decoration — it's what keeps the inbox usable.
-		expect(html).toContain('<html lang="en" class="crt">')
+		// Scanlines over a message you're checking the design of — and a "Welcome!" in a
+		// shared office — are the opposite of useful, so the toggles are not decoration.
+		expect(html).toContain('class="crt"')
+		expect(html).toContain('data-sounds="on"')
 		expect(html).toContain('id="t-crt"')
+		expect(html).toContain('id="t-sound"')
 		expect(html).toContain("prefers-reduced-motion")
+	})
+
+	it("starts with either turned off when the server says so", async () => {
+		const store = create_inbox_store()
+		const html = inbox_ui({ crt: false, sounds: false })
+		expect(html).not.toContain('class="crt"')
+		expect(html).toContain('data-sounds="off"')
+		// The controls stay — the option sets the starting state, it doesn't remove the toggle.
+		expect(html).toContain('id="t-crt"')
+		expect(store.list()).toHaveLength(0)
+	})
+
+	it("serves each sound as playable audio", async () => {
+		for (const name of ["welcome", "mail", "goodbye"]) {
+			const response = await fetch(`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/sounds/${name}`)
+			expect(response.status, name).toBe(200)
+			expect(response.headers.get("content-type")).toBe("audio/wav")
+			const bytes = new Uint8Array(await response.arrayBuffer())
+			// Decoded back to real RIFF/WAVE, not left as base64 text.
+			expect(String.fromCharCode(...bytes.slice(0, 4)), name).toBe("RIFF")
+			expect(String.fromCharCode(...bytes.slice(8, 12)), name).toBe("WAVE")
+		}
+	})
+
+	it("404s a sound that doesn't exist", async () => {
+		const response = await fetch(`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/sounds/nope`)
+		expect(response.status).toBe(404)
 	})
 
 	it("accepts, lists and clears messages", async () => {

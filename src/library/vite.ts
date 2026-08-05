@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { INBOX_DISCOVERY, INBOX_PATH } from "./inbox.js"
 import { create_inbox_store, inbox_middleware, type InboxMiddleware } from "./inbox_server.js"
+import type { InboxUiOptions } from "./inbox_ui.js"
 
 /**
  * The slice of Vite's dev server this uses. See {@link VitePlugin} for why it's structural.
@@ -40,9 +41,16 @@ export interface PluginOptions {
 	config?: string | false
 	/**
 	 * Serve the local dev inbox at `/__postboi` and capture mail into it instead of sending.
-	 * On by default; `false` leaves the dev server alone and sends for real.
+	 * On by default; `false` leaves the dev server alone and sends for real. An object turns
+	 * it on and sets what the page starts with — both remain toggleable in the UI, where the
+	 * viewer's choice is remembered and wins.
+	 *
+	 * @example
+	 * ```ts
+	 * postboi({ inbox: { crt: false, sounds: false } })
+	 * ```
 	 */
-	inbox?: boolean
+	inbox?: boolean | InboxUiOptions
 }
 
 const CONFIG_FILES = [
@@ -139,7 +147,8 @@ export function postboi(options: PluginOptions = {}): VitePlugin {
 		configureServer(server) {
 			if (options.inbox === false) return
 			const store = create_inbox_store()
-			server.middlewares.use(inbox_middleware(store))
+			const ui = typeof options.inbox === "object" ? options.inbox : {}
+			server.middlewares.use(inbox_middleware(store, INBOX_PATH, ui))
 
 			const http = server.httpServer
 			// Middleware mode (a custom Express/Hono dev server) owns its own listener, so

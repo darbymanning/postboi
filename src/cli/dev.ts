@@ -101,7 +101,11 @@ export async function dev_command(args: Array<string>): Promise<void> {
 	// Sample mail, so the inbox has something in it without an app wired up — and so a
 	// restart (`bun --watch`, editing the UI) doesn't leave you staring at an empty mailbox.
 	if (args.includes("--demo")) for (const message of demo_messages()) store.add(message)
-	const middleware = inbox_middleware(store)
+	// Both stay toggleable in the UI; these only set what the page starts with.
+	const middleware = inbox_middleware(store, INBOX_PATH, {
+		crt: !args.includes("--no-crt"),
+		sounds: !args.includes("--no-sound") && !args.includes("--no-sounds"),
+	})
 	const server = createServer((request, response) => {
 		middleware(request, response, () => {
 			response.statusCode = 404

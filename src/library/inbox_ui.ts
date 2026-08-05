@@ -416,32 +416,38 @@ function load() {
 	return fetch(api + "/messages").then(function (r) { return r.json() }).then(function (data) {
 		messages = data.messages || []
 		if (current) current = messages.filter(function (m) { return m.id === current.id })[0] || null
-		if (messages.length > seen && seen > 0) chime()
+		if (messages.length > seen && seen > 0) play("mail")
 		seen = messages.length
 		render_list()
 		render_reader()
 	})
 }
 
-/** The modem-era two-tone, near enough. No audio file to ship. */
-function chime() {
-	try {
-		var ctx = new (window.AudioContext || window.webkitAudioContext)()
-		;[0, 0.18].forEach(function (at, i) {
-			var osc = ctx.createOscillator()
-			var gain = ctx.createGain()
-			osc.type = "sine"
-			osc.frequency.value = i ? 1046 : 784
-			gain.gain.setValueAtTime(0.0001, ctx.currentTime + at)
-			gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + at + 0.02)
-			gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + 0.16)
-			osc.connect(gain).connect(ctx.destination)
-			osc.start(ctx.currentTime + at)
-			osc.stop(ctx.currentTime + at + 0.18)
-		})
-	} catch (e) {
-		// No audio permission yet (nobody has clicked). Silence is fine.
-	}
+/*
+ * The voice. Muted state is remembered, and defaults to whatever the server was configured
+ * with — a shared machine or a pairing session is exactly where an unexpected "Welcome!"
+ * is least welcome.
+ */
+var muted = localStorage.getItem("postboi:sound")
+	? localStorage.getItem("postboi:sound") === "off"
+	: document.documentElement.dataset.sounds === "off"
+
+function play(name) {
+	if (muted) return
+	var audio = new Audio(api + "/sounds/" + name)
+	audio.volume = 0.7
+	// Browsers refuse audio until the page has been interacted with. That's a promise
+	// rejection, not an error worth surfacing — the next one will play.
+	var played = audio.play()
+	if (played && played.catch) played.catch(function () {})
+}
+
+function apply_mute(on) {
+	muted = on
+	var button = $("t-sound")
+	button.className = on ? "tb" : "tb on"
+	button.firstChild.textContent = on ? "\\u{1F507}" : "\\u{1F50A}"
+	button.lastChild.nodeValue = on ? "Muted" : "Sound"
 }
 
 /* ---- Toolbar and action wiring ---- */
@@ -522,20 +528,36 @@ $("m-refresh").onclick = function () { load(); set_menu(false) }
 $("m-docs").onclick = function () { window.open("https://docs.postboi.email/dev-inbox", "_blank"); set_menu(false) }
 $("m-shutdown").onclick = function () {
 	set_menu(false)
+	play("goodbye")
 	$("shutdown").className = "open"
+}
+
+apply_mute(muted)
+$("t-sound").onclick = function () {
+	localStorage.setItem("postboi:sound", muted ? "on" : "off")
+	apply_mute(!muted)
+	if (!muted) play("welcome")
 }
 $("shutdown").onclick = function () { $("shutdown").className = "" }
 
 clock()
 setInterval(clock, 10000)
 new EventSource(api + "/events").onmessage = function () { load() }
-load()
+load().then(function () { play("welcome") })
 `
 
+/** How the page starts out. Both are still toggleable in the UI, and the choice sticks. */
+export interface InboxUiOptions {
+	/** Start with the CRT treatment on. Defaults to true. */
+	crt?: boolean
+	/** Start with sounds on. Defaults to true. */
+	sounds?: boolean
+}
+
 /** The inbox document. Built per request — it's a dev server, and a string is cheap. */
-export function inbox_ui(): string {
+export function inbox_ui({ crt = true, sounds = true }: InboxUiOptions = {}): string {
 	return `<!doctype html>
-<html lang="en" class="crt">
+<html lang="en"${crt ? ' class="crt"' : ""} data-sounds="${sounds ? "on" : "off"}"
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -577,6 +599,7 @@ export function inbox_ui(): string {
 			</div>
 			<div class="band b2">
 				<button class="tb" id="t-crt"><span class="ico">&#128250;</span>CRT</button>
+				<button class="tb" id="t-sound"><span class="ico">&#128266;</span>Sound</button>
 			</div>
 			<!-- Set dressing: the bar looked wrong without them, and they do nothing on purpose. -->
 			<div class="band b3">
