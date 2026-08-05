@@ -99,6 +99,146 @@ function send_json(response: InboxResponse, status: number, body: unknown): void
 	response.end(text)
 }
 
+/** FNV-1a over the encoded bytes. Cheap, and only ever computed once per asset. */
+const etags = new Map<string, string>()
+function etag_for(data: string): string {
+	const cached = etags.get(data)
+	if (cached) return cached
+	let hash = 0x811c9dc5
+	for (let i = 0; i < data.length; i++) {
+		hash ^= data.charCodeAt(i)
+		hash = Math.imul(hash, 0x01000193) >>> 0
+	}
+	const tag = `"${data.length.toString(36)}-${hash.toString(36)}"`
+	etags.set(data, tag)
+	return tag
+}
+
+/**
+ * Serve a baked-in binary — artwork, a sound, a piece of the desktop.
+ *
+ * Revalidated rather than simply cached for a day. These live at fixed paths but their bytes
+ * change whenever the package does, so a plain `max-age` leaves a browser showing last
+ * week's artwork against this week's UI with no way to know it. The tag means a repeat
+ * visit costs one 304 and the bytes still come from disk.
+ *
+ * Ranges are answered because video elements ask for them, and some browsers refuse a source
+ * that replies to a range request with the whole body.
+ */
+function send_asset(
+	request: InboxRequest,
+	response: InboxResponse,
+	type: string,
+	data: string
+): void {
+	send_bytes(request, response, type, Buffer.from(data, "base64"), etag_for(data))
+}
+
+function send_bytes(
+	request: InboxRequest,
+	response: InboxResponse,
+	type: string,
+	bytes: Buffer,
+	tag: string
+): void {
+	response.setHeader("content-type", type)
+	response.setHeader("cache-control", "no-cache")
+	response.setHeader("etag", tag)
+	response.setHeader("accept-ranges", "bytes")
+	const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers?.range ?? ""))
+	if (!range && String(request.headers?.["if-none-match"] ?? "") === tag) {
+		response.statusCode = 304
+		return void response.end()
+	}
+	if (range && (range[1] !== "" || range[2] !== "")) {
+		const start = range[1] === "" ? bytes.length - Number(range[2]) : Number(range[1])
+		const end = range[1] === "" || range[2] === "" ? bytes.length - 1 : Number(range[2])
+		if (start < 0 || start > end || end >= bytes.length) {
+			response.statusCode = 416
+			response.setHeader("content-range", `bytes */${bytes.length}`)
+			return void response.end()
+		}
+		response.statusCode = 206
+		response.setHeader("content-range", `bytes ${start}-${end}/${bytes.length}`)
+		return void response.end(bytes.subarray(start, end + 1))
+	}
+	response.statusCode = 200
+	response.end(bytes)
+}
+
+/**
+ * The desktop clip, which is streamed rather than shipped.
+ *
+ * An encode small enough to publish inside the package looked like a photograph put through a
+ * fax machine, so the clip lives on Mux and this fetches it once per server. Mux serves it as
+ * HLS with no plain-MP4 rendition, but the segments are CMAF — an init segment followed by
+ * media segments — and a fragmented MP4 is exactly what you get by laying those end to end.
+ * So the stitching happens here and the browser is handed an ordinary MP4, which means no
+ * player library, no media-source plumbing, and it works in whatever you have open.
+ *
+ * The manifest is re-read every time because the segment URLs it points at are signed and
+ * expire; only the stitched result is kept.
+ */
+const MUX_PLAYBACK_ID = "F65OquEDg7w5qO5EwhQoPR9Y4FRRC2d7mg6yJRi3jgc"
+
+let clip: Promise<Buffer | null> | undefined
+
+/**
+ * The best rendition's URL from a master playlist: widest, and among equals the fattest.
+ * Mux publishes two at the source resolution and the choice between them is quality, which
+ * is the whole reason the clip is coming over the wire instead of out of the package.
+ */
+export function best_rendition(manifest: string): string | undefined {
+	const lines = manifest.split("\n").map((line) => line.trim())
+	let best: { width: number; bandwidth: number; url: string } | undefined
+	for (let i = 0; i < lines.length; i++) {
+		if (!lines[i].startsWith("#EXT-X-STREAM-INF")) continue
+		const width = Number(/RESOLUTION=(\d+)x/.exec(lines[i])?.[1] ?? 0)
+		const bandwidth = Number(/[^-]BANDWIDTH=(\d+)/.exec(lines[i])?.[1] ?? 0)
+		const url = lines.slice(i + 1).find((line) => line && !line.startsWith("#"))
+		if (!url) continue
+		const better =
+			!best || width > best.width || (width === best.width && bandwidth > best.bandwidth)
+		if (better) best = { width, bandwidth, url }
+	}
+	return best?.url
+}
+
+async function fetch_clip(): Promise<Buffer | null> {
+	if (clip) return clip
+	clip = (async () => {
+		const master = await fetch(`https://stream.mux.com/${MUX_PLAYBACK_ID}.m3u8`)
+		if (!master.ok) throw new Error(`mux: ${master.status}`)
+		const rendition = best_rendition(await master.text())
+		if (!rendition) throw new Error("mux: no rendition")
+
+		const media = await fetch(rendition)
+		if (!media.ok) throw new Error(`mux: ${media.status}`)
+		const playlist = await media.text()
+		const init = /#EXT-X-MAP:URI="([^"]+)"/.exec(playlist)?.[1]
+		if (!init) throw new Error("mux: not fragmented mp4")
+		const segments = playlist
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.startsWith("http"))
+
+		// In order, because the concatenation is the file.
+		const parts: Array<Buffer> = []
+		for (const url of [init, ...segments]) {
+			const part = await fetch(url)
+			if (!part.ok) throw new Error(`mux: ${part.status}`)
+			parts.push(Buffer.from(await part.arrayBuffer()))
+		}
+		return Buffer.concat(parts)
+	})().catch(() => {
+		// Offline, or Mux having a bad day. The wallpaper is the same opening frame, so the
+		// desktop looks right either way — and a retry costs one manifest read.
+		clip = undefined
+		return null
+	})
+	return clip
+}
+
 /** Collect a request body. Capped — an attachment-heavy send is still only a few MB. */
 function read_body(request: InboxRequest, limit = 32 * 1024 * 1024): Promise<string> {
 	return new Promise((resolve, reject) => {
@@ -158,48 +298,30 @@ export function inbox_middleware(
 		if (art_match && method === "GET") {
 			const png = ART[art_match[1]]
 			if (!png) return void send_json(response, 404, { error: "no such art" })
-			response.statusCode = 200
-			response.setHeader("content-type", "image/png")
-			response.setHeader("cache-control", "max-age=86400")
-			return void response.end(Buffer.from(png, "base64"))
+			return void send_asset(request, response, "image/png", png)
+		}
+
+		if (route === "/api/desktop/blissy" && method === "GET") {
+			return void fetch_clip()
+				.then((bytes) => {
+					if (!bytes) return send_json(response, 503, { error: "clip unavailable" })
+					send_bytes(request, response, "video/mp4", bytes, `"clip-${bytes.length}"`)
+				})
+				.catch(() => send_json(response, 503, { error: "clip unavailable" }))
 		}
 
 		const desktop_match = /^\/api\/desktop\/([a-z]+)$/.exec(route)
 		if (desktop_match && method === "GET") {
 			const asset = DESKTOP[desktop_match[1]]
 			if (!asset) return void send_json(response, 404, { error: "no such desktop asset" })
-			const bytes = Buffer.from(asset.data, "base64")
-			response.setHeader("content-type", asset.type)
-			response.setHeader("cache-control", "max-age=86400")
-			// Video elements ask for ranges rather than the whole file, and some browsers refuse to
-			// play a source that answers a range request with the entire body.
-			response.setHeader("accept-ranges", "bytes")
-			const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers?.range ?? ""))
-			if (range && (range[1] !== "" || range[2] !== "")) {
-				const start = range[1] === "" ? bytes.length - Number(range[2]) : Number(range[1])
-				const end = range[1] === "" || range[2] === "" ? bytes.length - 1 : Number(range[2])
-				if (start < 0 || start > end || end >= bytes.length) {
-					response.statusCode = 416
-					response.setHeader("content-range", `bytes */${bytes.length}`)
-					return void response.end()
-				}
-				response.statusCode = 206
-				response.setHeader("content-range", `bytes ${start}-${end}/${bytes.length}`)
-				return void response.end(bytes.subarray(start, end + 1))
-			}
-			response.statusCode = 200
-			return void response.end(bytes)
+			return void send_asset(request, response, asset.type, asset.data)
 		}
 
 		const sound_match = /^\/api\/sounds\/([a-z]+)$/.exec(route)
 		if (sound_match && method === "GET") {
 			const sound = SOUNDS[sound_match[1]]
 			if (!sound) return void send_json(response, 404, { error: "no such sound" })
-			response.statusCode = 200
-			response.setHeader("content-type", sound.type)
-			// The bytes never change for a given build, so let the browser keep them.
-			response.setHeader("cache-control", "max-age=86400")
-			return void response.end(Buffer.from(sound.data, "base64"))
+			return void send_asset(request, response, sound.type, sound.data)
 		}
 
 		if (route === "/api/messages" && method === "POST") {

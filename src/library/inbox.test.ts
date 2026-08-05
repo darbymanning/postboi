@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { createServer, type Server } from "node:http"
-import { create_inbox_store, inbox_middleware } from "./inbox_server.js"
+import { create_inbox_store, inbox_middleware, best_rendition } from "./inbox_server.js"
 import { resolve_inbox, set_inbox_port, INBOX_PATH } from "./inbox.js"
 import { inbox_ui } from "./inbox_ui.js"
 import Mock from "./mock.js"
@@ -192,7 +192,6 @@ describe("inbox middleware", () => {
 	it("serves each desktop asset with its own type", async () => {
 		for (const [name, type] of [
 			["wallpaper", "image/jpeg"],
-			["blissy", "video/webm"],
 			["start", "image/png"],
 		]) {
 			const response = await fetch(
@@ -205,8 +204,29 @@ describe("inbox middleware", () => {
 		}
 	})
 
+	it("revalidates assets rather than pinning them for a day", async () => {
+		// These sit at fixed paths but their bytes change whenever the package does. Cached
+		// outright, an upgrade leaves last week's artwork on screen against this week's UI with
+		// no way for the browser to find out.
+		for (const path of ["/api/art/locating", "/api/sounds/welcome", "/api/desktop/start"]) {
+			const url = `http://127.0.0.1:${inbox.port}${INBOX_PATH}${path}`
+			const fresh = await fetch(url)
+			expect(fresh.headers.get("cache-control"), path).toBe("no-cache")
+			const tag = fresh.headers.get("etag")
+			expect(tag, path).toBeTruthy()
+			await fresh.arrayBuffer()
+
+			const again = await fetch(url, { headers: { "if-none-match": tag as string } })
+			expect(again.status, path).toBe(304)
+			// A tag from some earlier build has to come back with the new bytes.
+			const stale = await fetch(url, { headers: { "if-none-match": '"nope-nope"' } })
+			expect(stale.status, path).toBe(200)
+			expect((await stale.arrayBuffer()).byteLength, path).toBeGreaterThan(0)
+		}
+	})
+
 	it("answers a range request with just that range", async () => {
-		const url = `http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/desktop/blissy`
+		const url = `http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/desktop/wallpaper`
 		const whole = new Uint8Array(await (await fetch(url)).arrayBuffer())
 		// A video element asks for ranges rather than the whole file, and some browsers refuse a
 		// source that answers with the entire body.
@@ -216,6 +236,24 @@ describe("inbox middleware", () => {
 		expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual(
 			Array.from(whole.slice(10, 20))
 		)
+	})
+
+	it("picks the widest, best rendition out of a master playlist", () => {
+		// Mux publishes two at the source resolution, and which of those you take is the whole
+		// difference between a sharp clip and the mush that made it worth streaming.
+		const manifest = [
+			"#EXTM3U",
+			"#EXT-X-STREAM-INF:BANDWIDTH=3241700,RESOLUTION=1094x720",
+			"https://example.test/720.m3u8",
+			"#EXT-X-STREAM-INF:BANDWIDTH=3721300,RESOLUTION=1168x768",
+			"https://example.test/768-thin.m3u8",
+			"#EXT-X-STREAM-INF:BANDWIDTH=1071400,RESOLUTION=548x360",
+			"https://example.test/360.m3u8",
+			"#EXT-X-STREAM-INF:AVERAGE-BANDWIDTH=1,BANDWIDTH=4962100,RESOLUTION=1168x768",
+			"https://example.test/768-fat.m3u8",
+		].join("\n")
+		expect(best_rendition(manifest)).toBe("https://example.test/768-fat.m3u8")
+		expect(best_rendition("#EXTM3U")).toBeUndefined()
 	})
 
 	it("404s a sound that doesn't exist", async () => {

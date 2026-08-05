@@ -129,10 +129,16 @@ Messages live in memory for the life of the dev server. Restarting it empties th
 
 ### The windows are real windows
 
-The mailbox and the reader are proper MDI children: **drag** them by the title bar,
-**resize** from the right edge, bottom edge or the corner grip, **maximise** with the box
-in the title bar or a double-click, and **minimise** to the taskbar. Clicking a taskbar
-button restores a window — or minimises it if it's already focused, as the real one did.
+The mailbox and the reader are the desktop's own windows, not the app's: **drag** them by
+the title bar, **resize** from the right edge, bottom edge or the corner grip, **maximise**
+with the box in the title bar or a double-click, and **minimise** to the taskbar. Clicking a
+taskbar button restores a window — or minimises it if it's already focused, as the real one
+did.
+
+They don't belong to Postboi Local. Minimise the app and your mail windows stay where they
+were; bring one back from the taskbar and it comes back on its own, with no application
+frame behind it. Everything shares one z-order, so clicking the app raises it over your
+windows and clicking a window raises it over the app.
 
 That matters more than the nostalgia: the reading pane is only ever big enough because you
 can make it bigger. **Prev** and **Next** at the bottom of the reader step through the
@@ -182,6 +188,18 @@ Press the **Windows key** (**Cmd** on macOS) and the Start menu opens, with Chec
 Mail Now, help, and a Shut Down that does exactly what you'd hope. Only a
 bare press counts — held as a modifier it's left alone, since that's how you copy and
 reload.
+
+### The desktop
+
+Minimise everything and there's a desktop behind it, with a postman running across it. The
+wallpaper is baked into the package; the clip is not — it streams from Mux the first time
+the inbox is opened, because an encode small enough to publish looked like a photograph put
+through a fax machine.
+
+That is the one thing here that reaches the network. If it can't — you're offline, or the
+machine doesn't allow it — nothing breaks and nothing is logged: the wallpaper is the clip's
+opening frame, so all you lose is the postman. **No mail ever leaves your machine**; the
+capture path has nothing to do with this.
 
 ## Tests still use the mock
 

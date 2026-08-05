@@ -97,7 +97,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 }
 #bliss.showing { display: block }
 /* Everything the app is, so it can be hidden to reveal the desktop. */
-#aol { position: absolute; left: 0; top: 0; right: 0; bottom: 30px }
+#aol { position: absolute; left: 0; top: 0; right: 0; bottom: 30px; z-index: 10 }
 #aol.min, #aol.closed { display: none }
 
 /* ---- Title bars, shared by the app window and every child window ---- */
@@ -147,7 +147,9 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 #address { flex: 1; background: #fff; padding: 3px 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
 
 /* The MDI workspace child windows float in. */
-#workspace { flex: 1; position: relative; background: #6a6a6a; min-height: 0; padding: 10px; overflow: hidden }
+/* The app's empty interior. The mail windows used to live in here; they are the desktop's
+   now, so what is left is the grey an MDI app shows when nothing is open inside it. */
+#workspace { flex: 1; background: #6a6a6a; min-height: 0 }
 .child { display: flex; flex-direction: column; background: #c0c0c0; min-height: 0 }
 /*
  * Real MDI child windows: dragged by the title bar, resized from the edges, maximised,
@@ -199,6 +201,7 @@ tbody tr {  }
 tbody tr.unread td { font-weight: bold }
 tbody tr.on td { background: #000080; color: #fff }
 td.flag { width: 26px; text-align: center }
+.mailico { width: 16px; height: 13px; vertical-align: -2px }
 td.when { width: 88px }
 td.who { width: 34% }
 #empty { padding: 26px; text-align: center; color: #808080; line-height: 1.6 }
@@ -292,7 +295,7 @@ td.who { width: 34% }
 #signon { display: none; position: absolute; inset: 0; z-index: 260; align-items: center; justify-content: center }
 #signon.open { display: flex }
 /* Windows stay out of sight until sign-on completes. */
-.signing .child:not(#signonwin):not(#introwin) { visibility: hidden }
+#screen.signing .child:not(#signonwin):not(#introwin) { visibility: hidden }
 #signonwin { width: 420px }
 #signonbody { display: flex; background: #efeee2 }
 #signonbody .side {
@@ -385,6 +388,25 @@ function clock() {
 	$("clock").textContent = h + ":" + (m < 10 ? "0" : "") + m + " " + ampm
 }
 
+/*
+ * The two states a row can be in, drawn rather than set in type. The envelope glyph a font
+ * gives you is a solid black lozenge at this size, and the emoji one is a full-colour sticker
+ * that belongs to whichever OS is rendering it — neither looks like something Windows drew.
+ * Cream on a dark outline so they read against a selected row as well as a white one.
+ */
+var ICON_SEALED =
+	'<svg class="mailico" viewBox="0 0 16 13" aria-hidden="true">' +
+	'<rect x=".5" y="1.5" width="15" height="10" fill="#fdfbf2" stroke="#3f3f3f"/>' +
+	'<path d="M.5 1.5 8 7.6l7.5-6.1" fill="none" stroke="#3f3f3f"/>' +
+	'<path d="M.5 11.5 5.9 6.5m4.2 0 5.4 5" fill="none" stroke="#cfcab4"/>' +
+	"</svg>"
+var ICON_OPEN =
+	'<svg class="mailico" viewBox="0 0 16 13" aria-hidden="true">' +
+	'<path d="M.5 4.6 8 .6l7.5 4" fill="#e6e1cc" stroke="#3f3f3f" stroke-linejoin="round"/>' +
+	'<rect x=".5" y="4.6" width="15" height="7.4" fill="#fdfbf2" stroke="#3f3f3f"/>' +
+	'<path d="M.5 11.6 5.9 7.3m4.2 0 5.4 4.3" fill="none" stroke="#cfcab4"/>' +
+	"</svg>"
+
 function render_list() {
 	var tbody = $("rows")
 	tbody.innerHTML = ""
@@ -393,7 +415,7 @@ function render_list() {
 		var tr = document.createElement("tr")
 		tr.className = (read[m.id] ? "" : "unread") + (selected && selected.id === m.id ? " on" : "")
 		tr.innerHTML =
-			'<td class="flag">' + (read[m.id] ? "\\u{1F4E7}" : "\\u2709") + "</td>" +
+			'<td class="flag">' + (read[m.id] ? ICON_OPEN : ICON_SEALED) + "</td>" +
 			'<td class="when">' + when(m.received_at) + "</td>" +
 			'<td class="who">' + esc(who(m.to)) + "</td>" +
 			"<td>" + esc(m.subject || "(no subject)") + "</td>"
@@ -583,7 +605,7 @@ var wins = []
 var z = 20
 var focused = null
 
-/** Re-place both child windows after the workspace changes size. */
+/** Re-place both child windows after the desktop changes size. */
 function relayout() {
 	var box = ws_rect()
 	wins.forEach(function (win) {
@@ -605,9 +627,14 @@ function relayout() {
 	})
 }
 
+/*
+ * The area a window may occupy: the desktop, less the taskbar. The mail windows are the
+ * desktop's own, not the app's — minimising Postboi Local leaves them exactly where they were,
+ * and the taskbar brings any one of them back on its own.
+ */
 function ws_rect() {
-	var w = $("workspace")
-	return { w: w.clientWidth, h: w.clientHeight }
+	var screen = $("screen")
+	return { w: screen.clientWidth, h: screen.clientHeight - 30 }
 }
 
 function place(el, r) {
@@ -660,9 +687,19 @@ function find(id) {
 	return wins.filter(function (w) { return w.id === id })[0]
 }
 
+/** Raise the app above the mail windows. It shares their stack; it does not contain them. */
+var app_focused = true
+function focus_app() {
+	$("aol").style.zIndex = ++z
+	app_focused = true
+	focused = null
+	paint()
+}
+
 function focus_window(id) {
 	var win = find(id)
 	if (!win || !win.open) return
+	app_focused = false
 	win.min = false
 	win.el.classList.remove("min")
 	win.el.style.zIndex = ++z
@@ -739,6 +776,7 @@ function paint() {
 		}
 		tasks.appendChild(button)
 	})
+	app_paint()
 }
 
 /** Shared pointer loop for both dragging and resizing — same maths, different target. */
@@ -840,20 +878,20 @@ function app_set(state) {
 }
 
 /*
- * The wallpaper's postman, once. He runs out of frame and the clip settles on exactly the
- * still underneath, so leaving the last frame up is the same picture either way — and a
+ * The wallpaper's postman, once. He starts on the frame already showing — the wallpaper is
+ * that frame — so there is no cut when he sets off, and he holds wherever he finishes. A
  * second minimise gets the wallpaper rather than the same gag twice.
  */
 var bliss_played = false
 function run_bliss() {
-	if (bliss_played) return
+	if (bliss_played || !bliss_ready) return
 	bliss_played = true
 	var video = $("bliss")
 	video.className = "showing"
 	video.currentTime = 0
 	var playing = video.play()
-	// Blocked autoplay just means no clip; the still behind it is the same desktop.
-	if (playing && playing.catch) playing.catch(function () {})
+	// Blocked autoplay just means no clip; the wallpaper behind it is the same opening frame.
+	if (playing && playing.catch) playing.catch(function () { video.className = "" })
 }
 
 /* The stop error, for quitting. Any key or click restarts the machine, as it always did. */
@@ -891,21 +929,20 @@ function app_toggle_max() {
 	}
 	var button = el.querySelector('[data-app="max"]')
 	button.setAttribute("aria-label", app_maximised ? "Restore" : "Maximize")
-	// Windows inside are positioned against the workspace, which just changed size.
-	relayout()
 	app_set("open")
 }
 
-/** The app's own taskbar button, kept alongside the child windows' ones. */
+/** The app's own taskbar button, kept alongside the mail windows' ones. */
 function app_paint() {
 	var el = $("aol")
 	var hidden = el.classList.contains("min") || el.classList.contains("closed")
 	var button = $("app-task")
 	button.style.display = el.classList.contains("closed") ? "none" : ""
-	button.className = "task" + (hidden ? "" : " on")
+	button.className = "task" + (!hidden && app_focused ? " on" : "")
 	if (hidden) set_menu(false)
 }
 
+$("aol").addEventListener("mousedown", function () { focus_app() })
 $("aol").querySelector(".title-bar-controls").addEventListener("click", function (event) {
 	var act = event.target.dataset && event.target.dataset.app
 	if (act === "min") app_set("min")
@@ -918,7 +955,8 @@ $("aol").querySelector(".title-bar").addEventListener("dblclick", function (even
 })
 $("app-task").onclick = function () {
 	var el = $("aol")
-	if (el.classList.contains("min")) app_set("open")
+	// Same rule as every other taskbar button: click the one in front and it goes away.
+	if (el.classList.contains("min") || !app_focused) { app_set("open"); focus_app() }
 	else app_set("min")
 }
 
@@ -1035,7 +1073,8 @@ document.addEventListener("keyup", function (event) {
 })
 
 $("m-app").onclick = function () { app_set("open"); set_menu(false) }
-$("m-mailbox").onclick = function () { app_set("open"); open_window("mailbox"); set_menu(false) }
+// The mailbox is its own window: bringing it back does not drag the app up with it.
+$("m-mailbox").onclick = function () { open_window("mailbox"); set_menu(false) }
 $("m-refresh").onclick = function () { open_window("mailbox"); load(); set_menu(false) }
 $("m-docs").onclick = function () { window.open("https://docs.postboi.email/dev-inbox", "_blank"); set_menu(false) }
 $("m-shutdown").onclick = function () {
@@ -1057,6 +1096,16 @@ paper.onload = function () {
 	$("screen").classList.add("papered")
 }
 paper.src = api + "/desktop/wallpaper"
+
+/*
+ * The clip is fetched up front rather than at the moment it is wanted: it comes over the
+ * network from Mux, and a minimise that sat waiting on a download would be worse than no clip
+ * at all. By the time anyone minimises it is normally already buffered, so play() is instant.
+ * Unreachable, it stays hidden and the wallpaper — its own opening frame — is what shows.
+ */
+var bliss_ready = false
+$("bliss").addEventListener("canplaythrough", function () { bliss_ready = true })
+$("bliss").addEventListener("error", function () { bliss_ready = false })
 $("bliss").src = api + "/desktop/blissy"
 
 apply_mute(muted)
@@ -1084,7 +1133,7 @@ function end_intro() {
 	document.body.classList.remove("connecting")
 	// Revealed here rather than by wrapping this function: Cancel and the close box both
 	// captured a reference to it before any wrapper could be installed.
-	$("workspace").classList.remove("signing")
+	$("screen").classList.remove("signing")
 	play("welcome")
 }
 function run_intro() {
@@ -1140,6 +1189,8 @@ register("reader", "Message", {
 	h: rd.h,
 })
 focus_window("mailbox")
+// They sit on the desktop, so it is the browser window changing size they have to survive.
+window.addEventListener("resize", relayout)
 
 clock()
 setInterval(clock, 10000)
@@ -1153,7 +1204,7 @@ load()
  */
 function run_signon() {
 	$("signon").className = "open"
-	$("workspace").classList.add("signing")
+	$("screen").classList.add("signing")
 	drag_dialog($("signonwin"))
 }
 if (document.documentElement.dataset.intro === "on") run_signon()
@@ -1249,126 +1300,126 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			<span id="address" class="thin-sunken">Postboi: Welcome back!</span>
 		</div>
 
-		<div id="workspace">
-			<div id="mailbox" class="child window">
-				<div class="title-bar">
-					<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Your Local Mailbox</div>
-					<div class="title-bar-controls">
-						<button aria-label="Minimize" data-act="min"></button>
-						<button aria-label="Maximize" data-act="max"></button>
-						<button aria-label="Close" data-act="close"></button>
-					</div>
-				</div>
+		<div id="workspace"></div>
+	</div>
 
-				<div id="mbhead">
-					<div class="mark">
-						<svg width="42" height="34" viewBox="0 0 46 34" aria-hidden="true">
-							<g class="flag">
-								<path d="M27 30V4h3v26z" fill="#3a3a3a"/>
-								<path d="M30 4h14l-4 4.5 4 4.5H30z" fill="#fdc005" stroke="#000" stroke-width="2" stroke-linejoin="round"/>
-							</g>
-							<path d="M3 16a11 11 0 0 1 22 0v13H3z" fill="#e8e8e8" stroke="#000" stroke-width="2" stroke-linejoin="round"/>
-							<path d="M14 5v24" stroke="#000" stroke-width="2"/>
-							<path d="M14 16a5.5 5.5 0 0 1 11 0v13H14z" fill="#fff" stroke="#000" stroke-width="2" stroke-linejoin="round"/>
-						</svg>
-						<span>Mailbox</span>
-					</div>
-				</div>
-
-				<div id="folders">
-					<button class="on">New Mail</button>
-				</div>
-				<div id="listwrap">
-					<div id="list" class="thin-sunken">
-						<table><tbody id="rows"></tbody></table>
-						<div id="empty">Your online mailbox is empty.<br>Send something from your app and it will arrive here.</div>
-					</div>
-				</div>
-
-				<div id="actions">
-					<button class="aolbtn" id="a-read">Read</button>
-					<button class="aolbtn" id="keepnew" disabled>Keep As New</button>
-					<span class="spacer"></span>
-					<button class="aolbtn" id="a-delete">Delete All</button>
-				</div>
-				<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	<div id="mailbox" class="child window">
+		<div class="title-bar">
+			<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Your Local Mailbox</div>
+			<div class="title-bar-controls">
+				<button aria-label="Minimize" data-act="min"></button>
+				<button aria-label="Maximize" data-act="max"></button>
+				<button aria-label="Close" data-act="close"></button>
 			</div>
+		</div>
+
+		<div id="mbhead">
+			<div class="mark">
+				<svg width="42" height="34" viewBox="0 0 46 34" aria-hidden="true">
+					<g class="flag">
+						<path d="M27 30V4h3v26z" fill="#3a3a3a"/>
+						<path d="M30 4h14l-4 4.5 4 4.5H30z" fill="#fdc005" stroke="#000" stroke-width="2" stroke-linejoin="round"/>
+					</g>
+					<path d="M3 16a11 11 0 0 1 22 0v13H3z" fill="#e8e8e8" stroke="#000" stroke-width="2" stroke-linejoin="round"/>
+					<path d="M14 5v24" stroke="#000" stroke-width="2"/>
+					<path d="M14 16a5.5 5.5 0 0 1 11 0v13H14z" fill="#fff" stroke="#000" stroke-width="2" stroke-linejoin="round"/>
+				</svg>
+				<span>Mailbox</span>
+			</div>
+		</div>
+
+		<div id="folders">
+			<button class="on">New Mail</button>
+		</div>
+		<div id="listwrap">
+			<div id="list" class="thin-sunken">
+				<table><tbody id="rows"></tbody></table>
+				<div id="empty">Your online mailbox is empty.<br>Send something from your app and it will arrive here.</div>
+			</div>
+		</div>
+
+		<div id="actions">
+			<button class="aolbtn" id="a-read">Read</button>
+			<button class="aolbtn" id="keepnew" disabled>Keep As New</button>
+			<span class="spacer"></span>
+			<button class="aolbtn" id="a-delete">Delete All</button>
+		</div>
+		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	</div>
 
 
-			<div id="signon">
-			<div id="signonwin" class="child window">
+	<div id="signon">
+		<div id="signonwin" class="child window">
 			<div class="title-bar">
-			<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Sign On</div>
+				<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Sign On</div>
 			</div>
 			<div id="signonbody">
-			<div class="side">
-			<img src="${FAVICON}" alt="">
-			<div class="name">postboi</div>
-						<div class="ver">local edition</div>
-			</div>
-			<div class="fields">
-			<label for="so-name">Select Screen Name:</label>
-			<select id="so-name" disabled><option>Postboi</option></select>
-			<label for="so-pass">Enter Password:</label>
-			<input id="so-pass" type="password" value="secret" disabled>
-			<label for="so-loc">Select Location:</label>
-			<select id="so-loc" disabled><option>Local 33.6k Modem</option></select>
-			<div class="row">
-			<button id="so-help">HELP</button>
-			<button id="so-go">SIGN ON</button>
-			</div>
-			</div>
-			</div>
-			</div>
-			</div>
-
-			<div id="intro">
-			<div id="introwin" class="child window">
-			<div class="title-bar">
-			<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Connecting To Postboi&#8230;</div>
-			<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div>
-			</div>
-			<div id="introbody">
-			<div id="intrologo"><img id="introwordmark" src="" alt="postboi"></div>
-			<div id="steps">
-			<div class="step" id="s0"><div class="box"></div><span class="cap">1. Locating mailroom&#8230;</span></div>
-			<div class="step" id="s1"><div class="box"></div><span class="cap">2. Connecting to localhost&#8230;</span></div>
-			<div class="step" id="s2"><div class="box"></div><span class="cap">3. Intercepting outgoing mail&#8230;</span></div>
-			</div>
-			<div id="introfoot"><button class="aolbtn" id="intro-cancel">Cancel</button></div>
-			</div>
-			</div>
-			</div>
-			<div id="reader" class="child window">
-				<div class="title-bar">
-					<div class="title-bar-text"><span>&#9993;</span> <span id="reader-title"></span></div>
-					<div class="title-bar-controls">
-						<button aria-label="Minimize" data-act="min"></button>
-						<button aria-label="Maximize" data-act="max"></button>
-						<button aria-label="Close" data-act="close" id="reader-close"></button>
+				<div class="side">
+					<img src="${FAVICON}" alt="">
+					<div class="name">postboi</div>
+					<div class="ver">local edition</div>
+				</div>
+				<div class="fields">
+					<label for="so-name">Select Screen Name:</label>
+					<select id="so-name" disabled><option>Postboi</option></select>
+					<label for="so-pass">Enter Password:</label>
+					<input id="so-pass" type="password" value="secret" disabled>
+					<label for="so-loc">Select Location:</label>
+					<select id="so-loc" disabled><option>Local 33.6k Modem</option></select>
+					<div class="row">
+						<button id="so-help">HELP</button>
+						<button id="so-go">SIGN ON</button>
 					</div>
 				</div>
-				<div id="head"></div>
-				<div id="tabs">
-					<button data-tab="html" class="on">Message</button>
-					<button data-tab="text">Plain Text</button>
-					<button data-tab="source">Source</button>
-					<button data-tab="files">Attachments</button>
-				</div>
-				<div id="pane" class="thin-sunken"></div>
-				<div id="readerfoot">
-					<button class="aolbtn" id="r-prev">&#9664; Prev</button>
-					<span id="r-count"></span>
-					<button class="aolbtn" id="r-next">Next &#9654;</button>
-				</div>
-				<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 			</div>
 		</div>
 	</div>
 
+	<div id="intro">
+		<div id="introwin" class="child window">
+			<div class="title-bar">
+				<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Connecting To Postboi&#8230;</div>
+				<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div>
+			</div>
+			<div id="introbody">
+				<div id="intrologo"><img id="introwordmark" src="" alt="postboi"></div>
+				<div id="steps">
+					<div class="step" id="s0"><div class="box"></div><span class="cap">1. Locating mailroom&#8230;</span></div>
+					<div class="step" id="s1"><div class="box"></div><span class="cap">2. Connecting to localhost&#8230;</span></div>
+					<div class="step" id="s2"><div class="box"></div><span class="cap">3. Intercepting outgoing mail&#8230;</span></div>
+				</div>
+				<div id="introfoot"><button class="aolbtn" id="intro-cancel">Cancel</button></div>
+			</div>
+		</div>
+	</div>
+	<div id="reader" class="child window">
+		<div class="title-bar">
+			<div class="title-bar-text"><svg class="mailico" viewBox="0 0 16 13" aria-hidden="true"><rect x=".5" y="1.5" width="15" height="10" fill="#fdfbf2" stroke="#3f3f3f"/><path d="M.5 1.5 8 7.6l7.5-6.1" fill="none" stroke="#3f3f3f"/></svg> <span id="reader-title"></span></div>
+			<div class="title-bar-controls">
+				<button aria-label="Minimize" data-act="min"></button>
+				<button aria-label="Maximize" data-act="max"></button>
+				<button aria-label="Close" data-act="close" id="reader-close"></button>
+			</div>
+		</div>
+		<div id="head"></div>
+		<div id="tabs">
+			<button data-tab="html" class="on">Message</button>
+			<button data-tab="text">Plain Text</button>
+			<button data-tab="source">Source</button>
+			<button data-tab="files">Attachments</button>
+		</div>
+		<div id="pane" class="thin-sunken"></div>
+		<div id="readerfoot">
+			<button class="aolbtn" id="r-prev">&#9664; Prev</button>
+			<span id="r-count"></span>
+			<button class="aolbtn" id="r-next">Next &#9654;</button>
+		</div>
+		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	</div>
+
 	<div id="taskbar">
 		<button id="start"><span>start</span></button>
-		<button class="task on" id="app-task">Postboi Local</button>
+		<button class="task on" id="app-task"><img class="mark" src="${FAVICON}" alt="">Postboi Local</button>
 		<span id="tasks" style="display:flex;gap:4px"></span>
 		<span class="spacer"></span>
 		<!-- The count lives out here rather than in the mailbox header, which is the first
