@@ -47,7 +47,12 @@ type Options = CommonProviderOptions & {
 	 * practice. Returning false means it didn't arrive, and the message is printed instead,
 	 * so a stopped inbox degrades to the console rather than swallowing the mail.
 	 */
-	sink?: (message: SentMessage) => boolean | Promise<boolean>
+	sink?: (message: SentMessage, id: string) => boolean | Promise<boolean>
+	/**
+	 * Tell the sink a scheduled send was cancelled. Paired with {@link Options.sink}: without
+	 * it the dev inbox goes on showing a cancelled message as though it were still going out.
+	 */
+	on_cancel?: (id: string) => unknown
 }
 
 type SendResponse = { id: string; message: SentMessage }
@@ -106,7 +111,8 @@ export default class Mock extends ProviderBase<SendResponse> {
 	protected override readonly captcha_mode = "none" as const
 	#fail: boolean
 	#log: boolean
-	#sink?: (message: SentMessage) => boolean | Promise<boolean>
+	#sink?: (message: SentMessage, id: string) => boolean | Promise<boolean>
+	#on_cancel?: (id: string) => unknown
 	#counter = 0
 
 	/** Every message captured by this instance, in send order. */
@@ -115,11 +121,12 @@ export default class Mock extends ProviderBase<SendResponse> {
 	/** Ids passed to `cancel`, in call order. */
 	readonly canceled: Array<string> = []
 
-	constructor({ fail, log, sink, ...options }: Options = {}) {
+	constructor({ fail, log, sink, on_cancel, ...options }: Options = {}) {
 		super(options)
 		this.#fail = fail ?? false
 		this.#log = log ?? false
 		this.#sink = sink
+		this.#on_cancel = on_cancel
 	}
 
 	/** The most recently captured message, or undefined if nothing has been sent. */
@@ -139,6 +146,12 @@ export default class Mock extends ProviderBase<SendResponse> {
 			throw new PostboiError({ provider: "mock", message: "Simulated failure from mock provider" })
 		}
 		this.canceled.push(id)
+		// Best-effort, like the sink: an inbox that has gone away must not fail the cancel.
+		try {
+			await this.#on_cancel?.(id)
+		} catch {
+			// Nothing to do about it, and nothing that depends on it.
+		}
 		return { id }
 	}
 
@@ -181,11 +194,14 @@ export default class Mock extends ProviderBase<SendResponse> {
 			}
 
 			this.sent.push(captured)
+			// Assigned before delivery so the inbox is told the same id the caller gets back,
+			// which is the id a later cancel() will arrive with.
+			const id = `mock-${++this.#counter}`
 			// The console is the fallback, not a duplicate: printing as well as delivering
 			// would put the whole body in the terminal on every send with the inbox open.
-			const delivered = this.#sink ? await this.#sink(captured) : false
+			const delivered = this.#sink ? await this.#sink(captured, id) : false
 			if (this.#log || (this.#sink && !delivered)) log_message(captured)
-			return { id: `mock-${++this.#counter}`, message: captured }
+			return { id, message: captured }
 		})
 	}
 

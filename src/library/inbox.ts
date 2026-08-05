@@ -32,6 +32,13 @@ export interface InboxMessage extends Omit<SentMessage, "scheduled_at"> {
 	 * message reaches the inbox as JSON, and pretending otherwise only moves the parse.
 	 */
 	scheduled_at?: string
+	/**
+	 * The id the send returned to the caller, which is what `cancel()` is later given. The
+	 * inbox's own {@link InboxMessage.id} is its own numbering and means nothing outside it.
+	 */
+	send_id?: string
+	/** When `cancel()` was called for this message, ISO-8601. */
+	cancelled_at?: string
 }
 
 /** A reachable inbox: where to look at it, and how to hand it a message. */
@@ -41,8 +48,16 @@ export interface Inbox {
 	/**
 	 * Hand over a captured message. False means the inbox didn't take it — the caller
 	 * prints the mail instead, and never falls through to sending it for real.
+	 *
+	 * @param send_id The id handed back to whoever sent it, so a later `cancel()` can be
+	 * matched to this message.
 	 */
-	deliver(message: SentMessage): Promise<boolean>
+	deliver(message: SentMessage, send_id?: string): Promise<boolean>
+	/**
+	 * Tell the inbox a scheduled send was cancelled. Without this the message sits in the
+	 * inbox looking like it is still going out, which is the opposite of what happened.
+	 */
+	cancel(send_id: string): Promise<boolean>
 }
 
 /** Where an inbox is listening, and whether getting there means TLS. */
@@ -133,14 +148,14 @@ async function discover(): Promise<Target | null> {
  * nothing here anyway: the target is a port on this machine that this process was told
  * about, and the payload is a mail that is explicitly not being sent.
  */
-async function post_insecure(port: number, body: string): Promise<boolean> {
+async function post_insecure(port: number, path: string, body: string): Promise<boolean> {
 	const https = await import("node:https")
 	return new Promise<boolean>((resolve) => {
 		const request = https.request(
 			{
 				host: "127.0.0.1",
 				port,
-				path: INBOX_ENDPOINT,
+				path,
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				rejectUnauthorized: false,
@@ -155,12 +170,12 @@ async function post_insecure(port: number, body: string): Promise<boolean> {
 	})
 }
 
-/** POST a captured message to a listening inbox. */
-async function post(target: Target, message: SentMessage): Promise<boolean> {
-	const body = JSON.stringify(message)
+/** POST to a listening inbox. */
+async function post(target: Target, path: string, payload: unknown): Promise<boolean> {
+	const body = JSON.stringify(payload)
 	const scheme = target.secure ? "https" : "http"
 	try {
-		const response = await fetch(`${scheme}://127.0.0.1:${target.port}${INBOX_ENDPOINT}`, {
+		const response = await fetch(`${scheme}://127.0.0.1:${target.port}${path}`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body,
@@ -172,7 +187,7 @@ async function post(target: Target, message: SentMessage): Promise<boolean> {
 		if (!target.secure) return false
 	}
 	try {
-		return await post_insecure(target.port, body)
+		return await post_insecure(target.port, path, body)
 	} catch {
 		return false
 	}
@@ -187,6 +202,7 @@ export async function resolve_inbox(): Promise<Inbox | null> {
 	if (target === null) return null
 	return {
 		url: `${target.secure ? "https" : "http"}://localhost:${target.port}${INBOX_PATH}`,
-		deliver: (message) => post(target, message),
+		deliver: (message, send_id) => post(target, INBOX_ENDPOINT, { ...message, send_id }),
+		cancel: (send_id) => post(target, `${INBOX_ENDPOINT}/cancel`, { send_id }),
 	}
 }

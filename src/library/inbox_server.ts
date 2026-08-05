@@ -45,6 +45,8 @@ export type InboxMiddleware = (
  */
 export type CapturedMessage = Omit<SentMessage, "scheduled_at"> & {
 	scheduled_at?: Date | string
+	/** The id the send handed back, which a later cancellation arrives with. */
+	send_id?: string
 }
 
 /** The captured messages, and the means to watch for more. */
@@ -55,6 +57,11 @@ export interface InboxStore {
 	list(): Array<InboxMessage>
 	/** One message by id. */
 	get(id: string): InboxMessage | undefined
+	/**
+	 * Mark the message a send returned `send_id` for as cancelled. Returns false when nothing
+	 * matches — a cancel for a send from before this inbox started, most likely.
+	 */
+	cancel(send_id: string): boolean
 	/** Empty the inbox. */
 	clear(): void
 	/** Watch for arrivals and clears. Returns the unsubscribe. */
@@ -94,6 +101,13 @@ export function create_inbox_store(limit = 200): InboxStore {
 		},
 		list: () => messages,
 		get: (id) => messages.find((message) => message.id === id),
+		cancel(send_id) {
+			const message = messages.find((m) => m.send_id === send_id)
+			if (!message || message.cancelled_at) return false
+			message.cancelled_at = new Date().toISOString()
+			notify()
+			return true
+		},
 		clear() {
 			messages.length = 0
 			notify()
@@ -112,6 +126,17 @@ function send_json(response: InboxResponse, status: number, body: unknown): void
 	// The inbox is a dev tool showing the newest state; a cached list is never what you want.
 	response.setHeader("cache-control", "no-store")
 	response.end(text)
+}
+
+/**
+ * Look a named asset up without walking into `Object.prototype`.
+ *
+ * The name comes off the URL, and `constructor` is as lowercase as `wallpaper` — a plain
+ * index would hand back the `Object` function, sail past the not-found check, and throw
+ * somewhere that takes the whole dev server with it.
+ */
+function own<T>(record: Record<string, T>, name: string): T | undefined {
+	return Object.prototype.hasOwnProperty.call(record, name) ? record[name] : undefined
 }
 
 /** FNV-1a over the encoded bytes. Cheap, and only ever computed once per asset. */
@@ -275,15 +300,47 @@ function read_body(request: InboxRequest, limit = 32 * 1024 * 1024): Promise<str
  * than injected into the UI so the email's CSS can't reach the inbox chrome around it —
  * the mail renders in the isolation a real client would give it.
  */
+const BODY_CURSORS =
+	`<style>` +
+	`html{cursor:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAj0lEQVR4nO2WQQqAMAwEN8H/fzkebKU2tQrazSUDYlsPOyw0CACGQLS8wyQUAMwsTKI2ECah7SZCQvsDtoQTYEsMBZgStwIsiakAQ+JRYLXENvsoIs4FgDv8gmtgECrd8ysXgUH4ck6BEi7H8hCh3YImnE5toA+ntaCDcCqzOUBp4dUgisYQ/N+YJEmSLGUHGtQ1GJ7uSPQAAAAASUVORK5CYII=") 0 0,default}` +
+	`p,pre,td,th,li,h1,h2,h3,h4,h5,h6,span,a,div,blockquote{` +
+	`cursor:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAZUlEQVR4nO2WsQ7AIAgFpfH/f/l1sQuLvMbawbvJKCEnmEhrcDpRDZQkK3FEKXc3k5biHNfLEfgCqwL5Zk9FzO6sYbwJjeVrg99bgAACCCCAAAIIlAeS2Z+fz7fOhHn/nJkQYAU3Z9MlJ47DlFIAAAAASUVORK5CYII=") 15 15,text}` +
+	`</style>`
+
 function body_document(message: InboxMessage): string {
-	if (message.html) return message.html
+	// The cursors are the only thing added to the mail. A frame has its own document, so
+	// without them the pointer reverts to the host OS's the moment it crosses into the
+	// message — which is precisely the seam the rest of this is dressed up to hide. Nothing
+	// else is touched: no mail client renders a cursor, so nothing here can render wrong.
+	if (message.html) return BODY_CURSORS + message.html
 	const text = message.text ?? ""
 	const escaped = text
 		.replace(/&/g, "&amp;")
 		.replace(/</g, "&lt;")
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;")
-	return `<!doctype html><meta charset="utf-8"><pre style="font:13px ui-monospace,monospace;white-space:pre-wrap;word-wrap:break-word;margin:12px">${escaped}</pre>`
+	return `<!doctype html><meta charset="utf-8">${BODY_CURSORS}<pre style="font:13px ui-monospace,monospace;white-space:pre-wrap;word-wrap:break-word;margin:12px">${escaped}</pre>`
+}
+
+/**
+ * A `content-disposition` for a downloaded attachment.
+ *
+ * The name is whatever the sending code attached, and that is routinely user input — a file
+ * picked in a contact form, say. A quote breaks the parse, and a newline is a header
+ * injection that Node refuses outright by throwing, which on the bare `postboi dev` server
+ * takes the whole process with it. So: a scrubbed ASCII name for old parsers, and the real
+ * one encoded alongside for everything since RFC 6266.
+ */
+function content_disposition(name: string): string {
+	// eslint-disable-next-line no-control-regex
+	const plain = name.replace(/[\u0000-\u001f\u007f"\\]/g, "_")
+	const ascii = plain.replace(/[^\u0020-\u007e]/g, "_") || "attachment"
+	return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`
+}
+
+/** A media type safe to echo back, or the generic one. Same reasoning as the filename. */
+function safe_mime(type: string | undefined): string {
+	return type && /^[\w.+-]+\/[\w.+-]+$/.test(type) ? type : "application/octet-stream"
 }
 
 /**
@@ -311,7 +368,7 @@ export function inbox_middleware(
 
 		const art_match = /^\/api\/art\/([a-z]+)$/.exec(route)
 		if (art_match && method === "GET") {
-			const png = ART[art_match[1]]
+			const png = own(ART, art_match[1])
 			if (!png) return void send_json(response, 404, { error: "no such art" })
 			return void send_asset(request, response, "image/png", png)
 		}
@@ -327,14 +384,14 @@ export function inbox_middleware(
 
 		const desktop_match = /^\/api\/desktop\/([a-z]+)$/.exec(route)
 		if (desktop_match && method === "GET") {
-			const asset = DESKTOP[desktop_match[1]]
+			const asset = own(DESKTOP, desktop_match[1])
 			if (!asset) return void send_json(response, 404, { error: "no such desktop asset" })
 			return void send_asset(request, response, asset.type, asset.data)
 		}
 
 		const sound_match = /^\/api\/sounds\/([a-z]+)$/.exec(route)
 		if (sound_match && method === "GET") {
-			const sound = SOUNDS[sound_match[1]]
+			const sound = own(SOUNDS, sound_match[1])
 			if (!sound) return void send_json(response, 404, { error: "no such sound" })
 			return void send_asset(request, response, sound.type, sound.data)
 		}
@@ -344,6 +401,18 @@ export function inbox_middleware(
 				.then((body) => {
 					const message = store.add(JSON.parse(body) as CapturedMessage)
 					send_json(response, 201, { id: message.id })
+				})
+				.catch((error: unknown) => {
+					send_json(response, 400, { error: String(error) })
+				})
+		}
+
+		if (route === "/api/messages/cancel" && method === "POST") {
+			return void read_body(request)
+				.then((body) => {
+					const { send_id } = JSON.parse(body) as { send_id?: string }
+					const found = typeof send_id === "string" && store.cancel(send_id)
+					send_json(response, found ? 200 : 404, { ok: found })
 				})
 				.catch((error: unknown) => {
 					send_json(response, 400, { error: String(error) })
@@ -388,8 +457,8 @@ export function inbox_middleware(
 			const attachment = message?.attachments[Number(attachment_match[2])]
 			if (!attachment) return void send_json(response, 404, { error: "no such attachment" })
 			response.statusCode = 200
-			response.setHeader("content-type", attachment.mime_type)
-			response.setHeader("content-disposition", `attachment; filename="${attachment.name}"`)
+			response.setHeader("content-type", safe_mime(attachment.mime_type))
+			response.setHeader("content-disposition", content_disposition(attachment.name ?? ""))
 			// Providers take base64, so that's what the mock captured — decode it back for download.
 			return void response.end(Buffer.from(attachment.content, "base64"))
 		}

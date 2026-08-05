@@ -157,25 +157,39 @@ That matters more than the nostalgia: the reading pane is only ever big enough b
 can make it bigger. **Prev** and **Next** at the bottom of the reader step through the
 mailbox without going back to the list.
 
-### Outbox and Scheduled
+### Outbox, Sent, Scheduled, Deleted
 
 The list is an **Outbox**, not an inbox — these are messages on their way out, caught before
-they went. Anything sent with [`scheduled_at`](/scheduling) also lands in a
-**Scheduled** folder, which counts what's in it, and those rows say when they were due:
+they went. Four folders, and the tabs carry their counts:
+
+| Folder        | What's in it                                                     |
+| ------------- | ---------------------------------------------------------------- |
+| **Outbox**    | Everything still going out — Sent and Scheduled together.          |
+| **Sent**      | Went the moment it was sent, or its scheduled time has passed.     |
+| **Scheduled** | Sent with [`scheduled_at`](/scheduling), still ahead of its time.  |
+| **Deleted**   | A scheduled send you called [`cancel()`](/scheduling#cancelling-a-scheduled-send) on. |
 
 ```ts
-await mail({
+const { id } = await mail({
   to: "ada@example.com",
-  subject: "Your weekly digest",
-  body: "<p>News.</p>",
-  scheduled_at: { days: 7 },
+  subject: "Reminder",
+  body: "<p>See you tomorrow.</p>",
+  scheduled_at: { days: 1 },
 })
+
+await cancel(id)   // moves it to Deleted
 ```
 
 Without this, a mail queued for next Tuesday would sit in the list looking exactly like one
-already gone, which is the one thing you'd have opened the inbox to check. Opening it says
-so again at the top: *This message is scheduled. It would not have gone out yet.* Nothing is
-actually queued — the inbox captured it instead of sending it, and no timer is running.
+already gone — and one you'd cancelled would look like it was still going out, which is the
+one answer that could actually mislead you. Opening a message says so again at the top.
+
+Leave the tab open across a scheduled time and the message moves from Scheduled to Sent, with
+a noise to say so. **Nothing is really queued**: the inbox captured these instead of sending
+them, and the only clock involved is the one in the page.
+
+> **Rescheduling** (`mail.messages.reschedule`) is a Postboi-provider API call, not a send, so
+> it doesn't pass through the inbox — a captured message keeps the time it was captured with.
 
 ### Sound
 

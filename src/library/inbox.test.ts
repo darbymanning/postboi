@@ -175,7 +175,9 @@ describe("inbox middleware", () => {
 	it("files mail into an outbox, and a folder for what hasn't gone yet", async () => {
 		const html = inbox_ui()
 		expect(html).toContain('id="f-outbox"')
+		expect(html).toContain('id="f-sent"')
 		expect(html).toContain('id="f-scheduled"')
+		expect(html).toContain('id="f-deleted"')
 		expect(html).toContain(">Outbox<")
 		// These are messages on their way out, not mail that arrived.
 		expect(html).not.toMatch(/>(New|Old|Sent) Mail</)
@@ -321,7 +323,11 @@ describe("inbox middleware", () => {
 		const response = await fetch(
 			`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/messages/${stored.id}/body`
 		)
-		expect(await response.text()).toBe("<p>Body here</p>")
+		const body = await response.text()
+		// The mail is served intact. The only addition is a cursor rule, so the pointer doesn't
+		// revert to the host OS's the moment it crosses into the frame.
+		expect(body.endsWith("<p>Body here</p>")).toBe(true)
+		expect(body.replace(/^<style>.*?<\/style>/, "")).toBe("<p>Body here</p>")
 	})
 
 	it("escapes a text-only body rather than rendering it as markup", async () => {
@@ -441,6 +447,43 @@ describe("delivery", () => {
 		// that has already gone, which is the one thing you open the inbox to check.
 		expect(mail.sent[0].scheduled_at).toEqual(when)
 		expect(inbox.store.list()[0].scheduled_at).toBe(when.toISOString())
+		await inbox.stop()
+	})
+
+	it("shows a cancelled scheduled send as cancelled, not as still going out", async () => {
+		const inbox = await start_inbox()
+		set_inbox_port(inbox.port)
+		const resolved = await resolve_inbox()
+
+		const mail = new Mock({
+			sink: resolved!.deliver,
+			on_cancel: resolved!.cancel,
+			default: { from: "dev@example.com" },
+		})
+		const { id } = await mail.send({
+			to: "ada@example.com",
+			subject: "Reminder",
+			body: "<p>See you tomorrow.</p>",
+			scheduled_at: new Date(Date.now() + 86_400_000),
+		})
+		expect(inbox.store.list()[0].send_id).toBe(id)
+		expect(inbox.store.list()[0].cancelled_at).toBeUndefined()
+
+		await mail.cancel(id)
+		// The id the caller holds is the mock's, not the inbox's own numbering — matching them up
+		// is the whole reason the send id is captured alongside the message.
+		expect(inbox.store.list()[0].cancelled_at).toEqual(expect.any(String))
+		expect(mail.canceled).toEqual([id])
+		await inbox.stop()
+	})
+
+	it("survives cancelling a send the inbox never saw", async () => {
+		const inbox = await start_inbox()
+		set_inbox_port(inbox.port)
+		const resolved = await resolve_inbox()
+		// An id from before this inbox started. Nothing to mark, and nothing to blow up over.
+		expect(await resolved!.cancel("mock-999")).toBe(false)
+		expect(inbox.store.cancel("mock-999")).toBe(false)
 		await inbox.stop()
 	})
 

@@ -76,7 +76,7 @@ async function resolve_dev_inbox(config: PostboiConfig): Promise<ProviderBase<un
 		console.log(`postboi: capturing mail in the dev inbox — read it at ${inbox.url}`)
 	}
 	const Mock = await import("./mock.js").then((m) => m.default)
-	return new Mock({ sink: inbox.deliver, default: env_defaults() })
+	return new Mock({ sink: inbox.deliver, on_cancel: inbox.cancel, default: env_defaults() })
 }
 
 /**

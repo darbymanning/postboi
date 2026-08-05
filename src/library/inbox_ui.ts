@@ -30,6 +30,23 @@ const CSS = `
  */
 #screen, #screen * { cursor: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAj0lEQVR4nO2WQQqAMAwEN8H/fzkebKU2tQrazSUDYlsPOyw0CACGQLS8wyQUAMwsTKI2ECah7SZCQvsDtoQTYEsMBZgStwIsiakAQ+JRYLXENvsoIs4FgDv8gmtgECrd8ysXgUH4ck6BEi7H8hCh3YImnE5toA+ntaCDcCqzOUBp4dUgisYQ/N+YJEmSLGUHGtQ1GJ7uSPQAAAAASUVORK5CYII=") 0 0, default }
 .connecting #screen, .connecting #screen * { cursor: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA2UlEQVR4nO2WyRLEIAhEu6fy/7/MHLIUGpcmccaLXZVLRHhBhACAYaLoACjuUYElfxsAmBlIWgACZmUOUnax2+++zG/ueRiagQQgAtHJgJyGT8Ez8MfCvAE8gYieexdAgTiDkkRWQ2MAOhBsBA9RNAFUiPzdUIAGhLm15F1Et2uYLJbP9Oqe+b4nx3DLQCEoswc+uLevfYgMEG6jRxEOuYaug/F02LqKPvgbiNo0bM2H8bOgYlyDKBbg5TBYiJtq2Aj0SvLUi045VVIjmi3D5P/GpaWlpaWf6guIkmosdmuLBwAAAABJRU5ErkJggg==") 0 0, progress }
+/*
+ * Nothing in a system UI selects. Dragging across a menu, a title bar or a list in Windows
+ * moves and picks things; it never leaves a blue smear of highlighted label text. The places
+ * where selecting *is* the point say so for themselves, below.
+ */
+#screen, #screen * { -webkit-user-select: none; user-select: none }
+/*
+ * Text you are meant to be able to take: the message body, its headers, and the raw views.
+ * The beam matches the arrow above — the native one is close, but not the same drawing, and
+ * the two swapping back and forth as you cross the pane is exactly what gives it away.
+ */
+/* Qualified by #screen, or the blanket rule above outranks it and nothing selects at all. */
+#screen .selectable, #screen .selectable * {
+	-webkit-user-select: text; user-select: text;
+	cursor: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAZUlEQVR4nO2WsQ7AIAgFpfH/f/l1sQuLvMbawbvJKCEnmEhrcDpRDZQkK3FEKXc3k5biHNfLEfgCqwL5Zk9FzO6sYbwJjeVrg99bgAACCCCAAAIIlAeS2Z+fz7fOhHn/nJkQYAU3Z9MlJ47DlFIAAAAASUVORK5CYII=") 15 15, text;
+}
+
 /* The set has no resize cursors, so the native ones stand in on the handles. */
 .grip { cursor: nwse-resize }
 .edge-r { cursor: ew-resize }
@@ -48,9 +65,18 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
  * XP.css sizes every button for a dialog — 75x23 minimum. The AOL furniture is full of
  * things that aren't dialog buttons (icon tiles, nav arrows, folder tabs), so they opt out.
  */
+/*
+ * XP.css sizes every button for a dialog and gives it an amber hover bevel. Both are right
+ * for a dialog button and wrong for everything here that isn't one — a toolbar tile, a folder
+ * tab, a taskbar button — which draw their own edges and were picking up a yellow ring on
+ * hover that the real UI never had.
+ */
 #toolbar button, #folders button, #tabs button, #taskbar button, .aolbtn, .grip {
 	min-width: 0; min-height: 0; box-sizing: border-box;
 }
+/* Matched to XP.css's own not-disabled hover rule, which outranks a bare class selector. */
+#folders button:hover, #tabs button:hover,
+.aolbtn:not(:disabled):hover, .grip:not(:disabled):hover { box-shadow: none }
 /* XP.css supplies the bevels; these are the two insets it does not name. */
 .sunken { box-shadow: inset -1px -1px #fff, inset 1px 1px grey, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a }
 .thin-sunken { border: 1px solid; border-color: #808080 #fff #fff #808080 }
@@ -68,7 +94,17 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
  * lining up with the gradient, which shows as a grey seam behind the controls.
  */
 .title-bar { flex: none; margin: 0 -3px }
-.title-bar.dim { background: linear-gradient(90deg, #7f7f7f, #b5b5b5) }
+/*
+ * An unfocused window in XP doesn't go grey — it goes pale. Same blue, washed out, with the
+ * caption text and the buttons faded back with it, so the stack still reads as one family of
+ * windows rather than one live one and a pile of dead ones.
+ */
+.title-bar.dim {
+	background: linear-gradient(180deg, #85b3f5 0%, #7aa9f0 8%, #6f9eea 40%, #7fabf2 88%, #6e9ce8 100%);
+}
+.title-bar.dim .title-bar-text { opacity: .72 }
+.title-bar.dim .title-bar-controls button { opacity: .55 }
+.title-bar.dim .title-bar-controls button:hover { opacity: 1 }
 
 /*
  * The desktop. The drawn gradient sits underneath the wallpaper still as the fallback: it is
@@ -150,8 +186,6 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 .tb:hover { border-color: #fff #808080 #808080 #fff }
 .tb:active { border-color: #808080 #fff #fff #808080; padding: 4px 4px 1px 6px }
 .tb .ico { font-size: 17px; line-height: 18px }
-.tb.inert {  }
-.tb.inert:hover { border-color: transparent }
 .tb.on { border-color: #808080 #fff #fff #808080; background: rgba(255,255,255,.35) }
 
 
@@ -218,11 +252,14 @@ td.flag { width: 26px; text-align: center }
 .mailico { width: 16px; height: 13px; vertical-align: -2px }
 /* The when, stated in the row itself — a scheduled message should not need opening to spot. */
 .sched { color: #8a5a00; font-weight: normal; font-style: italic }
+.sched.off { color: #8a2a2a }
 tr.on .sched { color: #ffd98a }
+tr.on .sched.off { color: #ffb3b3 }
 #head .schedbar {
 	margin: 6px 0 0; padding: 4px 8px; background: #fff4d0; border: 1px solid #d8ae4a;
 	color: #6b4a00;
 }
+#head .schedbar.off { background: #fbe3e3; border-color: #d08a8a; color: #7a2020 }
 td.when { width: 88px }
 td.who { width: 34% }
 #empty { padding: 26px; text-align: center; color: #808080; line-height: 1.6 }
@@ -261,7 +298,9 @@ td.who { width: 34% }
 /* The taskbar is Luna's, not 98's — everything else moved to XP.css and this was the last
    thing still wearing grey. */
 #taskbar {
-	display: flex; align-items: center; gap: 4px; padding: 2px 4px; margin: 0;
+	/* No padding: Start sits hard against the left edge and the tray against the right, the
+	   way they do on a real taskbar. The gaps between the window buttons are their own. */
+	display: flex; align-items: stretch; padding: 0; margin: 0;
 	/* Always on top, and windows can't be dragged under it — same as the real one. */
 	position: absolute; left: 0; right: 0; bottom: 0; z-index: 500; height: 30px;
 	background: linear-gradient(180deg, #3f8cf3 0%, #245edb 9%, #245edb 88%, #1941a5 100%);
@@ -274,16 +313,22 @@ td.who { width: 34% }
  * screen readers.
  */
 #start {
-	width: 97px; height: 30px; flex: none; border: 0; padding: 0; margin: 0 2px 0 0;
+	width: 97px; height: 30px; flex: none; border: 0; padding: 0; margin: 0 4px 0 0;
 	background: 0 0 no-repeat;
+	/* XP.css gives every button an amber hover bevel. That belongs to dialog buttons; the
+	   Start button is a bitmap and wears its own states, so the ring is cleared in all of
+	   them or it shows as a yellow outline the real thing never had. */
+	box-shadow: none;
 }
+#start:hover, #start:active, #start:focus, #start.on { box-shadow: none }
 #start:hover { background-position: 0 -30px }
 #start.on { background-position: 0 -60px }
 /* XP's Start button never draws a focus rectangle — the pressed sprite is the whole affordance. */
 #start:focus, #start:focus-visible { outline: 0 }
 #start span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%) }
 #taskbar .task {
-	flex: 0 0 162px; display: flex; align-items: center; text-align: left; padding: 3px 8px; 
+	flex: 0 0 162px; display: flex; align-items: center; text-align: left; padding: 3px 8px;
+	margin: 3px 4px 3px 0;
 	overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 	font: 11px Tahoma, Arial, sans-serif; color: #fff;
 	background: linear-gradient(180deg, #4993f1 0%, #3c83e3 50%, #2f74d6 100%);
@@ -291,11 +336,21 @@ td.who { width: 34% }
 }
 /* Pressed in marks the focused window, as it did on the real thing. */
 #taskbar .task.on { background: linear-gradient(180deg, #1e50b0 0%, #2a62c8 60%, #3f7ddd 100%); box-shadow: inset 1px 1px 3px rgba(0,0,0,.45) }
+#taskbar #tasks { display: flex; align-items: stretch; min-width: 0 }
 #taskbar .spacer { flex: 1 }
-#clock, #stat, #count {
-	padding: 3px 9px; color: #fff; font: 11px Tahoma, Arial, sans-serif;
+/*
+ * The tray. It is a band the full height of the taskbar, flush to the right edge, with its
+ * own lighter blue and a bevelled left edge — not a floating pill with the bar showing past
+ * it on three sides.
+ */
+#tray {
+	display: flex; align-items: center; flex: none;
+	background: linear-gradient(180deg, #18a3dc 0%, #14a5e0 8%, #1290d6 90%, #0d7ec4 100%);
+	box-shadow: inset 1px 0 0 #4fc6f5, inset 2px 0 0 rgba(0,0,0,.12);
+	color: #fff; font: 11px Tahoma, Arial, sans-serif;
 }
-#clock { background: linear-gradient(180deg, #1c8ad6 0%, #14a5e0 40%, #1291d8 100%); border-left: 1px solid #1a5fc8 }
+#clock, #stat, #count { padding: 0 9px; color: #fff; font: 11px Tahoma, Arial, sans-serif }
+#clock { padding-right: 12px }
 
 /*
  * The XP Start menu: a blue header with your face in it, two columns of shortcuts, and a
@@ -471,6 +526,15 @@ var ICON_OPEN =
 	'<rect x=".5" y="4.6" width="15" height="7.4" fill="#fdfbf2" stroke="#3f3f3f"/>' +
 	'<path d="M.5 11.6 5.9 7.3m4.2 0 5.4 4.3" fill="none" stroke="#cfcab4"/>' +
 	"</svg>"
+var FOLDERS = ["outbox", "sent", "scheduled", "deleted"]
+var LABELS = { outbox: "Outbox", sent: "Sent", scheduled: "Scheduled", deleted: "Deleted" }
+var EMPTY = {
+	outbox: "Your outbox is empty.<br>Send something from your app and it will arrive here.",
+	sent: "Nothing has gone out yet.",
+	scheduled: "Nothing is waiting on a clock.<br>Send with <b>scheduled_at</b> and it will queue up here.",
+	deleted: "Nothing cancelled.<br>Call <b>cancel(id)</b> on a scheduled send and it will land here.",
+}
+
 /* Scheduled mail gets a clock over the envelope: it is not going anywhere yet. */
 var ICON_CLOCK =
 	'<svg class="mailico" viewBox="0 0 16 13" aria-hidden="true">' +
@@ -479,11 +543,34 @@ var ICON_CLOCK =
 	'<circle cx="11.4" cy="8.6" r="4.1" fill="#fff2c9" stroke="#3f3f3f"/>' +
 	'<path d="M11.4 6.3v2.4l1.7 1.1" fill="none" stroke="#3f3f3f" stroke-linecap="round"/>' +
 	"</svg>"
+/* Cancelled mail gets the bin, because that is where a send you called off has gone. */
+var ICON_BIN =
+	'<svg class="mailico" viewBox="0 0 16 13" aria-hidden="true">' +
+	'<path d="M3.2 3.2h9.6l-.9 9.3H4.1z" fill="#e8e8e8" stroke="#3f3f3f" stroke-linejoin="round"/>' +
+	'<path d="M2 3.2h12" fill="none" stroke="#3f3f3f"/>' +
+	'<path d="M6.2 1.2h3.6v2H6.2z" fill="#cfcfcf" stroke="#3f3f3f" stroke-linejoin="round"/>' +
+	'<path d="M6.6 5.4v5m2.8-5v5" fill="none" stroke="#8a8a8a"/>' +
+	"</svg>"
 
-/** The folder showing: everything captured, or only what is waiting on a clock. */
+/*
+ * Which folder a captured message belongs in.
+ *
+ * Cancelled wins over everything: a scheduled send you called cancel() on is not still going
+ * out, and showing it as though it were is the one answer that would mislead you. Otherwise
+ * it is scheduled only while its moment is still ahead — once that passes it has, as far as
+ * anything here is concerned, sent.
+ */
+function state_of(m) {
+	if (m.cancelled_at) return "deleted"
+	if (m.scheduled_at && new Date(m.scheduled_at).getTime() > Date.now()) return "scheduled"
+	return "sent"
+}
+/** The folder showing. Outbox is everything still going out — sent and scheduled together. */
 var folder = "outbox"
 function in_folder(m) {
-	return folder === "scheduled" ? !!m.scheduled_at : true
+	var state = state_of(m)
+	if (folder === "outbox") return state !== "deleted"
+	return state === folder
 }
 /* Long enough to be unambiguous — the point of the column is the date, not the time of day. */
 function when_full(iso) {
@@ -498,33 +585,48 @@ function render_list() {
 	var tbody = $("rows")
 	tbody.innerHTML = ""
 	var shown = messages.filter(in_folder)
-	var scheduled = messages.filter(function (m) { return !!m.scheduled_at })
+	var counts = { outbox: 0, sent: 0, scheduled: 0, deleted: 0 }
+	messages.forEach(function (m) {
+		var state = state_of(m)
+		counts[state]++
+		if (state !== "deleted") counts.outbox++
+	})
 	$("empty").style.display = shown.length ? "none" : "block"
-	$("empty").innerHTML =
-		folder === "scheduled"
-			? "Nothing is waiting on a clock.<br>Send with <b>scheduled_at</b> and it will queue up here."
-			: "Your outbox is empty.<br>Send something from your app and it will arrive here."
+	$("empty").innerHTML = EMPTY[folder]
 	shown.forEach(function (m) {
 		var tr = document.createElement("tr")
 		tr.className = (read[m.id] ? "" : "unread") + (selected && selected.id === m.id ? " on" : "")
 		tr.innerHTML =
 			'<td class="flag">' +
-			(m.scheduled_at ? ICON_CLOCK : read[m.id] ? ICON_OPEN : ICON_SEALED) +
+			(state_of(m) === "deleted"
+				? ICON_BIN
+				: state_of(m) === "scheduled"
+					? ICON_CLOCK
+					: read[m.id]
+						? ICON_OPEN
+						: ICON_SEALED) +
 			"</td>" +
 			'<td class="when">' + when(m.received_at) + "</td>" +
 			'<td class="who">' + esc(who(m.to)) + "</td>" +
 			"<td>" + esc(m.subject || "(no subject)") +
-			(m.scheduled_at ? ' <span class="sched">sends ' + esc(when_full(m.scheduled_at)) + "</span>" : "") +
+			(m.cancelled_at
+				? ' <span class="sched off">cancelled</span>'
+				: state_of(m) === "scheduled"
+					? ' <span class="sched">sends ' + esc(when_full(m.scheduled_at)) + "</span>"
+					: "") +
 			"</td>"
 		tr.onclick = function () { select_message(m) }
 		tr.ondblclick = function () { open_message(m) }
 		tbody.appendChild(tr)
 	})
-	// The tab shouts the count, because a message that hasn't gone yet is the one thing here
-	// you would want to know without going looking for it.
-	$("f-scheduled").textContent = scheduled.length ? "Scheduled (" + scheduled.length + ")" : "Scheduled"
-	$("f-scheduled").className = "" + (folder === "scheduled" ? "on" : "")
-	$("f-outbox").className = "" + (folder === "outbox" ? "on" : "")
+	// Each tab shouts its count: a message that hasn't gone yet, or one that never will, is
+	// exactly what you would want to know without going looking for it.
+	FOLDERS.forEach(function (name) {
+		var tab = $("f-" + name)
+		var count = counts[name]
+		tab.textContent = LABELS[name] + (count ? " (" + count + ")" : "")
+		tab.className = folder === name ? "on" : ""
+	})
 	var unread = messages.filter(function (m) { return !read[m.id] }).length
 	$("count").textContent =
 		messages.length + " message" + (messages.length === 1 ? "" : "s") + (unread ? ", " + unread + " new" : "")
@@ -561,7 +663,7 @@ function open_message(m) {
 }
 
 function row(label, value) {
-	return value ? "<dt>" + label + ":</dt><dd>" + esc(value) + "</dd>" : ""
+	return value ? "<dt>" + label + ':</dt><dd class="selectable">' + esc(value) + "</dd>" : ""
 }
 
 function render_reader() {
@@ -590,7 +692,7 @@ function render_reader() {
 	$("r-prev").disabled = index <= 0
 	$("r-next").disabled = index < 0 || index >= messages.length - 1
 	$("head").innerHTML =
-		'<div class="subject">' + esc(current.subject || "(no subject)") + "</div><dl>" +
+		'<div class="subject selectable">' + esc(current.subject || "(no subject)") + "</div><dl>" +
 		row("From", who([current.from])) +
 		row("To", who(current.to)) +
 		row("Cc", who(current.cc)) +
@@ -600,9 +702,11 @@ function render_reader() {
 		// Named "Sends" rather than "Sent" because it hasn't: this one is still waiting.
 		(current.scheduled_at ? row("Sends", when_full(current.scheduled_at)) : "") +
 		"</dl>" +
-		(current.scheduled_at
-			? '<div class="schedbar">This message is scheduled. It would not have gone out yet.</div>'
-			: "")
+		(current.cancelled_at
+			? '<div class="schedbar off">This send was cancelled. It was never going out.</div>'
+			: state_of(current) === "scheduled"
+				? '<div class="schedbar">This message is scheduled. It would not have gone out yet.</div>'
+				: "")
 
 	var tabs = $("tabs")
 	Array.prototype.forEach.call(tabs.children, function (b) {
@@ -619,9 +723,9 @@ function render_reader() {
 			pane.innerHTML = '<iframe sandbox="" src="' + api + "/messages/" + current.id + '/body"></iframe>'
 		}
 	} else if (tab === "text") {
-		pane.innerHTML = "<pre>" + esc(current.text || "(no plain-text part)") + "</pre>"
+		pane.innerHTML = '<pre class="selectable">' + esc(current.text || "(no plain-text part)") + "</pre>"
 	} else if (tab === "source") {
-		pane.innerHTML = "<pre>" + esc(current.html || current.text || "") + "</pre>"
+		pane.innerHTML = '<pre class="selectable">' + esc(current.html || current.text || "") + "</pre>"
 	} else {
 		var files = current.attachments || []
 		if (!files.length) {
@@ -1083,6 +1187,9 @@ function app_paint() {
 	var button = $("app-task")
 	button.style.display = el.classList.contains("closed") ? "none" : ""
 	button.className = "task" + (!hidden && app_focused ? " on" : "")
+	// The frame fades with everything else when a mail window has the focus. It is in the same
+	// stack as they are, so it should look like it.
+	el.querySelector(".title-bar").className = "title-bar" + (app_focused ? "" : " dim")
 	if (hidden) set_menu(false)
 }
 
@@ -1238,8 +1345,12 @@ $("m-mailbox").onclick = function () { ensure_signed_on(); open_window("mailbox"
 $("m-refresh").onclick = function () { ensure_signed_on(); open_window("mailbox"); load(); set_menu(false) }
 $("m-docs").onclick = function () { window.open("https://docs.postboi.email/dev-inbox", "_blank"); set_menu(false) }
 $("m-sound").onclick = function () { $("t-sound").click(); set_menu(false) }
-$("f-outbox").onclick = function () { folder = "outbox"; render_list() }
-$("f-scheduled").onclick = function () { folder = "scheduled"; render_list() }
+FOLDERS.forEach(function (name) {
+	$("f-" + name).onclick = function () {
+		folder = name
+		render_list()
+	}
+})
 $("m-signoff").onclick = function () { set_menu(false); app_set("open"); run_signon() }
 // Turning the computer off is the only way to reach the stop error — closing the app just
 // closes the app, the way closing an application does.
@@ -1385,6 +1496,27 @@ window.addEventListener("resize", relayout)
 
 clock()
 setInterval(clock, 10000)
+
+/*
+ * Scheduled mail coming due. Nothing is actually queued — the inbox caught these instead of
+ * sending them, and no timer is running anywhere but here — but while the page is open the
+ * moment can still arrive, and a message quietly changing folders with no acknowledgement is
+ * a worse lie than the sound is.
+ */
+var due = {}
+messages.forEach(function (m) { due[m.id] = state_of(m) })
+setInterval(function () {
+	var arrived = false
+	messages.forEach(function (m) {
+		var state = state_of(m)
+		if (due[m.id] === "scheduled" && state === "sent") arrived = true
+		due[m.id] = state
+	})
+	if (!arrived) return
+	play("sent")
+	render_list()
+	render_reader()
+}, 1000)
 new EventSource(api + "/events").onmessage = function () { load() }
 load()
 /*
@@ -1521,7 +1653,9 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 
 		<div id="folders">
 			<button id="f-outbox" class="on">Outbox</button>
+			<button id="f-sent">Sent</button>
 			<button id="f-scheduled">Scheduled</button>
+			<button id="f-deleted">Deleted</button>
 		</div>
 		<div id="listwrap">
 			<div id="list" class="thin-sunken">
@@ -1616,9 +1750,11 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 		<span class="spacer"></span>
 		<!-- The count lives out here rather than in the mailbox header, which is the first
 		     thing hidden when a message is open. -->
-		<span id="count" style="padding:3px 9px"></span>
-		<span id="stat" style="padding:3px 9px">Waiting for mail&#8230;</span>
-		<span id="clock"></span>
+		<span id="tray">
+			<span id="count"></span>
+			<span id="stat">Waiting for mail&#8230;</span>
+			<span id="clock"></span>
+		</span>
 	</div>
 
 	<div id="startmenu">
