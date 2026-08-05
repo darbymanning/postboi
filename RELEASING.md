@@ -35,6 +35,18 @@ currently-published version as an archived snapshot **before** you edit docs for
    PREV=0.6.0   # ← the current "latest" in versions.json
    cp -R src/lib/content/docs "src/lib/content/v$PREV"
    ```
+   This assumes you got here _before_ the new version's doc edits landed. If
+   they're already on `main` — a feature branch that carried its own docs, say
+   — a plain `cp` would archive the new pages as `PREV`. Take them from the
+   commit just before those edits instead, and read the nav from the same
+   commit:
+   ```sh
+   BEFORE=abc1234   # ← last commit with PREV's docs, e.g. main^ of the merge
+   mkdir -p "src/lib/content/v$PREV"
+   git archive "$BEFORE" src/lib/content/docs \
+     | tar -x --strip-components=4 -C "src/lib/content/v$PREV"
+   git show "$BEFORE:src/lib/config/navigation.ts"
+   ```
 2. In `src/lib/config/versions.json`:
    - Set `"latest"` to the new version `X.Y.Z`.
    - Prepend an entry to `archived` (newest first):
@@ -49,9 +61,11 @@ currently-published version as an archived snapshot **before** you edit docs for
      ```
      For `nav`, copy the current sidebar structure from
      `contentSections[0].navigation` in
-     [`src/lib/config/navigation.ts`](src/lib/config/navigation.ts)
-     (JSON, so no icons/types — just `slug`/`name`/`items`). This freezes the
-     old nav even if you rename or reorder pages in the new version.
+     [`src/lib/config/navigation.ts`](src/lib/config/navigation.ts). It's JSON,
+     so drop the component references (`icon: Email`) but **keep `icon: true`** —
+     that's data the sidebar renders from, and every snapshot since `v0.14.0`
+     carries it. This freezes the old nav even if you rename or reorder pages
+     in the new version.
 3. Now make the actual `X.Y.Z` doc edits in `src/lib/content/docs/` (and
    `navigation.ts` if the nav changed).
 4. Commit and push — this deploys the site (the docs app is the repo root now). Verify the switcher lists
