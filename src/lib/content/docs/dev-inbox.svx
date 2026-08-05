@@ -135,91 +135,43 @@ received them — after defaults are applied and addresses parsed. If `reply_to`
 you expected, this is where you find out.
 
 Messages live in memory for the life of the dev server. Restarting it empties the inbox.
+**Prev** and **Next** at the bottom of the reader step through the mailbox without going
+back to the list.
 
-### The windows are real windows
+### Folders
 
-The mailbox and the reader are the desktop's own windows, not the app's: **drag** them by
-the title bar, **resize** from the right edge, bottom edge or the corner grip, **maximise**
-with the box in the title bar or a double-click, and **minimise** to the taskbar. Clicking a
-taskbar button restores a window — or minimises it if it's already focused, as the real one
-did.
+The list is an outbox, not an inbox — these are messages on their way out, caught before
+they went. The tabs carry their counts:
 
-They don't belong to Postboi Local. Minimise the app and your mail windows stay where they
-were; bring one back from the taskbar and it comes back on its own, with no application
-frame behind it. The app itself resizes and windows the same way, and it always sits behind
-your mail — focusing the frame can't bury the message you were reading.
-
-**Minimise** Postboi Local and the mail windows go down with it, so what you get is the
-desktop rather than a hole in a pile of windows — and restoring brings back exactly the ones
-that were up. Minimise or close one on its own and the rest are unaffected.
-
-**Close** Postboi Local and it takes its windows with it and leaves the desktop. The
-**Postboi** shortcut sitting there opens it again on a double-click, and it drags around
-like any other icon.
-
-That matters more than the nostalgia: the reading pane is only ever big enough because you
-can make it bigger. **Prev** and **Next** at the bottom of the reader step through the
-mailbox without going back to the list.
-
-### Outbox, Sent, Scheduled, Deleted
-
-The list is an **Outbox**, not an inbox — these are messages on their way out, caught before
-they went. Four folders, and the tabs carry their counts:
-
-| Folder        | What's in it                                                     |
-| ------------- | ---------------------------------------------------------------- |
-| **Outbox**    | Everything still going out — Sent and Scheduled together.          |
-| **Sent**      | Went the moment it was sent, or its scheduled time has passed.     |
-| **Scheduled** | Sent with [`scheduled_at`](/scheduling), still ahead of its time.  |
-| **Deleted**   | A scheduled send you called [`cancel()`](/scheduling#cancelling-a-scheduled-send) on. |
+| Folder        | What's in it                                                          |
+| ------------- | --------------------------------------------------------------------- |
+| **Outbox**    | Everything still going out — Sent and Scheduled together                |
+| **Sent**      | Went immediately, or its scheduled time has passed                      |
+| **Scheduled** | Sent with [`scheduled_at`](/scheduling), still ahead of its time         |
+| **Deleted**   | Called off with [`cancel()`](/scheduling#cancelling-a-scheduled-send)   |
 
 ```ts
 const { id } = await mail({
-  to: "ada@example.com",
-  subject: "Reminder",
-  body: "<p>See you tomorrow.</p>",
-  scheduled_at: { days: 1 },
+	to: 'ada@example.com',
+	subject: 'Reminder',
+	body: '<p>See you tomorrow.</p>',
+	scheduled_at: { days: 1 }
 })
 
-await cancel(id)   // moves it to Deleted
+await cancel(id) // moves it to Deleted
 ```
 
-Without this, a mail queued for next Tuesday would sit in the list looking exactly like one
-already gone — and one you'd cancelled would look like it was still going out, which is the
-one answer that could actually mislead you. Opening a message says so again at the top.
+Nothing is really queued — the inbox captured these instead of sending them — so a
+scheduled message crossing its time only moves folders while the page is open.
 
-Leave the tab open across a scheduled time and the message moves from Scheduled to Sent, with
-a noise to say so. **Nothing is really queued**: the inbox captured these instead of sending
-them, and the only clock involved is the one in the page.
+> [`mail.messages.reschedule`](/scheduling#rescheduling) is a provider API call rather than
+> a send, so it doesn't pass through the inbox. A captured message keeps the time it was
+> captured with.
 
-> **Rescheduling** (`mail.messages.reschedule`) is a Postboi-provider API call, not a send, so
-> it doesn't pass through the inbox — a captured message keeps the time it was captured with.
+### Options
 
-### Sound
-
-New mail announces itself. There's a greeting on the way in, a sign-off when you close
-Postboi Local, a different one for turning the computer off, and a noise when a scheduled
-message reaches its time. The **Sound** button in the toolbar mutes the lot, and the choice
-is remembered, because a dev tool that says "Welcome!" in an open-plan office is a dev tool
-people uninstall. Pressing **SIGN ON** is what lets any of it play — see below.
-
-### Signing on
-
-The inbox opens on a Sign On dialog. The credentials are set dressing — there's nothing to
-authenticate against — so the fields are filled in and disabled. Press **SIGN ON** and it
-dials in: _Locating mailroom… Connecting to localhost… Intercepting outgoing mail…_ — each
-panel filling in as its step is reached — then greets you and hands over the desktop.
-**Cancel** skips straight through.
-
-It isn't only theatre. Browsers refuse to play audio until the page has been interacted
-with, so on a cold load the handshake and the greeting would never be heard. Pressing SIGN
-ON is that interaction, which is what makes the sound work at all.
-
-The inbox is loaded and listening the whole time, so nothing is waiting on the dialog.
-
-### Configuring the defaults
-
-The sound and the sign-on can each start off, for everyone on the project:
+The inbox is dressed as a mail client of a certain vintage, sound and all. Both the sound
+and the sign-on screen can start off, for everyone on the project:
 
 ```ts
 // vite.config.ts
@@ -230,28 +182,12 @@ postboi({ inbox: { sounds: false, intro: false } })
 bunx postboi dev --no-sound --no-intro
 ```
 
-These set what the page *starts* with. The toolbar toggle still works, and a viewer's own
-choice is remembered and wins — so muting the project doesn't stop anyone turning it back on
-for themselves. `inbox: false` disables the whole thing.
+These set what the page *starts* with; the toolbar toggle still works, and a viewer's own
+choice is remembered and wins. `inbox: false` disables the whole thing.
 
-### Yes, there's a Start menu
-
-Press the **Windows key** (**Cmd** on macOS) and the Start menu opens: your mailbox, Check
-Mail Now, Delete All Mail, links out to the dashboard and the docs, the sound toggle, and a
-**Turn Off Computer** that does exactly what you'd hope. Only a bare press counts — held as
-a modifier it's left alone, since that's how you copy and reload.
-
-### The desktop
-
-Minimise everything and there's a desktop behind it, with a postman running across it. The
-wallpaper is baked into the package; the clip is not — it streams from Mux the first time
-the inbox is opened, because an encode small enough to publish looked like a photograph put
-through a fax machine.
-
-That is the one thing here that reaches the network. If it can't — you're offline, or the
-machine doesn't allow it — nothing breaks and nothing is logged: the wallpaper is the clip's
-opening frame, so all you lose is the postman. **No mail ever leaves your machine**; the
-capture path has nothing to do with this.
+> The desktop behind the app plays a short clip, which streams rather than shipping in the
+> package — the only thing here that reaches the network. If it can't, nothing breaks and
+> nothing is logged. **No mail ever leaves your machine**; the capture path is unrelated.
 
 ## Tests still use the mock
 
