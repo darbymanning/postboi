@@ -41,14 +41,20 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 /* XP.css supplies the bevels; these are the two insets it does not name. */
 .sunken { box-shadow: inset -1px -1px #fff, inset 1px 1px grey, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a }
 .thin-sunken { border: 1px solid; border-color: #808080 #fff #fff #808080 }
-/* Its .window padding is for dialogs; these are frames holding a full-bleed layout. */
-.window { padding: 3px; display: flex; flex-direction: column; min-height: 0 }
+/*
+ * XP.css draws the window's 3px blue frame as inset shadows *over* the content box, which
+ * is why its own padding is "0 0 3px" — no top, no sides. Adding padding there pushes the
+ * title bar inward and lets the silver window background show in the gap, worst at the
+ * rounded top corners. Sides are padded here instead and the title bar spans back out over
+ * them, so it stays full-bleed under the frame the way the real one is.
+ */
+.window { padding: 0 3px 3px; display: flex; flex-direction: column; min-height: 0 }
 /*
  * Left to XP.css. Its caption buttons are 21px pixel-art tiles that carry their own blue
  * edging, drawn for the 21px bar it sets — override the height and the sprite stops
  * lining up with the gradient, which shows as a grey seam behind the controls.
  */
-.title-bar { flex: none }
+.title-bar { flex: none; margin: 0 -3px }
 .title-bar.dim { background: linear-gradient(90deg, #7f7f7f, #b5b5b5) }
 
 #screen {
@@ -99,7 +105,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 #address { flex: 1; background: #fff; padding: 3px 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
 
 /* The MDI workspace child windows float in. */
-#workspace { flex: 1; position: relative; background: #6a6a6a; min-height: 0; padding: 10px }
+#workspace { flex: 1; position: relative; background: #6a6a6a; min-height: 0; padding: 10px; overflow: hidden }
 .child { display: flex; flex-direction: column; background: #c0c0c0; min-height: 0 }
 /*
  * Real MDI child windows: dragged by the title bar, resized from the edges, maximised,
@@ -194,23 +200,35 @@ td.who { width: 34% }
    thing still wearing grey. */
 #taskbar {
 	display: flex; align-items: center; gap: 4px; padding: 2px 4px; margin: 0;
+	/* Always on top, and windows can't be dragged under it — same as the real one. */
+	position: relative; z-index: 500; height: 30px; flex: none;
 	background: linear-gradient(180deg, #3f8cf3 0%, #245edb 9%, #245edb 88%, #1941a5 100%);
 	border-top: 1px solid #6ba4f8; color: #fff;
 }
 .title-bar-text .mark, #taskbar .mark { width: 14px; height: 14px; flex: none; vertical-align: -3px; margin-right: 4px }
 #intrologo img { width: 34px; height: 34px; vertical-align: -7px; margin-right: 8px }
+/*
+ * Drawn rather than bitmapped. The faithful recreations slice Microsoft's actual XP theme
+ * PNGs, which is fine in a CodePen but not in something published to npm — so the sheen,
+ * the curve and the text shadow are matched in CSS instead.
+ */
 #start {
-	display: flex; align-items: center; gap: 6px; padding: 1px 20px 3px 7px; cursor: pointer;
-	font: italic bold 15px "Franklin Gothic Medium", Tahoma, Arial, sans-serif;
-	color: #fff; text-shadow: 1px 1px 1px rgba(0,0,0,.45);
-	background: linear-gradient(180deg, #4aab4a 0%, #37993a 12%, #2c8b2c 42%, #227d22 55%, #2f912f 80%, #43a843 100%);
-	border: 0; border-radius: 0 11px 11px 0;
-	box-shadow: inset -1px -2px 3px rgba(0,0,0,.35), inset 1px 1px 1px rgba(255,255,255,.45);
+	display: flex; align-items: center; gap: 5px; padding: 0 22px 2px 8px; margin: 0 2px 0 0;
+	height: 30px; flex: none; cursor: pointer; border: 0;
+	font: italic bold 17px "Franklin Gothic Medium", "Segoe UI", Tahoma, Arial, sans-serif;
+	color: #fff; text-shadow: 1px 2px 2px rgb(69,76,16), 0 0 3px rgb(69,76,16);
+	border-radius: 0 14px 14px 0;
+	background:
+		linear-gradient(180deg, rgba(255,255,255,.45) 0%, rgba(255,255,255,.08) 22%, rgba(255,255,255,0) 46%),
+		linear-gradient(180deg, #59a94b 0%, #3f9134 14%, #338a28 45%, #2b7d20 72%, #37962a 88%, #55b23f 100%);
+	box-shadow: inset -2px 0 4px rgba(0,0,0,.28), inset 0 -2px 3px rgba(0,0,0,.25);
 }
-#start .flag { flex: none; filter: drop-shadow(1px 1px 1px rgba(0,0,0,.4)) }
+#start:hover { filter: brightness(1.08) }
+#start.on { background: linear-gradient(180deg, #2b7d20 0%, #338a28 55%, #46a334 100%); box-shadow: inset 2px 2px 5px rgba(0,0,0,.4) }
+#start .flag { flex: none; filter: drop-shadow(1px 1px 1px rgba(0,0,0,.45)) }
 #start.on { background: linear-gradient(180deg, #227d22 0%, #2c8b2c 55%, #3d9f3d 100%); box-shadow: inset 2px 2px 4px rgba(0,0,0,.4) }
 #taskbar .task {
-	flex: 0 1 180px; display: flex; align-items: center; text-align: left; padding: 3px 8px; cursor: pointer;
+	flex: 0 0 162px; display: flex; align-items: center; text-align: left; padding: 3px 8px; cursor: pointer;
 	overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 	font: 11px Tahoma, Arial, sans-serif; color: #fff;
 	background: linear-gradient(180deg, #4993f1 0%, #3c83e3 50%, #2f74d6 100%);
