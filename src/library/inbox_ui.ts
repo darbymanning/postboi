@@ -53,7 +53,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 	clip-path: url(#tube);
 	/* The corners are the deepest part of the clip, so the UI is inset past them — otherwise
 	   the curve eats the title bar and the taskbar. */
-	padding: 34px 24px;
+	padding: 26px 22px;
 	filter:
 		drop-shadow(0 0 2px #000)
 		drop-shadow(0 0 26px rgba(70,150,220,.34))
@@ -181,17 +181,34 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 /* The MDI workspace child windows float in. */
 #workspace { flex: 1; position: relative; background: #6a6a6a; min-height: 0; padding: 10px }
 .child { display: flex; flex-direction: column; background: #c0c0c0; min-height: 0 }
-/* Two child windows, tiled rather than stacked. AOL would have floated the mail on top of
-   the list, but a reader covering the thing you click to change messages is just a bug. */
-#mailbox { position: absolute; left: 10px; right: 10px; top: 10px; bottom: 10px }
-.reading #mailbox { bottom: 47% }
-/* The wordmark and the ad are the first things to go when there's a message to read. */
-.reading #mbhead { display: none }
+/*
+ * Real MDI child windows: dragged by the title bar, resized from the edges, maximised,
+ * minimised to the taskbar, raised on click. Floating over each other the way AOL did is
+ * only tolerable once you can actually move them — which is also what lets the reader be
+ * as big as the mail needs.
+ */
+.child { position: absolute }
+/* "#reader.open" sets display:flex and outranks a bare ".child.min" on specificity, so
+   minimising has to be spelled out at least as strongly or the window never hides. */
+.child.min, #reader.open.min { display: none }
+.child .titlebar { cursor: default; user-select: none }
+.child.max .grip, .child.max .edge { display: none }
+.grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 6 }
+/* The Win95 hatch: three stepped highlights, drawn with a repeating gradient. */
+.grip::after {
+	content: ""; position: absolute; inset: 3px;
+	background: repeating-linear-gradient(135deg, #fff 0 2px, #808080 2px 4px, transparent 4px 6px);
+}
+.edge { position: absolute; z-index: 5 }
+.edge-r { top: 0; bottom: 0; right: -2px; width: 6px; cursor: ew-resize }
+.edge-b { left: 0; right: 0; bottom: -2px; height: 6px; cursor: ns-resize }
+/* An iframe eats mousemove, so a drag that crosses one would stall halfway. */
+.dragging iframe { pointer-events: none }
 
 /* Mailbox header: wordmark, the security reminder, and the ad slot that was always there. */
-#mbhead { display: flex; align-items: flex-start; gap: 14px; padding: 10px 12px; background: #fff }
+#mbhead { display: flex; align-items: flex-start; gap: 12px; padding: 7px 10px; background: #fff }
 #mbhead .mark { display: flex; align-items: center; gap: 8px; color: #000080 }
-#mbhead .mark span { font: italic bold 26px Georgia, "Times New Roman", serif; letter-spacing: -.5px }
+#mbhead .mark span { font: italic bold 21px Georgia, "Times New Roman", serif; letter-spacing: -.5px }
 #mbhead .reminder { flex: 1; line-height: 1.45; padding-top: 4px }
 /* The one thing everybody remembers. */
 #gotmail { display: none; align-items: center; gap: 8px; margin-bottom: 5px }
@@ -208,13 +225,13 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 #ad .meter i { position: absolute; left: 46%; top: -2px; width: 7px; height: 11px; background: #00a000; border: 1px solid #004000 }
 
 /* Folder tabs — New Mail / Old Mail / Sent Mail. */
-#folders { display: flex; gap: 3px; padding: 6px 10px 0; background: #003399 }
+#folders { display: flex; gap: 3px; padding: 4px 10px 0; background: #003399 }
 #folders button {
 	padding: 5px 16px 6px; cursor: pointer; background: #7f9fcf; color: #eaeef8; font-weight: bold;
 	border: 0; border-radius: 7px 7px 0 0;
 }
 #folders button.on { background: #fff; color: #003399 }
-#listwrap { padding: 0 10px 8px; background: #003399; flex: 1; min-height: 0; display: flex }
+#listwrap { padding: 0 10px 6px; background: #003399; flex: 1; min-height: 0; display: flex }
 #list { flex: 1; background: #fff; overflow: auto; min-height: 0 }
 
 table { width: 100%; border-collapse: collapse; font: 12px "MS Sans Serif", Tahoma, sans-serif }
@@ -228,7 +245,7 @@ td.who { width: 34% }
 #empty { padding: 26px; text-align: center; color: #808080; line-height: 1.6 }
 
 /* The action row along the bottom of the mailbox window. */
-#actions { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #c0c0c0 }
+#actions { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #c0c0c0 }
 #actions .spacer { flex: 1 }
 .aolbtn {
 	min-width: 92px; padding: 4px 14px; cursor: pointer; background: #b6c6de; color: #000080; font-weight: bold;
@@ -238,7 +255,7 @@ td.who { width: 34% }
 .aolbtn[disabled] { color: #808080; cursor: default }
 
 /* The reader opens as its own child window, the way AOL opened mail. */
-#reader { position: absolute; left: 10px; right: 10px; top: 54%; bottom: 10px; z-index: 20; display: none }
+#reader { display: none }
 #reader.open { display: flex }
 #head { padding: 7px 9px; background: #c0c0c0; border-bottom: 1px solid #808080 }
 #head .subject { font-weight: bold; font-size: 13px; margin-bottom: 3px }
@@ -254,6 +271,8 @@ td.who { width: 34% }
 #pane .files { padding: 10px }
 #pane .files a { display: block; margin-bottom: 5px; color: #0000ee }
 #blank { display: flex; height: 100%; align-items: center; justify-content: center; color: #808080; text-align: center; line-height: 1.7 }
+#readerfoot { display: flex; align-items: center; gap: 10px; padding: 0 10px 10px; background: #c0c0c0 }
+#readerfoot #r-count { flex: 1; text-align: center; font-weight: bold; color: #17265c }
 
 /* ---- Taskbar and Start menu ---- */
 #taskbar { display: flex; align-items: center; gap: 4px; padding: 2px 3px; background: #c0c0c0; border-top: 1px solid #dfdfdf; margin: 0 2px 2px }
@@ -262,8 +281,13 @@ td.who { width: 34% }
 	border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff;
 }
 #start.on { border-color: #808080 #fff #fff #808080; box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #000 }
-#taskbar .task { flex: 0 1 190px; text-align: left; padding: 3px 8px; background: #c0c0c0; cursor: default; font-weight: bold;
-	border: 2px solid; border-color: #808080 #fff #fff #808080 }
+#taskbar .task {
+	flex: 0 1 190px; text-align: left; padding: 3px 8px; background: #c0c0c0; cursor: pointer; font-weight: bold;
+	overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+	border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff;
+}
+/* The pressed-in look marks the focused window, as it did on the real thing. */
+#taskbar .task.on { border-color: #808080 #fff #fff #808080; box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #000; background: #d4d0c8 }
 #taskbar .spacer { flex: 1 }
 #clock { padding: 3px 9px; border: 1px solid; border-color: #808080 #fff #fff #808080 }
 
@@ -366,8 +390,8 @@ function render_list() {
 		messages.length + " message" + (messages.length === 1 ? "" : "s") + (unread ? ", " + unread + " new" : "")
 	$("gotmail").className = unread ? "on" : ""
 	$("address").textContent = unread
-		? "AOL: You Have Mail! (" + unread + " new)"
-		: "AOL: Welcome, POSTBOI!"
+		? "Postboi: You Have Mail! (" + unread + " new)"
+		: "Postboi: Welcome back!"
 	document.title = (unread ? "(" + unread + ") " : "") + "Postboi Mail"
 	$("stat").textContent = messages.length ? "Ready" : "Waiting for mail\\u2026"
 	$("keepnew").disabled = !current
@@ -386,13 +410,29 @@ function row(label, value) {
 
 function render_reader() {
 	var reader = $("reader")
-	$("workspace").className = current ? "reading" : ""
+	var win = find("reader")
 	if (!current) {
 		reader.className = "child raised"
+		if (win) {
+			win.open = false
+			if (focused === "reader") focused = "mailbox"
+			paint()
+		}
 		return
 	}
-	reader.className = "child raised open"
+	reader.className = "child raised open" + (win && win.min ? " min" : "")
+	if (win) {
+		win.title = current.subject || "(no subject)"
+		var reopened = !win.open
+		win.open = true
+		if (reopened) focus_window("reader")
+		else paint()
+	}
 	$("reader-title").textContent = current.subject || "(no subject)"
+	var index = messages.indexOf(current)
+	$("r-count").textContent = index < 0 ? "" : index + 1 + " of " + messages.length
+	$("r-prev").disabled = index <= 0
+	$("r-next").disabled = index < 0 || index >= messages.length - 1
 	$("head").innerHTML =
 		'<div class="subject">' + esc(current.subject || "(no subject)") + "</div><dl>" +
 		row("From", who([current.from])) +
@@ -473,13 +513,173 @@ function apply_mute(on) {
 	button.lastChild.nodeValue = on ? "Muted" : "Sound"
 }
 
+/* ---- Window manager ---- */
+var wins = []
+var z = 20
+var focused = null
+
+function ws_rect() {
+	var w = $("workspace")
+	return { w: w.clientWidth, h: w.clientHeight }
+}
+
+function place(el, r) {
+	el.style.left = r.x + "px"
+	el.style.top = r.y + "px"
+	el.style.width = r.w + "px"
+	el.style.height = r.h + "px"
+}
+
+function register(id, title, rect) {
+	var el = $(id)
+	var win = { id: id, el: el, title: title, restore: null, min: false, open: id === "mailbox" }
+	wins.push(win)
+	place(el, rect)
+
+	el.addEventListener("mousedown", function () { focus_window(id) })
+	var bar = el.querySelector(".titlebar")
+	bar.addEventListener("mousedown", function (event) {
+		if (event.target.dataset && event.target.dataset.act) return
+		drag(win, event)
+	})
+	bar.addEventListener("dblclick", function (event) {
+		if (event.target.dataset && event.target.dataset.act) return
+		toggle_max(win)
+	})
+	bar.addEventListener("click", function (event) {
+		var act = event.target.dataset && event.target.dataset.act
+		if (act === "max") toggle_max(win)
+		if (act === "min") { win.min = true; el.classList.add("min"); paint() }
+		if (act === "close") close_window(win)
+	})
+	el.querySelector(".grip").addEventListener("mousedown", function (e) { resize(win, e, true, true) })
+	el.querySelector(".edge-r").addEventListener("mousedown", function (e) { resize(win, e, true, false) })
+	el.querySelector(".edge-b").addEventListener("mousedown", function (e) { resize(win, e, false, true) })
+	return win
+}
+
+function find(id) {
+	return wins.filter(function (w) { return w.id === id })[0]
+}
+
+function focus_window(id) {
+	var win = find(id)
+	if (!win || !win.open) return
+	win.min = false
+	win.el.classList.remove("min")
+	win.el.style.zIndex = ++z
+	focused = id
+	paint()
+}
+
+function toggle_max(win) {
+	var box = ws_rect()
+	if (win.restore) {
+		place(win.el, win.restore)
+		win.restore = null
+		win.el.classList.remove("max")
+	} else {
+		win.restore = {
+			x: win.el.offsetLeft,
+			y: win.el.offsetTop,
+			w: win.el.offsetWidth,
+			h: win.el.offsetHeight,
+		}
+		place(win.el, { x: 0, y: 0, w: box.w, h: box.h })
+		win.el.classList.add("max")
+	}
+	focus_window(win.id)
+}
+
+function close_window(win) {
+	win.open = false
+	current = null
+	render_list()
+	render_reader()
+}
+
+/** Repaint what depends on window state: title-bar focus and the taskbar buttons. */
+function paint() {
+	var tasks = $("tasks")
+	tasks.innerHTML = ""
+	wins.forEach(function (win) {
+		win.el.querySelector(".titlebar").className =
+			"titlebar" + (focused === win.id && !win.min ? "" : " dim")
+		if (!win.open) return
+		var button = document.createElement("button")
+		button.className = "task" + (focused === win.id && !win.min ? " on" : "")
+		button.textContent = win.title
+		button.onclick = function () {
+			// Clicking the focused window's button minimises it, as the real taskbar did.
+			if (focused === win.id && !win.min) {
+				win.min = true
+				win.el.classList.add("min")
+				focused = null
+				paint()
+			} else focus_window(win.id)
+		}
+		tasks.appendChild(button)
+	})
+}
+
+/** Shared pointer loop for both dragging and resizing — same maths, different target. */
+function track(on_move) {
+	document.body.classList.add("dragging")
+	function move(event) { on_move(event) }
+	function up() {
+		document.body.classList.remove("dragging")
+		document.removeEventListener("mousemove", move)
+		document.removeEventListener("mouseup", up)
+	}
+	document.addEventListener("mousemove", move)
+	document.addEventListener("mouseup", up)
+}
+
+function drag(win, event) {
+	if (win.restore) return
+	event.preventDefault()
+	focus_window(win.id)
+	var dx = event.clientX - win.el.offsetLeft
+	var dy = event.clientY - win.el.offsetTop
+	var box = ws_rect()
+	track(function (e) {
+		// Clamped so a window can never be dragged somewhere its title bar can't be grabbed back.
+		var x = Math.max(-win.el.offsetWidth + 90, Math.min(box.w - 60, e.clientX - dx))
+		var y = Math.max(0, Math.min(box.h - 24, e.clientY - dy))
+		win.el.style.left = x + "px"
+		win.el.style.top = y + "px"
+	})
+}
+
+function resize(win, event, horizontal, vertical) {
+	if (win.restore) return
+	event.preventDefault()
+	event.stopPropagation()
+	focus_window(win.id)
+	var x0 = event.clientX
+	var y0 = event.clientY
+	var w0 = win.el.offsetWidth
+	var h0 = win.el.offsetHeight
+	track(function (e) {
+		if (horizontal) win.el.style.width = Math.max(320, w0 + e.clientX - x0) + "px"
+		if (vertical) win.el.style.height = Math.max(140, h0 + e.clientY - y0) + "px"
+	})
+}
+
 /* ---- Toolbar and action wiring ---- */
 $("tabs").onclick = function (event) {
 	if (!event.target.dataset || !event.target.dataset.tab) return
 	tab = event.target.dataset.tab
 	render_reader()
 }
-$("reader-close").onclick = function () { current = null; render_list(); render_reader() }
+$("r-prev").onclick = function () {
+	var i = messages.indexOf(current)
+	if (i > 0) open_message(messages[i - 1])
+}
+$("r-next").onclick = function () {
+	var i = messages.indexOf(current)
+	if (i >= 0 && i < messages.length - 1) open_message(messages[i + 1])
+}
 $("t-read").onclick = function () { if (messages.length) open_message(current || messages[0]) }
 $("t-refresh").onclick = function () { load() }
 $("t-print").onclick = function () { window.print() }
@@ -592,6 +792,17 @@ function run_intro() {
 }
 $("intro-cancel").onclick = end_intro
 
+/*
+ * Opening layout. The mailbox takes the top third and the reader the rest — mail is the
+ * thing you came to read, so it gets the room by default, and both can be moved, resized
+ * or maximised from there.
+ */
+var box = ws_rect()
+var split = Math.max(200, Math.min(box.h * 0.44, 320))
+register("mailbox", "Your Local Mailbox", { x: 0, y: 0, w: box.w, h: split })
+register("reader", "Message", { x: 18, y: split + 8, w: box.w - 36, h: box.h - split - 16 })
+focus_window("mailbox")
+
 clock()
 setInterval(clock, 10000)
 new EventSource(api + "/events").onmessage = function () { load() }
@@ -641,7 +852,7 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 	<div id="aol" class="raised">
 		<div class="titlebar">
 			<span>&#9650;</span>
-			<span>America&nbsp; Online</span>
+			<span>Postboi&nbsp; Local</span>
 			<span class="spacer"></span>
 			<span class="box">_</span><span class="box">&#9633;</span><span class="box">&times;</span>
 		</div>
@@ -668,7 +879,7 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 			<div class="band b4">
 				<span class="tb inert"><span class="ico">&#128101;</span>People</span>
 			</div>
-			<div class="band b5"><span style="color:#fff;font:italic bold 15px Arial,sans-serif">AOL.</span></div>
+			<div class="band b5"><span style="color:#fff;font:italic bold 15px Arial,sans-serif">postboi.</span></div>
 		</div>
 
 		<div id="nav">
@@ -676,7 +887,7 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 			<button class="rnd">&#10006;</button><button class="rnd">&#8635;</button>
 			<button class="rnd">&#8962;</button>
 			<span class="pill">Find &#9662;</span>
-			<span id="address" class="thin-sunken">AOL: Welcome, POSTBOI!</span>
+			<span id="address" class="thin-sunken">Postboi: Welcome back!</span>
 			<span class="pill">Go</span><span class="pill">Keyword</span>
 		</div>
 
@@ -684,9 +895,10 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 			<div id="mailbox" class="child raised">
 				<div class="titlebar">
 					<span>&#9650;</span>
-					<span>POSTBOI's Online Mailbox</span>
+					<span>Your Local Mailbox</span>
 					<span class="spacer"></span>
-					<span class="box">_</span><span class="box">&#9633;</span><span class="box">&times;</span>
+					<button class="box" data-act="min">_</button>
+					<button class="box" data-act="max">&#9633;</button>
 				</div>
 
 				<div id="mbhead">
@@ -734,6 +946,7 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 					<span class="spacer"></span>
 					<button class="aolbtn" id="a-delete">Delete All</button>
 				</div>
+				<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 			</div>
 
 			<div id="reader" class="child raised">
@@ -741,7 +954,9 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 					<span>&#9993;</span>
 					<span id="reader-title"></span>
 					<span class="spacer"></span>
-					<button class="box" id="reader-close">&times;</button>
+					<button class="box" data-act="min">_</button>
+					<button class="box" data-act="max">&#9633;</button>
+					<button class="box" data-act="close" id="reader-close">&times;</button>
 				</div>
 				<div id="head"></div>
 				<div id="tabs">
@@ -751,13 +966,19 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 					<button data-tab="files">Attachments</button>
 				</div>
 				<div id="pane" class="thin-sunken"></div>
+				<div id="readerfoot">
+					<button class="aolbtn" id="r-prev">&#9664; Prev</button>
+					<span id="r-count"></span>
+					<button class="aolbtn" id="r-next">Next &#9654;</button>
+				</div>
+				<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 			</div>
 		</div>
 	</div>
 
 	<div id="taskbar">
 		<button id="start"><span>&#9783;</span> Start</button>
-		<span class="task">&#9650; America Online</span>
+		<span id="tasks" style="display:flex;gap:4px"></span>
 		<span class="spacer"></span>
 		<!-- The count lives out here rather than in the mailbox header, which is the first
 		     thing hidden when a message is open. -->

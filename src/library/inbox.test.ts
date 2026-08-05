@@ -117,6 +117,23 @@ describe("inbox middleware", () => {
 		expect(html).toContain('id="t-sound"')
 	})
 
+	it("gives both windows the controls a window manager needs", async () => {
+		const html = inbox_ui()
+		// Minimise/maximise on both, close on the reader, and resize handles on each — the
+		// reading pane is only ever big enough because you can make it bigger.
+		expect(html.match(/data-act="min"/g)).toHaveLength(2)
+		expect(html.match(/data-act="max"/g)).toHaveLength(2)
+		expect(html.match(/data-act="close"/g)).toHaveLength(1)
+		expect(html.match(/class="grip"/g)).toHaveLength(2)
+	})
+
+	it("is branded Postboi, not the client it's dressed as", async () => {
+		const html = inbox_ui()
+		expect(html).toContain("Postboi&nbsp; Local")
+		expect(html).not.toContain("America Online")
+		expect(html).not.toMatch(/>AOL\.?</)
+	})
+
 	it("defaults every piece on", async () => {
 		const html = inbox_ui()
 		expect(html).toContain('class="crt"')
