@@ -120,7 +120,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 /* An iframe eats mousemove, so a drag that crosses one would stall halfway. */
 .dragging iframe { pointer-events: none }
 
-/* Mailbox header: wordmark, the security reminder, and the ad slot that was always there. */
+/* Mailbox header: the wordmark and the security reminder. */
 #mbhead { display: flex; align-items: flex-start; gap: 12px; padding: 7px 10px; background: #fff }
 #mbhead .mark { display: flex; align-items: center; gap: 8px; color: #000080 }
 #mbhead .mark span { font: italic bold 21px Georgia, "Times New Roman", serif; letter-spacing: -.5px }
@@ -133,11 +133,6 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 @keyframes wave { 0%, 100% { transform: rotate(0) } 50% { transform: rotate(-11deg) } }
 /* Only the flag waves — a wobbling mailbox reads as a rendering bug, not as delight. */
 #mbhead .flag { animation: wave 1.5s ease-in-out infinite; transform-box: view-box; transform-origin: 28px 30px }
-#ad { width: 250px; border: 2px solid #000080; background: #d8d8e8 }
-#ad .hd { background: #d02020; color: #fff; font-weight: bold; padding: 2px 5px }
-#ad .bd { padding: 4px 6px; font-size: 11px; line-height: 1.4 }
-#ad .meter { height: 7px; background: #fff; border: 1px solid #808080; margin: 3px 0; position: relative }
-#ad .meter i { position: absolute; left: 46%; top: -2px; width: 7px; height: 11px; background: #00a000; border: 1px solid #004000 }
 
 /* Folder tabs — New Mail / Old Mail / Sent Mail. */
 #folders { display: flex; gap: 3px; padding: 4px 10px 0; background: #003399 }
@@ -426,16 +421,33 @@ var muted = localStorage.getItem("postboi:sound")
 	? localStorage.getItem("postboi:sound") === "off"
 	: document.documentElement.dataset.sounds === "off"
 
+/*
+ * Browsers refuse audio until the page has been interacted with, and a freshly-opened
+ * inbox has had none — so the greeting would simply never be heard. A blocked clip is
+ * held and released by the first click or keypress instead of being dropped.
+ */
+var pending = null
 function play(name) {
 	if (muted) return null
 	var audio = new Audio(api + "/sounds/" + name)
 	audio.volume = 0.7
-	// Browsers refuse audio until the page has been interacted with. That's a promise
-	// rejection, not an error worth surfacing — the next one will play.
 	var played = audio.play()
-	if (played && played.catch) played.catch(function () {})
+	if (played && played.catch) {
+		played.catch(function () {
+			pending = audio
+		})
+	}
 	return audio
 }
+
+function release_pending() {
+	if (!pending || muted) return
+	var audio = pending
+	pending = null
+	audio.play().catch(function () {})
+}
+document.addEventListener("pointerdown", release_pending, true)
+document.addEventListener("keydown", release_pending, true)
 
 /** The handshake, held open for as long as the sign-on takes. */
 var dialing = null
@@ -731,6 +743,7 @@ function end_intro() {
 	// The handshake belongs to the dialog: it stops the moment the mailbox is up, and the
 	// greeting lands on the main screen rather than over the top of it.
 	stop_dialing()
+	pending = null
 	$("intro").className = ""
 	play("welcome")
 }
@@ -767,14 +780,13 @@ var mb = { w: Math.min(760, box.w - 40), h: Math.min(430, box.h - 40) }
 var mbx = Math.round((box.w - mb.w) / 2)
 var mby = Math.max(0, Math.round((box.h - mb.h) / 2) - 20)
 register("mailbox", "Your Local Mailbox", { x: mbx, y: mby, w: mb.w, h: mb.h })
-/* Mail opens in front of the mailbox but starts below its list, so the message you picked
-   stays in view behind — the way the reference shot has it. */
-var ry = mby + 196
+/* Centred both ways, in front of the mailbox. */
+var rd = { w: Math.min(700, box.w - 60), h: Math.min(430, box.h - 60) }
 register("reader", "Message", {
-	x: mbx + 8,
-	y: ry,
-	w: mb.w - 16,
-	h: Math.max(240, Math.min(400, box.h - ry - 8)),
+	x: Math.round((box.w - rd.w) / 2),
+	y: Math.max(0, Math.round((box.h - rd.h) / 2)),
+	w: rd.w,
+	h: rd.h,
 })
 focus_window("mailbox")
 
@@ -882,13 +894,6 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 						<div id="gotmail"><span class="shout">You've Got <b>Mail!</b></span></div>
 						REMINDER: Postboi will never send this mail anywhere.<br>
 						Everything here was captured locally instead of going out.
-					</div>
-					<div id="ad">
-						<div class="hd">&#9209; Speed Up Your Connection</div>
-						<div class="bd">
-							<div class="meter"><i></i></div>
-							Slow &#183;&#183;&#183;&#183;&#183;&#183;&#183;&#183;&#183;&#183;&#183; Fast
-						</div>
 					</div>
 				</div>
 
