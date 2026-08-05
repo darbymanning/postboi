@@ -4,6 +4,7 @@ import { dirname, join } from "node:path"
 import process, { cwd, pid } from "node:process"
 import { INBOX_DISCOVERY, INBOX_PATH } from "../library/inbox.js"
 import { create_inbox_store, inbox_middleware } from "../library/inbox_server.js"
+import type { SentMessage } from "../library/mock.js"
 
 /**
  * `postboi dev` — the dev inbox as a standalone server.
@@ -38,6 +39,54 @@ function listen(
 }
 
 /**
+ * Sample mail for `--demo`: one of each shape the inbox renders differently — a styled HTML
+ * message, a FormData table with attachments, and a body with no HTML part at all.
+ */
+function demo_messages(): Array<SentMessage> {
+	return [
+		{
+			to: [{ address: "ada@example.com", name: "Ada Lovelace" }],
+			from: { address: "no-reply@acme.example", name: "Acme" },
+			reply_to: [{ address: "support@acme.example" }],
+			subject: "Your sign-in link",
+			html: `<div style="font-family:system-ui;padding:24px;max-width:520px">
+	<h1 style="font-size:20px">Welcome back</h1>
+	<p>Click below to sign in. This link expires in 15 minutes.</p>
+	<p><a href="https://acme.example/magic" style="background:#FDC005;color:#000;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600">Sign in</a></p>
+	<p style="color:#666;font-size:13px">If you didn't request this, ignore it.</p>
+</div>`,
+			text: "Welcome back. Sign in: https://acme.example/magic",
+			attachments: [],
+		},
+		{
+			to: [{ address: "team@acme.example" }],
+			cc: [{ address: "sales@acme.example" }],
+			from: { address: "forms@acme.example" },
+			subject: "New contact form submission",
+			html: `<table border="1" cellpadding="8" style="border-collapse:collapse;font-family:system-ui">
+	<tr><th align="left">Name</th><td>Grace Hopper</td></tr>
+	<tr><th align="left">Email</th><td>grace@navy.example</td></tr>
+	<tr><th align="left">Message</th><td>Found a bug in your compiler.</td></tr>
+</table>`,
+			attachments: [
+				{
+					name: "logbook.txt",
+					mime_type: "text/plain",
+					content: Buffer.from("moth found in relay 70, panel F\n").toString("base64"),
+				},
+			],
+		},
+		{
+			to: [{ address: "ada@example.com" }],
+			from: { address: "billing@acme.example" },
+			subject: "Receipt for order #1042",
+			text: "Thanks for your order.\n\nOrder #1042 — £29.00\nVAT included.",
+			attachments: [],
+		},
+	]
+}
+
+/**
  * Start the inbox and advertise its port, so a `mail()` in another process finds it with
  * nothing configured. Runs until interrupted.
  */
@@ -49,6 +98,9 @@ export async function dev_command(args: Array<string>): Promise<void> {
 	}
 
 	const store = create_inbox_store()
+	// Sample mail, so the inbox has something in it without an app wired up — and so a
+	// restart (`bun --watch`, editing the UI) doesn't leave you staring at an empty mailbox.
+	if (args.includes("--demo")) for (const message of demo_messages()) store.add(message)
 	const middleware = inbox_middleware(store)
 	const server = createServer((request, response) => {
 		middleware(request, response, () => {

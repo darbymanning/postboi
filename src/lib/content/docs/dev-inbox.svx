@@ -57,6 +57,23 @@ container, a different runtime — set `POSTBOI_INBOX` to the port:
 POSTBOI_INBOX=1080 bun run dev
 ```
 
+## Just looking at it
+
+`--demo` fills the inbox with sample mail — a styled HTML message, a FormData table with
+an attachment, and a text-only body — so there's something to look at without wiring an app
+to it:
+
+```bash
+bunx postboi dev --demo
+```
+
+It re-seeds on every start, which also makes it the way to work on the inbox itself: run it
+under a file watcher and an edit restarts the server with the sample mail still there.
+
+```bash
+bun --watch src/cli/index.ts dev --demo
+```
+
 ## What gets captured
 
 **Everything**, including a provider with real, working credentials. That's the point: a
