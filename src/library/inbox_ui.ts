@@ -11,6 +11,14 @@
 
 import { THEME_CSS } from "./inbox_theme.js"
 
+/**
+ * The Postboi mark, inlined as a data URI — the tab icon, and the badge in every title
+ * bar and on the sign-on. Copied from static/favicon.svg; the published package has no
+ * static directory to serve it from.
+ */
+const FAVICON =
+	"data:image/svg+xml,%3Csvg%20width%3D%22664%22%20height%3D%22664%22%20viewBox%3D%22-76%20-76%20664%20664%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%20%3Cpath%20d%3D%22M68.3939%20168.189L68.3751%20168.72C56.7497%20176.365%2028.1454%20195.529%2025.0885%20209.716C21.192%20227.793%2049.1638%20244.048%2064.0193%20248.609C63.4697%20259.384%2063.0556%20277.148%2064.968%20287.805C51.0574%20290.624%2039.5035%20295.187%2031.4207%20307.82C14.5473%20334.193%2022.5963%20369.062%2049.2014%20385.517C56.7911%20390.265%2061.3426%20391.191%2069.768%20393.42C69.768%20444.235%20139.294%20508.235%20239.059%20510.118C338.824%20512%20421.921%20443.237%20431.059%20393.412C502.84%20388.804%20506.628%20299.158%20448.185%20287.251C451.509%20272.03%20452.36%20256.371%20450.696%20240.88C450.018%20234.704%20445.41%20227.947%20447.27%20223.786C455.074%20206.312%20451.95%20180.459%20447.338%20163.343C434.677%20116.336%20406.532%2090.6687%20371.302%2059.6648C356.703%2046.8178%20347.121%2034.0163%20328.976%2024.1441C289.145%202.47405%20245.056%20-1.48981%20201.947%2010.2346C154.414%2023.4762%20114.045%2054.9714%2089.6344%2097.8536C77.3953%20119.356%2069.3652%20143.371%2068.3939%20168.189Z%22%20fill%3D%22%230F1C41%22%2F%3E%20%3Cpath%20d%3D%22M259.765%20350.118C257.882%20363.294%20223.153%20378.787%20212.002%20360.205C209.292%20355.728%20208.558%20350.33%20209.981%20345.293C213.806%20331.236%20228.578%20323.482%20242.677%20325.848C253.933%20327.737%20261.647%20336.941%20259.765%20350.118Z%22%20fill%3D%22%23F88428%22%2F%3E%20%3Cpath%20d%3D%22M382.931%20206.464C384.968%20210.523%20381.768%20230.997%20384.102%20236.757C396.808%20268.104%20407.744%20293.006%20405.467%20328.039C405.29%20330.786%20407.202%20334.861%20409.943%20336.37C427.283%20345.914%20423.692%20308.011%20439.861%20306.756C465.269%20304.06%20475.641%20336.713%20461.681%20354.527C452.695%20366.002%20445.772%20368.185%20432.102%20370.493C429.757%20367.38%20425.228%20359.685%20421.324%20360.34C412.955%20369.443%20408.418%20411.819%20391.096%20429.908C367.996%20454.032%20347.117%20468.88%20315.445%20480.234C268.04%20497.225%20218.327%20500.756%20171.867%20479.057C148.334%20468.854%20124.842%20454.887%20107.713%20435.363C83.8557%20408.536%2086.991%20374.047%2085.9783%20341.249C85.0635%20311.741%2090.2667%20287.11%2092.3787%20258.482C114.026%20255.485%20119.346%20254.017%20139.765%20246.468C138.764%20248.746%20137.8%20251.039%20136.866%20253.346C135.545%20256.685%20135.285%20257.723%20136.588%20260.751L138.308%20261.038C146.124%20257.575%20175.838%20247.787%20178.428%20245.364L178.493%20243.202C177.1%20239.807%20173.666%20237.171%20170.873%20234.618C178.805%20234.647%20184.983%20234.719%20192.862%20233.878L192.592%20247.311C219.935%20247.071%20255.921%20232.44%20278.171%20217.064L271.684%20236.376C295.413%20231.261%20319.691%20227.567%20342.942%20221.005C355.833%20217.366%20369.021%20211.486%20381.403%20206.187L382.931%20206.464ZM301.832%20376.713C278.547%20394.038%20260.413%20404.775%20229.655%20400.242C217.559%20398.45%20206.039%20393.884%20195.995%20386.9C191.884%20384.005%20186.899%20378.215%20182.043%20378.475C175.609%20387.615%20190.642%20423.64%20195.562%20433.259C204.925%20447.941%20217.872%20460.85%20235.494%20464.675C277.218%20473.729%20299.226%20429.799%20305.254%20395.759C306.413%20389.201%20309.237%20379.804%20301.832%20376.713ZM271.609%20339.789C255.786%20289.622%20182.792%20315.676%20194.737%20361.579C202.557%20391.614%20282.353%20384%20271.609%20339.789ZM323.471%20280.553C315.983%20284.478%20311.809%20289.404%20309.663%20297.735C305.522%20313.818%20312.155%20350.775%20325.489%20350.446C338.823%20350.117%20346.372%20284.804%20323.471%20280.553ZM158.178%20280.733C132.861%20291.75%20139.11%20347.683%20158.893%20349.246C166.103%20346.02%20170.896%20341.404%20173.196%20333.701C178.361%20316.409%20180.074%20286.409%20158.178%20280.733ZM343.688%20262.393C352.9%20256.917%20336.038%20232.49%20314.049%20233.772C306.278%20238.797%20306.041%20242.327%20303.594%20251.289C321.728%20251.403%20325.162%20250.91%20340.149%20261.352L343.688%20262.393Z%22%20fill%3D%22%23FCC58F%22%2F%3E%20%3Cpath%20d%3D%22M232.975%20437.332C246.822%20435.984%20255.835%20437.479%20269.026%20441.236C264.588%20446.375%20263.473%20447.708%20258.026%20451.841C251.005%20453.999%20223.436%20453.942%20226.199%20442.17C228.364%20439.211%20229.73%20438.827%20232.975%20437.332Z%22%20fill%3D%22%23E04A6E%22%2F%3E%20%3Cpath%20d%3D%22M119.36%20355.277C126.82%20353.057%20133.485%20354.181%20140.405%20357.536C152.798%20363.54%20146.245%20376.615%20137.412%20378.353C129.95%20379.821%20122.561%20380.55%20116.706%20376.471C109.993%20371.793%20106.075%20359.23%20119.36%20355.277Z%22%20fill%3D%22%23F88428%22%2F%3E%20%3Cpath%20d%3D%22M355.765%20353.882C370.824%20353.882%20383.075%20379.154%20360.949%20378.753C338.824%20378.353%20332.853%20368.342%20334.897%20362.994C336.941%20357.647%20340.706%20353.882%20355.765%20353.882Z%22%20fill%3D%22%23F88428%22%2F%3E%20%3Cpath%20d%3D%22M89.0997%20152.275C98.6357%20121.566%20105.695%20102.135%20127.311%2077.2893C154.094%2046.5083%20197.561%2025.1854%20238.246%2022.7786C264.294%2021.2377%20299.118%2029.1564%20321.777%2042.6563C329.051%2046.9891%20338.056%2055.2078%20344.584%2060.9855C344.426%2062.0784%20344.223%2063.4853%20343.978%2065.2057C348.029%2076.4035%20353.657%2086.7079%20356.778%2098.2858C360.057%20110.451%20360.328%20123.204%20358.961%20135.672C358.517%20139.733%20357.113%20146.317%20353.578%20148.8C331.931%20137.956%20297.043%20123.309%20272.93%20123.096C281.529%20114.918%20288.166%20107.384%20289.22%2095.0328C290.459%2081.9801%20286.348%2068.984%20277.828%2059.0173C257.781%2035.2842%20227.957%2036.8142%20205.753%2055.4115C186.858%2071.2406%20187.2%20102.518%20203.453%20120.116C178.741%20121.775%20151.752%20127.447%20128.742%20136.741C117.644%20141.225%2099.9346%20149.561%2089.0997%20152.275Z%22%20fill%3D%22%238DB7D5%22%2F%3E%20%3Cpath%20d%3D%22M215.963%20135.277C268.149%20129.918%20349.802%20155.829%20387.686%20191.482C373.324%20188.181%20357.237%20186.536%20342.382%20183.3C310.442%20176.343%20274.124%20167.503%20241.713%20164.129C233.435%20162.617%20219.087%20162.461%20210.549%20162.202C158.645%20160.621%20113.905%20173.945%2065.7472%20191.06C113.811%20154.615%20155.219%20139.779%20215.963%20135.277Z%22%20fill%3D%22%23346696%22%2F%3E%20%3Cpath%20d%3D%22M344.584%2060.9855C382.532%2093.6552%20427.272%20132.896%20431.5%20186.19C431.921%20191.535%20433.284%20205.359%20430.295%20209.175C418.843%20203.351%20401.047%20176.297%20385.525%20168.839C384.825%20168.504%20352.592%20147.761%20353.578%20148.8C357.113%20146.317%20358.517%20139.733%20358.961%20135.672C360.328%20123.204%20360.057%20110.451%20356.778%2098.2858C353.657%2086.7078%20338.824%2065.8823%20344.584%2060.9855Z%22%20fill%3D%22%23588CB5%22%2F%3E%20%3Cpath%20d%3D%22M67.7048%20306.415C70.2159%20309.199%2069.7152%20364.109%2069.8093%20370.599C62.6451%20368.363%2059.2794%20366.251%2053.2258%20362.095C36.4653%20347.559%2037.5006%20322.281%2056.5726%20310.116C59.5768%20308.201%2064.2338%20307.25%2067.7048%20306.415Z%22%20fill%3D%22%23FCC58F%22%2F%3E%20%3Cpath%20d%3D%22M218.353%2065.8824C218.353%2065.8824%20244.706%2037.6471%20272.746%2067.4902L242.824%2080.9412L218.353%2065.8824Z%22%20fill%3D%22%23FEFDFD%22%2F%3E%20%3Cpath%20d%3D%22M242.824%2094.1176L264.607%20111.245C242.824%20128%20214.588%20111.245%20214.588%20111.245L242.824%2094.1176Z%22%20fill%3D%22%23FDC005%22%2F%3E%20%3Cpath%20d%3D%22M252.235%2088.4706L276.706%2077.1765C276.706%2077.1765%20286.118%2092.2353%20272.941%20103.529L252.235%2088.4706Z%22%20fill%3D%22%23FEFDFD%22%2F%3E%20%3Cpath%20d%3D%22M208.941%20101.647C208.941%20101.647%20201.412%2086.5882%20211.283%2074.8412L233.412%2088.4706L208.941%20101.647Z%22%20fill%3D%22%23FEFDFD%22%2F%3E%20%3C%2Fsvg%3E"
+
 const CSS = `
 /* Phosphor primaries, from the reference pen. */
 :root { --crt-red: rgb(218, 49, 49); --crt-green: rgb(112, 159, 115); --crt-blue: rgb(40, 129, 206) }
@@ -71,7 +79,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 	clip-path: url(#tube);
 	/* The corners are the deepest part of the clip, and the warp pulls content further in
 	   still, so the UI is inset past both — otherwise the curve eats the title bar. */
-	padding: 44px 30px;
+	padding: 40px 30px 56px;
 	filter:
 		drop-shadow(0 0 2px #000)
 		drop-shadow(0 0 26px rgba(70,150,220,.34))
@@ -282,21 +290,36 @@ td.who { width: 34% }
 #readerfoot #r-count { flex: 1; text-align: center; font-weight: bold; color: #17265c }
 
 /* ---- Taskbar and Start menu ---- */
-#taskbar { display: flex; align-items: center; gap: 4px; padding: 2px 3px; background: #c0c0c0; border-top: 1px solid #dfdfdf; margin: 0 2px 2px }
+/* The taskbar is Luna's, not 98's — everything else moved to XP.css and this was the last
+   thing still wearing grey. */
+#taskbar {
+	display: flex; align-items: center; gap: 4px; padding: 2px 4px; margin: 0;
+	background: linear-gradient(180deg, #3f8cf3 0%, #245edb 9%, #245edb 88%, #1941a5 100%);
+	border-top: 1px solid #6ba4f8; color: #fff;
+}
+.title-bar-text .mark, #taskbar .mark { width: 14px; height: 14px; flex: none; vertical-align: -3px; margin-right: 4px }
+#intrologo img { width: 34px; height: 34px; vertical-align: -7px; margin-right: 8px }
 #start {
-	display: flex; align-items: center; gap: 4px; padding: 2px 7px 3px 4px; font-weight: bold; cursor: pointer; background: #c0c0c0;
-	border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff;
+	display: flex; align-items: center; gap: 5px; padding: 2px 16px 3px 8px; cursor: pointer;
+	font: italic bold 14px Tahoma, Arial, sans-serif; color: #fff; text-shadow: 1px 1px 1px rgba(0,0,0,.5);
+	background: linear-gradient(180deg, #3c993c 0%, #33912f 40%, #23801f 55%, #34a334 100%);
+	border: 0; border-radius: 0 9px 9px 0; box-shadow: inset -1px -1px 2px rgba(0,0,0,.35), inset 1px 1px 1px rgba(255,255,255,.4);
 }
-#start.on { border-color: #808080 #fff #fff #808080; box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #000 }
+#start.on { background: linear-gradient(180deg, #23801f 0%, #2c8c28 50%, #3c993c 100%) }
 #taskbar .task {
-	flex: 0 1 190px; text-align: left; padding: 3px 8px; background: #c0c0c0; cursor: pointer; font-weight: bold;
+	flex: 0 1 180px; display: flex; align-items: center; text-align: left; padding: 3px 8px; cursor: pointer;
 	overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-	border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff;
+	font: 11px Tahoma, Arial, sans-serif; color: #fff;
+	background: linear-gradient(180deg, #4993f1 0%, #3c83e3 50%, #2f74d6 100%);
+	border: 0; border-radius: 3px; box-shadow: inset 1px 1px 0 rgba(255,255,255,.25);
 }
-/* The pressed-in look marks the focused window, as it did on the real thing. */
-#taskbar .task.on { border-color: #808080 #fff #fff #808080; box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #000; background: #d4d0c8 }
+/* Pressed in marks the focused window, as it did on the real thing. */
+#taskbar .task.on { background: linear-gradient(180deg, #1e50b0 0%, #2a62c8 60%, #3f7ddd 100%); box-shadow: inset 1px 1px 3px rgba(0,0,0,.45) }
 #taskbar .spacer { flex: 1 }
-#clock { padding: 3px 9px; border: 1px solid; border-color: #808080 #fff #fff #808080 }
+#clock, #stat, #count {
+	padding: 3px 9px; color: #fff; font: 11px Tahoma, Arial, sans-serif;
+}
+#clock { background: linear-gradient(180deg, #1c8ad6 0%, #14a5e0 40%, #1291d8 100%); border-left: 1px solid #1a5fc8 }
 
 /* Sits above the taskbar, the way it opens off the Start button rather than under it. */
 #startmenu { display: none; position: absolute; left: 2px; bottom: 30px; z-index: 200; background: #c0c0c0; padding: 2px; min-width: 210px }
@@ -540,6 +563,7 @@ function apply_mute(on) {
  * against the undistorted layout, so every pixel of bend is a pixel of aiming error at the
  * edges. K is set where the curve reads but a Start-menu row still catches its own click.
  */
+var FAVICON_URL = document.querySelector("link[rel=icon]").href
 var WARP_K = 0.035
 
 function build_warp() {
@@ -683,7 +707,8 @@ function paint() {
 		if (!win.open) return
 		var button = document.createElement("button")
 		button.className = "task" + (focused === win.id && !win.min ? " on" : "")
-		button.textContent = win.title
+		button.innerHTML = '<img class="mark" src="' + FAVICON_URL + '" alt="">'
+		button.appendChild(document.createTextNode(win.title))
 		button.onclick = function () {
 			// Clicking the focused window's button minimises it, as the real taskbar did.
 			if (focused === win.id && !win.min) {
@@ -957,6 +982,7 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Postboi Mail</title>
+<link rel="icon" href="${FAVICON}">
 <style>${THEME_CSS}</style>
 <style>${CSS}</style>
 </head>
@@ -984,7 +1010,7 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 
 	<div id="aol" class="window">
 		<div class="title-bar">
-			<div class="title-bar-text"><span>&#9650;</span> Postboi Local</div>
+			<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Postboi Local</div>
 			<div class="title-bar-controls">
 				<button aria-label="Minimize"></button>
 				<button aria-label="Maximize"></button>
@@ -1029,7 +1055,7 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 		<div id="workspace">
 			<div id="mailbox" class="child window">
 				<div class="title-bar">
-					<div class="title-bar-text"><span>&#9650;</span> Your Local Mailbox</div>
+					<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Your Local Mailbox</div>
 					<div class="title-bar-controls">
 						<button aria-label="Minimize" data-act="min"></button>
 						<button aria-label="Maximize" data-act="max"></button>
@@ -1136,11 +1162,11 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 	<div id="intro">
 		<div id="introwin" class="child window">
 			<div class="title-bar">
-				<div class="title-bar-text"><span>&#9650;</span> Connecting To Postboi&#8230;</div>
+				<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Connecting To Postboi&#8230;</div>
 				<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div>
 			</div>
 			<div id="introbody">
-				<div id="intrologo"><i>&#128238;</i><span>post</span><b>boi</b></div>
+				<div id="intrologo"><img src="${FAVICON}" alt=""><span>post</span><b>boi</b></div>
 				<div id="steps">
 					<div class="step" id="s0"><div class="box"></div><span class="cap">1. Locating mailroom&#8230;</span></div>
 					<div class="step" id="s1"><div class="box"></div><span class="cap">2. Connecting to localhost&#8230;</span></div>
