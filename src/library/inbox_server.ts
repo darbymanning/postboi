@@ -3,6 +3,7 @@ import type { InboxMessage } from "./inbox.js"
 import { INBOX_PATH } from "./inbox.js"
 import { inbox_ui, type InboxUiOptions } from "./inbox_ui.js"
 import { SOUNDS } from "./inbox_sounds.js"
+import { ART } from "./inbox_art.js"
 
 /**
  * The dev inbox's storage and HTTP surface. Kept apart from the transport that mounts it:
@@ -149,6 +150,16 @@ export function inbox_middleware(
 			response.setHeader("content-type", "text/html; charset=utf-8")
 			response.setHeader("cache-control", "no-store")
 			return void response.end(inbox_ui(ui))
+		}
+
+		const art_match = /^\/api\/art\/([a-z]+)$/.exec(route)
+		if (art_match && method === "GET") {
+			const png = ART[art_match[1]]
+			if (!png) return void send_json(response, 404, { error: "no such art" })
+			response.statusCode = 200
+			response.setHeader("content-type", "image/png")
+			response.setHeader("cache-control", "max-age=86400")
+			return void response.end(Buffer.from(png, "base64"))
 		}
 
 		const sound_match = /^\/api\/sounds\/([a-z]+)$/.exec(route)

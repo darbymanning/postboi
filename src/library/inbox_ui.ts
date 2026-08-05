@@ -43,11 +43,12 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 .thin-sunken { border: 1px solid; border-color: #808080 #fff #fff #808080 }
 /* Its .window padding is for dialogs; these are frames holding a full-bleed layout. */
 .window { padding: 3px; display: flex; flex-direction: column; min-height: 0 }
-/* XP.css draws its title-bar controls at 21px, sized for XP's taller bar. Left at the
-   98-era height they sit flush against every edge and read as oversized, so the bar gets
-   the height they expect and the controls get a little breathing room. */
-.title-bar { flex: none; height: 28px; padding: 0 3px 0 5px; align-items: center }
-.title-bar-controls { align-items: center; gap: 1px }
+/*
+ * Left to XP.css. Its caption buttons are 21px pixel-art tiles that carry their own blue
+ * edging, drawn for the 21px bar it sets — override the height and the sprite stops
+ * lining up with the gradient, which shows as a grey seam behind the controls.
+ */
+.title-bar { flex: none }
 .title-bar.dim { background: linear-gradient(90deg, #7f7f7f, #b5b5b5) }
 
 #screen {
@@ -270,17 +271,16 @@ td.who { width: 34% }
 #intrologo b { color: #fdc005; text-shadow: 0 1px 0 #b98d00 }
 #steps { display: flex; gap: 14px }
 .step { flex: 1; text-align: center }
-/* Empty on purpose — the boxes are where the animation would go if we had one. */
-.step .box { height: 92px; background: #c9c9f0; border: 3px solid; border-color: #6a7ab8 #aab4dc #aab4dc #6a7ab8;
-	display: flex; align-items: center; justify-content: center; font-size: 30px; color: #3b4a86 }
+/* Empty lavender until the step is reached; the artwork lands as it becomes active. */
+.step .box {
+	height: 96px; background: #b8b7f4 no-repeat center / contain;
+	border: 3px solid; border-color: #6a7ab8 #aab4dc #aab4dc #6a7ab8;
+}
 .step .cap { display: block; margin-top: 7px; color: #555 }
 .step.on .cap { color: #000; font-weight: bold }
-.step.on .box { background: #d8d8fa; box-shadow: 0 0 0 2px #17265c }
-.step.done .box { background: #bcd8bc }
+.step.on .box { box-shadow: 0 0 0 2px #17265c }
 #introfoot { border-top: 2px solid #17265c; margin-top: 14px; padding-top: 12px; text-align: center }
-/* Ellipsis that actually animates, so a paused step doesn't look like a hang. */
-@keyframes dots { 0% { content: "." } 33% { content: ".." } 66% { content: "..." } }
-.step.on .box::after { content: "."; animation: dots 900ms steps(1) infinite; font: bold 34px monospace; letter-spacing: 2px }
+
 
 /* "It's now safe…" — the one screen everyone who used a 98 box remembers. */
 #shutdown { display: none; position: absolute; inset: 0; z-index: 400; background: #000; color: #ffa726;
@@ -783,6 +783,7 @@ $("shutdown").onclick = function () { $("shutdown").className = "" }
  * The sign-on. Purely theatre over an inbox that's already live behind it — the fetch and
  * the event stream start immediately, so cancelling never costs you anything.
  */
+var STEP_ART = ["locating", "connecting", "intercepting"]
 var intro_timers = []
 function end_intro() {
 	intro_timers.forEach(clearTimeout)
@@ -798,6 +799,10 @@ function end_intro() {
 	play("welcome")
 }
 function run_intro() {
+	for (var i = 0; i < 3; i++) {
+		$("s" + i).className = "step"
+		$("s" + i).querySelector(".box").style.backgroundImage = ""
+	}
 	$("intro").className = "open"
 	drag_dialog($("introwin"))
 	dialing = play("dialup")
@@ -807,6 +812,10 @@ function run_intro() {
 			intro_timers.push(setTimeout(function () {
 				if (n > 0) $("s" + (n - 1)).className = "step done"
 				$("s" + n).className = "step on"
+				// The panel arrives with the step, which is what makes the boxes fill in one
+				// at a time rather than all being there from the start.
+				$("s" + n).querySelector(".box").style.backgroundImage =
+					"url(" + api + "/art/" + STEP_ART[n] + ")"
 			}, step + n * 820))
 		})(i)
 	}

@@ -45,6 +45,7 @@ describe("package exports", () => {
 			"inbox_ui.ts", // the dev inbox document, served by inbox_server.ts
 			"inbox_sounds.ts", // the dev inbox's audio, served by inbox_server.ts
 			"inbox_theme.ts", // vendored XP.css, inlined into the dev inbox document
+			"inbox_art.ts", // the dev inbox's sign-on artwork, served by inbox_server.ts
 		])
 		const providers = readdirSync(`${root}src/library`).filter(
 			(f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !internal.has(f)

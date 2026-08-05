@@ -143,15 +143,15 @@ mailbox without going back to the list.
 New mail announces itself, and there's a greeting on load and a sign-off on Shut Down — the
 real 1990s ones. The **Sound** button in the toolbar mutes it, and the choice is remembered,
 because a dev tool that says "Welcome!" in an open-plan office is a dev tool people
-uninstall. Browsers won't play anything until you've clicked the page once, so the first
-greeting usually waits for you.
+uninstall. Pressing **SIGN ON** is what lets any of it play — see below.
 
 ### Signing on
 
 The inbox opens on a Sign On dialog. The credentials are set dressing — there's nothing to
 authenticate against — so the fields are filled in and disabled. Press **SIGN ON** and it
-dials in: _Locating mailroom… Connecting to localhost… Intercepting outgoing mail…_ — then
-greets you and hands over the desktop. **Cancel** skips straight through.
+dials in: _Locating mailroom… Connecting to localhost… Intercepting outgoing mail…_ — each
+panel filling in as its step is reached — then greets you and hands over the desktop.
+**Cancel** skips straight through.
 
 It isn't only theatre. Browsers refuse to play audio until the page has been interacted
 with, so on a cold load the handshake and the greeting would never be heard. Pressing SIGN

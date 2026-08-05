@@ -164,6 +164,17 @@ describe("inbox middleware", () => {
 		}
 	})
 
+	it("serves each sign-on panel as a PNG", async () => {
+		for (const name of ["locating", "connecting", "intercepting"]) {
+			const response = await fetch(`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/art/${name}`)
+			expect(response.status, name).toBe(200)
+			expect(response.headers.get("content-type")).toBe("image/png")
+			const bytes = new Uint8Array(await response.arrayBuffer())
+			// Decoded back to a real PNG signature, not left as base64 text.
+			expect(Array.from(bytes.slice(0, 4)), name).toEqual([0x89, 0x50, 0x4e, 0x47])
+		}
+	})
+
 	it("404s a sound that doesn't exist", async () => {
 		const response = await fetch(`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/sounds/nope`)
 		expect(response.status).toBe(404)
