@@ -181,6 +181,22 @@ describe("inbox middleware", () => {
 		expect(html).not.toMatch(/>(New|Old|Sent) Mail</)
 	})
 
+	it("chimes for the first message, not just the second", async () => {
+		const html = inbox_ui()
+		// The old guard was "seen > 0", which on an inbox that starts empty is false exactly when
+		// the next arrival is the first one worth announcing.
+		expect(html).toContain("loaded && messages.length > seen")
+		expect(html).not.toContain("seen > 0")
+	})
+
+	it("leaves nothing in the shell dead while the sign-on is up", async () => {
+		const html = inbox_ui()
+		// The sign-on is a curtain over an inbox that is already live. Anything in the Start menu
+		// or the taskbar draws it back rather than looking clickable and doing nothing.
+		expect(html).toContain("function ensure_signed_on()")
+		expect(html).toMatch(/\$\("m-mailbox"\)\.onclick = function \(\) \{ ensure_signed_on\(\)/)
+	})
+
 	it("defaults every piece on", async () => {
 		const html = inbox_ui()
 		expect(html).toContain('data-sounds="on"')

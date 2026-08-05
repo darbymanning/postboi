@@ -303,7 +303,9 @@ td.who { width: 34% }
  * with a vertical rail, which sat oddly against everything else here being XP.
  */
 #startmenu {
-	display: none; position: absolute; left: 2px; bottom: 28px; z-index: 200; width: 385px;
+	/* Above the sign-on curtain (260), or the menu draws over it but the curtain takes the
+	   clicks and every item looks broken. Still under the stop error, which owns the screen. */
+	display: none; position: absolute; left: 2px; bottom: 28px; z-index: 550; width: 385px;
 	flex-direction: column; font: 11px Tahoma, Arial, sans-serif; color: #00318f;
 	border: 1px solid #0831d9; border-radius: 6px 6px 0 0;
 	box-shadow: 3px 3px 10px rgba(0,0,0,.45);
@@ -318,7 +320,9 @@ td.who { width: 34% }
 }
 #startmenu .head img {
 	width: 42px; height: 42px; flex: none; background: #fff; padding: 1px;
-	border: 2px solid #e3edfb; border-radius: 3px; object-fit: cover;
+	border: 2px solid #e3edfb; border-radius: 3px;
+	/* Contained, not covered: the face is taller than it is wide, and cover ate the chin. */
+	object-fit: contain;
 }
 #startmenu .cols { display: flex; background: #fff; border-bottom: 2px solid #d8ecfc }
 #startmenu .cols ul { list-style: none; margin: 0; padding: 5px 0; flex: 1 }
@@ -422,6 +426,7 @@ var current = null
 var selected = null
 var tab = "html"
 var seen = 0
+var loaded = false
 var read = {}
 
 function $(id) { return document.getElementById(id) }
@@ -635,8 +640,11 @@ function load() {
 	return fetch(api + "/messages").then(function (r) { return r.json() }).then(function (data) {
 		messages = data.messages || []
 		if (current) current = messages.filter(function (m) { return m.id === current.id })[0] || null
-		if (messages.length > seen && seen > 0) play("mail")
+		// Gated on having loaded once rather than on having seen a message: an inbox that starts
+		// empty has seen zero, which is exactly when the next arrival is the first one to chime.
+		if (loaded && messages.length > seen) play("mail")
 		seen = messages.length
+		loaded = true
 		render_list()
 		render_reader()
 	})
@@ -867,6 +875,7 @@ function paint() {
 		button.innerHTML = '<img class="mark" src="' + FAVICON_URL + '" alt="">'
 		button.appendChild(document.createTextNode(win.title))
 		button.onclick = function () {
+			ensure_signed_on()
 			// Clicking the focused window's button minimises it, as the real taskbar did.
 			if (focused === win.id && !win.min) {
 				win.min = true
@@ -1092,6 +1101,7 @@ $("aol").querySelector(".title-bar").addEventListener("dblclick", function (even
 	app_toggle_max()
 })
 $("app-task").onclick = function () {
+	ensure_signed_on()
 	var el = $("aol")
 	// Same rule as every other taskbar button: click the one in front and it goes away.
 	if (el.classList.contains("min") || !app_focused) { app_set("open"); focus_app() }
@@ -1205,15 +1215,27 @@ document.addEventListener("keyup", function (event) {
 	meta_alone = false
 })
 
+/*
+ * Anything that needs the desktop signs you on first. The sign-on is a modal over an inbox
+ * that is already live, so there is nothing to wait for — and a Start menu whose items are
+ * clickable but do nothing is worse than not offering them.
+ */
+function ensure_signed_on() {
+	if (!$("screen").classList.contains("signing")) return
+	$("signon").className = ""
+	end_intro()
+}
+
 function launch_app() {
+	ensure_signed_on()
 	app_set("open")
 	open_window("mailbox")
 	focus_app()
 }
 $("m-app").onclick = function () { launch_app(); set_menu(false) }
 // The mailbox is its own window: bringing it back does not drag the app up with it.
-$("m-mailbox").onclick = function () { open_window("mailbox"); set_menu(false) }
-$("m-refresh").onclick = function () { open_window("mailbox"); load(); set_menu(false) }
+$("m-mailbox").onclick = function () { ensure_signed_on(); open_window("mailbox"); set_menu(false) }
+$("m-refresh").onclick = function () { ensure_signed_on(); open_window("mailbox"); load(); set_menu(false) }
 $("m-docs").onclick = function () { window.open("https://docs.postboi.email/dev-inbox", "_blank"); set_menu(false) }
 $("m-sound").onclick = function () { $("t-sound").click(); set_menu(false) }
 $("f-outbox").onclick = function () { folder = "outbox"; render_list() }
