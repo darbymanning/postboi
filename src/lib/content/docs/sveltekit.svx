@@ -211,13 +211,13 @@ import { RESEND_API_KEY } from '$env/static/private'
 
 const resend = new Resend({ api_key: RESEND_API_KEY, default: { from: 'no-reply@example.com' } })
 
-export const contact = remote(resend, { fields: { to: 'team@example.com' } })
+export const contact = remote(resend, { to: 'team@example.com' })
 ```
 
 ## Using a configured instance
 
-Got a configured provider instance? Wrap it with `action()`. You
-can pass `status` for the failure code and `fields` for defaults merged into every send.
+Got a configured provider instance? Wrap it with `action()`. Any send option you pass
+is merged into every send, and `status` sets the failure code.
 
 ```typescript
 import Resend from 'postboi/resend'
@@ -227,6 +227,6 @@ import { RESEND_API_KEY, EMAIL_FROM_ADDRESS } from '$env/static/private'
 const mail = new Resend({ api_key: RESEND_API_KEY, default: { from: EMAIL_FROM_ADDRESS } })
 
 export const actions = {
-	default: action(mail, { status: 422, fields: { to: 'team@example.com' } })
+	default: action(mail, { status: 422, to: 'team@example.com' })
 }
 ```

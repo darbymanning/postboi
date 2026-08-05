@@ -74,12 +74,19 @@ describe("postboi/kit action()", () => {
 
 	it("merges server-set fields, keeping FormData as the body", async () => {
 		const provider = new Mock({ default: { from: "from@test.com" } })
-		await action(provider, { fields: { to: "forced@test.com", subject: "Forced" } })(
-			event({ message: "hi" })
-		)
+		await action(provider, { to: "forced@test.com", subject: "Forced" })(event({ message: "hi" }))
 		expect(provider.last?.to[0].address).toBe("forced@test.com")
 		expect(provider.last?.subject).toBe("Forced")
 		expect(provider.last?.html).toContain("hi")
+	})
+
+	it("keeps `status` out of the send — it configures the failure, not the email", async () => {
+		const provider = new Mock({ default: { from: "from@test.com", to: "to@test.com" } })
+		const result = await action(provider, { status: 422, subject: "Hi" })(event({ message: "hi" }))
+
+		expect(result).toEqual({ success: true })
+		expect(provider.last?.subject).toBe("Hi")
+		expect(provider.last).not.toHaveProperty("status")
 	})
 
 	it("the zero-config `mail` action dispatches via POSTBOI_PROVIDER", async () => {

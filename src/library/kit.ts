@@ -32,12 +32,14 @@ type ActionResult = { success: true } | ActionFailure<{ error: string }>
 /** A SvelteKit form action built by {@link action}. */
 type FormAction = (event: RequestEvent) => Promise<ActionResult>
 
-export interface ActionOptions {
-	/**
-	 * Fields merged into the send — handy for forcing a recipient or subject server-side so
-	 * the form can't set them. The form's FormData is always used as the body.
-	 */
-	fields?: Partial<Omit<SendOptions, "body">>
+/**
+ * Send options merged into every send — handy for forcing a recipient or subject
+ * server-side so the form can't set them. The form's own data is always the body, so
+ * `body` is not settable here.
+ */
+export type ActionFields = Partial<Omit<SendOptions, "body">>
+
+export type ActionOptions = ActionFields & {
 	/** HTTP status returned when sending fails. Defaults to 400. */
 	status?: number
 }
@@ -62,9 +64,9 @@ export interface ActionOptions {
  * export const actions = { default: action(resend) }
  * ```
  *
- * @example Forcing fields the form shouldn't control:
+ * @example Forcing send options the form shouldn't control:
  * ```ts
- * export const actions = { default: action(mail, { fields: { to: "team@example.com" } }) }
+ * export const actions = { default: action(mail, { to: "team@example.com" }) }
  * ```
  */
 /**
@@ -93,17 +95,16 @@ export function action(mailer: Mailer, options?: ActionOptions): FormAction
 export function action(a?: Mailer | ActionOptions, b: ActionOptions = {}): FormAction {
 	const is_mailer = typeof (a as Mailer | undefined)?.send === "function"
 	const mailer = is_mailer ? (a as Mailer) : undefined
-	const options = is_mailer ? b : ((a as ActionOptions) ?? {})
+	const { status = 400, ...fields } = is_mailer ? b : ((a as ActionOptions) ?? {})
 	const dispatch = mailer ? (o: SendOptions) => mailer.send(o) : zero_config_mail
-	const status = options.status ?? 400
 
 	return async (event) => {
 		try {
 			const body = await event.request.formData()
 			await dispatch({
-				...options.fields,
+				...fields,
 				body,
-				captcha: with_remoteip(options.fields?.captcha, event),
+				captcha: with_remoteip(fields.captcha, event),
 			})
 			return { success: true }
 		} catch (error) {
@@ -168,7 +169,7 @@ export function remote_form_data(
  * ```ts
  * // src/lib/mail.remote.ts
  * import { remote } from "postboi/kit"
- * export const contact = remote({ fields: { to: "team@example.com" } })
+ * export const contact = remote({ to: "team@example.com" })
  * ```
  * ```svelte
  * <form {...contact}>
@@ -181,23 +182,20 @@ export function remote_form_data(
  * Field names follow the remote-form rules (JS paths — nesting instead of `→`):
  * `fields.contact.name` renders in the email exactly like a classic `contact→name` field.
  */
-export function remote(options?: Omit<ActionOptions, "status">): RemoteMailForm
-export function remote(mailer: Mailer, options?: Omit<ActionOptions, "status">): RemoteMailForm
-export function remote(
-	a?: Mailer | Omit<ActionOptions, "status">,
-	b: Omit<ActionOptions, "status"> = {}
-): RemoteMailForm {
+export function remote(options?: ActionFields): RemoteMailForm
+export function remote(mailer: Mailer, options?: ActionFields): RemoteMailForm
+export function remote(a?: Mailer | ActionFields, b: ActionFields = {}): RemoteMailForm {
 	const is_mailer = typeof (a as Mailer | undefined)?.send === "function"
 	const mailer = is_mailer ? (a as Mailer) : undefined
-	const options = is_mailer ? b : ((a as ActionOptions) ?? {})
+	const fields = is_mailer ? b : ((a as ActionFields) ?? {})
 	const dispatch = mailer ? (o: SendOptions) => mailer.send(o) : zero_config_mail
 
 	return form("unchecked", async (data: RemoteFormInput) => {
 		try {
 			await dispatch({
-				...options.fields,
+				...fields,
 				body: remote_form_data(data),
-				captcha: with_remoteip(options.fields?.captcha),
+				captcha: with_remoteip(fields.captcha),
 			})
 			return { success: true as const }
 		} catch (error) {

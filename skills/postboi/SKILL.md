@@ -83,7 +83,7 @@ Conventions:
 {#if mail.result?.success}<p>Thanks!</p>{/if}
 ```
 
-Remote-form rules: field names are **nested JS paths** (`fields.contact.name`), not `contact→name` — the rendered email is identical. No schema is needed (`mail` accepts arbitrary fields; spam checks run in the pipeline). Enhancement is built in — no `use:enhance`; the form auto-resets on success; `mail.pending` / `mail.result` carry state; it degrades to a full-page POST without JS. Requires `optimizeDeps: { exclude: ["postboi/remote"] }` in `vite.config` (`postboi init` adds it, and the `postboi/vite` plugin carries it too). Custom provider/forced fields: `remote(instance, { fields? })` from `postboi/kit`, exported from your own `.remote.ts` file.
+Remote-form rules: field names are **nested JS paths** (`fields.contact.name`), not `contact→name` — the rendered email is identical. No schema is needed (`mail` accepts arbitrary fields; spam checks run in the pipeline). Enhancement is built in — no `use:enhance`; the form auto-resets on success; `mail.pending` / `mail.result` carry state; it degrades to a full-page POST without JS. Requires `optimizeDeps: { exclude: ["postboi/remote"] }` in `vite.config` (`postboi init` adds it, and the `postboi/vite` plugin carries it too). Custom provider/forced fields: `remote(instance, { to?, subject?, … })` from `postboi/kit` — send options sit at the top level, there is no `fields` wrapper — exported from your own `.remote.ts` file.
 
 **Otherwise → the classic action from `postboi/kit`:**
 
@@ -94,7 +94,7 @@ import { mail } from "postboi/kit"
 export const actions = { default: mail }
 ```
 
-Returns `{ success: true }` or `fail(400, { error })`. Explicit provider or defaults: `action(instance, { status?, fields? })`. Full form example: `/raw/sveltekit`.
+Returns `{ success: true }` or `fail(400, { error })`. Explicit provider or defaults: `action(instance, { status?, ...send_options })` — forced send options (`to`, `subject`, …) sit at the top level, there is no `fields` wrapper. Full form example: `/raw/sveltekit`.
 
 Other frameworks have the same pattern — see `/raw/nextjs`, `/raw/express`, `/raw/hono`, `/raw/remix`, `/raw/nuxt`, `/raw/astro`.
 
