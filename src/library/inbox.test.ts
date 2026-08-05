@@ -100,7 +100,7 @@ describe("inbox middleware", () => {
 		// Scanlines over a message you're checking the design of are the opposite of useful,
 		// so the toggle is not optional decoration — it's what keeps the inbox usable.
 		expect(html).toContain('<html lang="en" class="crt">')
-		expect(html).toContain('id="crt-toggle"')
+		expect(html).toContain('id="t-crt"')
 		expect(html).toContain("prefers-reduced-motion")
 	})
 
