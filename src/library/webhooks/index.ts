@@ -43,6 +43,13 @@ export type WebhookEventType =
 	| "clicked"
 	| "unsubscribed"
 	| "failed"
+	/**
+	 * Mail arriving at your sending address — the one event that isn't about a
+	 * send. `email` is the person who wrote to you, not a recipient, and
+	 * `message_id` is the send being replied to when the provider can tell.
+	 * Postboi only; providers without inbound never emit it.
+	 */
+	| "received"
 
 /** Why a message bounced, normalized across providers. */
 export interface BounceDetail {
@@ -62,7 +69,7 @@ export interface WebhookEvent {
 	provider: string
 	/** The provider's message id — matches the id `send()` returned, where the provider allows. */
 	message_id?: string
-	/** The recipient this event is about. */
+	/** The recipient this event is about — on `received`, the sender who wrote to you. */
 	email?: string
 	/** When the event happened. */
 	timestamp?: Date
@@ -78,6 +85,8 @@ export interface WebhookEvent {
 	client?: EmailClient
 	/** The recipient IP behind an open/click, when the provider reports it. */
 	ip?: string
+	/** The message body — `received` events only, when the provider includes it. */
+	body?: { html?: string; text?: string }
 	/** The untouched provider payload for this event — the escape hatch. */
 	raw: unknown
 }

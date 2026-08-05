@@ -44,6 +44,11 @@ export function mock_event(
 	}
 	if (type === "clicked") base.url = "https://example.com/pricing"
 	if (type === "bounced") base.bounce = { category: "hard", detail: "mailbox unavailable" }
+	if (type === "received") {
+		// Inbound: `email` is whoever wrote to you, and the body is the point of it.
+		base.email = "someone@example.com"
+		base.body = { text: "Thanks — that works for me." }
+	}
 	return { ...base, ...overrides }
 }
 
