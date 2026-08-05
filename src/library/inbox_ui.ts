@@ -71,8 +71,9 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 .title-bar.dim { background: linear-gradient(90deg, #7f7f7f, #b5b5b5) }
 
 /*
- * The desktop. Bliss drawn rather than photographed — the real wallpaper is Microsoft's
- * photograph, and this is a package published to npm.
+ * The desktop. The drawn gradient sits underneath the wallpaper still as the fallback: it is
+ * what you see if the image hasn't loaded, and the two are close enough that the swap doesn't
+ * read as a flash.
  */
 #screen {
 	position: relative; height: 100%; overflow: hidden;
@@ -81,6 +82,20 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 		radial-gradient(90% 40% at 18% 104%, #86bf4e 0%, rgba(134,191,78,0) 60%),
 		linear-gradient(180deg, #1f5fb0 0%, #3f8fd8 42%, #86bde8 72%, #cfe4f2 88%, #eaf3f8 100%);
 }
+/* The photograph itself is layered on from script, which is the only place the mount path is
+   known — the UI is served from wherever it's mounted, not a fixed URL. */
+#screen.papered { background-size: cover; background-position: center }
+/*
+ * The clip, which rests on exactly the still behind it. It sits above the wallpaper and below
+ * everything else, so minimising reveals it and it holds its last frame afterwards.
+ */
+/* Sized explicitly: a replaced element given only insets still lays out at its intrinsic
+   size, so the clip would sit at 960px in the corner rather than filling the desktop. */
+#bliss {
+	position: absolute; left: 0; top: 0; width: 100%; height: calc(100% - 30px);
+	object-fit: cover; z-index: 0; display: none;
+}
+#bliss.showing { display: block }
 /* Everything the app is, so it can be hidden to reveal the desktop. */
 #aol { position: absolute; left: 0; top: 0; right: 0; bottom: 30px }
 #aol.min, #aol.closed { display: none }
@@ -158,21 +173,17 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 /* An iframe eats mousemove, so a drag that crosses one would stall halfway. */
 .dragging iframe { pointer-events: none }
 
-/* Mailbox header: the wordmark and the security reminder. */
-#mbhead { display: flex; align-items: flex-start; gap: 12px; padding: 7px 10px; background: #fff }
+/* Mailbox header: the wordmark. */
+#mbhead { display: flex; align-items: center; gap: 12px; padding: 7px 10px; background: #fff }
 #mbhead .mark { display: flex; align-items: center; gap: 8px; color: #000080 }
 #mbhead .mark span { font: italic bold 21px Georgia, "Times New Roman", serif; letter-spacing: -.5px }
-#mbhead .reminder { flex: 1; line-height: 1.45; padding-top: 4px }
 /* The one thing everybody remembers. */
-#gotmail { display: none; align-items: center; gap: 8px; margin-bottom: 5px }
-#gotmail.on { display: flex }
-#gotmail .shout { font: italic bold 17px Arial, sans-serif; color: #000080 }
-#gotmail .shout b { color: #d07000 }
 @keyframes wave { 0%, 100% { transform: rotate(0) } 50% { transform: rotate(-11deg) } }
 /* Only the flag waves — a wobbling mailbox reads as a rendering bug, not as delight. */
 #mbhead .flag { animation: wave 1.5s ease-in-out infinite; transform-box: view-box; transform-origin: 28px 30px }
 
-/* Folder tabs — New Mail / Old Mail / Sent Mail. */
+/* The folder tab. Old Mail and Sent Mail went with it: this inbox has neither, and a
+   tab that does nothing is worse than no tab. */
 #folders { display: flex; gap: 3px; padding: 4px 10px 0; background: #003399 }
 #folders button {
 	padding: 5px 16px 6px;  background: #7f9fcf; color: #eaeef8; font-weight: bold;
@@ -233,27 +244,20 @@ td.who { width: 34% }
 	border-top: 1px solid #6ba4f8; color: #fff;
 }
 .title-bar-text .mark, #taskbar .mark { width: 14px; height: 14px; flex: none; vertical-align: -3px; margin-right: 4px }
-#intrologo img { width: 34px; height: 34px; vertical-align: -7px; margin-right: 8px }
 /*
- * Drawn rather than bitmapped. The faithful recreations slice Microsoft's actual XP theme
- * PNGs, which is fine in a CodePen but not in something published to npm — so the sheen,
- * the curve and the text shadow are matched in CSS instead.
+ * The real thing, as a three-state sprite: default, hover, pressed, stacked 30px apart. The
+ * text and the flag are baked into the bitmap, so the button carries its label only for
+ * screen readers.
  */
 #start {
-	display: flex; align-items: center; gap: 5px; padding: 0 22px 2px 8px; margin: 0 2px 0 0;
-	height: 30px; flex: none;  border: 0;
-	font: italic bold 17px "Franklin Gothic Medium", "Segoe UI", Tahoma, Arial, sans-serif;
-	color: #fff; text-shadow: 1px 2px 2px rgb(69,76,16), 0 0 3px rgb(69,76,16);
-	border-radius: 0 14px 14px 0;
-	background:
-		linear-gradient(180deg, rgba(255,255,255,.45) 0%, rgba(255,255,255,.08) 22%, rgba(255,255,255,0) 46%),
-		linear-gradient(180deg, #59a94b 0%, #3f9134 14%, #338a28 45%, #2b7d20 72%, #37962a 88%, #55b23f 100%);
-	box-shadow: inset -2px 0 4px rgba(0,0,0,.28), inset 0 -2px 3px rgba(0,0,0,.25);
+	width: 97px; height: 30px; flex: none; border: 0; padding: 0; margin: 0 2px 0 0;
+	background: 0 0 no-repeat;
 }
-#start:hover { filter: brightness(1.08) }
-#start.on { background: linear-gradient(180deg, #2b7d20 0%, #338a28 55%, #46a334 100%); box-shadow: inset 2px 2px 5px rgba(0,0,0,.4) }
-#start .flag { flex: none; filter: drop-shadow(1px 1px 1px rgba(0,0,0,.45)) }
-#start.on { background: linear-gradient(180deg, #227d22 0%, #2c8b2c 55%, #3d9f3d 100%); box-shadow: inset 2px 2px 4px rgba(0,0,0,.4) }
+#start:hover { background-position: 0 -30px }
+#start.on { background-position: 0 -60px }
+/* XP's Start button never draws a focus rectangle — the pressed sprite is the whole affordance. */
+#start:focus, #start:focus-visible { outline: 0 }
+#start span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%) }
 #taskbar .task {
 	flex: 0 0 162px; display: flex; align-items: center; text-align: left; padding: 3px 8px; 
 	overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
@@ -310,10 +314,8 @@ td.who { width: 34% }
 #intro.open { display: flex }
 #introwin { width: min(660px, 86%); background: #f2f0e6 }
 #introbody { padding: 16px 20px 14px; background: #f2f0e6 }
-#intrologo { text-align: center; font: italic bold 34px Verdana, Arial, sans-serif; letter-spacing: -1px; margin-bottom: 16px }
-#intrologo i { font-style: normal; font-size: 30px; vertical-align: -2px; margin-right: 6px }
-#intrologo span { color: #17265c }
-#intrologo b { color: #fdc005; text-shadow: 0 1px 0 #b98d00 }
+#intrologo { text-align: center; margin-bottom: 16px }
+#intrologo img { height: 62px; width: auto }
 #steps { display: flex; gap: 14px }
 .step { flex: 1; text-align: center }
 /* Empty lavender until the step is reached; the artwork lands as it becomes active. */
@@ -333,6 +335,19 @@ td.who { width: 34% }
 	font: bold 22px "MS Sans Serif", Tahoma, sans-serif; letter-spacing: .3px; line-height: 1.7 }
 #shutdown.open { display: flex }
 #shutdown small { display: block; font-size: 12px; font-weight: normal; color: #8a6a2a; margin-top: 14px }
+
+/*
+ * Quitting doesn't close a tab — it does what quitting Windows always seemed to. Over the
+ * taskbar as well as the app, because a stop error takes the whole machine with it.
+ */
+#bsod { display: none; position: absolute; inset: 0; z-index: 600; background: #0078d7; color: #fff;
+	flex-direction: column; justify-content: center; padding: 0 11%;
+	font-family: "Segoe UI", Frutiger, Tahoma, sans-serif; font-weight: 300; cursor: default }
+#bsod.open { display: flex }
+#bsod .face { font-size: 96px; line-height: 1; margin-bottom: 34px }
+#bsod .lead { font-size: 30px; line-height: 1.32; margin: 0 0 30px; max-width: 20em }
+#bsod .code { font-size: 14px; margin: 0; line-height: 1.6 }
+#bsod .hint { margin-top: 26px; color: rgba(255,255,255,.72) }
 `
 
 const SCRIPT = `
@@ -389,7 +404,6 @@ function render_list() {
 	var unread = messages.filter(function (m) { return !read[m.id] }).length
 	$("count").textContent =
 		messages.length + " message" + (messages.length === 1 ? "" : "s") + (unread ? ", " + unread + " new" : "")
-	$("gotmail").className = unread ? "on" : ""
 	$("address").textContent = unread
 		? "Postboi: You Have Mail! (" + unread + " new)"
 		: "Postboi: Welcome back!"
@@ -817,12 +831,41 @@ function app_set(state) {
 	var el = $("aol")
 	if (state === "min" || state === "closed") {
 		el.classList.add(state)
+		if (state === "min") run_bliss()
 		app_paint()
 		return
 	}
 	el.classList.remove("min", "closed")
 	app_paint()
 }
+
+/*
+ * The wallpaper's postman, once. He runs out of frame and the clip settles on exactly the
+ * still underneath, so leaving the last frame up is the same picture either way — and a
+ * second minimise gets the wallpaper rather than the same gag twice.
+ */
+var bliss_played = false
+function run_bliss() {
+	if (bliss_played) return
+	bliss_played = true
+	var video = $("bliss")
+	video.className = "showing"
+	video.currentTime = 0
+	var playing = video.play()
+	// Blocked autoplay just means no clip; the still behind it is the same desktop.
+	if (playing && playing.catch) playing.catch(function () {})
+}
+
+/* The stop error, for quitting. Any key or click restarts the machine, as it always did. */
+function app_crash() {
+	set_pop(null)
+	set_menu(false)
+	$("bsod").className = "open"
+}
+function restart() {
+	if ($("bsod").className === "open") location.reload()
+}
+$("bsod").onclick = restart
 
 function app_toggle_max() {
 	var el = $("aol")
@@ -867,7 +910,7 @@ $("aol").querySelector(".title-bar-controls").addEventListener("click", function
 	var act = event.target.dataset && event.target.dataset.app
 	if (act === "min") app_set("min")
 	if (act === "max") app_toggle_max()
-	if (act === "close") app_set("closed")
+	if (act === "close") app_crash()
 })
 $("aol").querySelector(".title-bar").addEventListener("dblclick", function (event) {
 	if (event.target.dataset && event.target.dataset.app) return
@@ -907,7 +950,7 @@ $("menubar").addEventListener("click", function (event) {
 	if (act === "restore") app_set("open")
 	if (act === "minimise") app_set("min")
 	if (act === "signoff") { app_set("open"); run_signon() }
-	if (act === "exit") app_set("closed")
+	if (act === "exit") app_crash()
 })
 // With a menu already open, sliding across the bar switches to the next one — the way a
 // real menu bar behaves once it has focus.
@@ -984,6 +1027,7 @@ document.addEventListener("keydown", function (event) {
 	if (event.key === "Meta") meta_alone = true
 	else meta_alone = false
 	if (event.key === "Escape") { set_menu(false); $("shutdown").className = "" }
+	restart()
 })
 document.addEventListener("keyup", function (event) {
 	if (event.key === "Meta" && meta_alone) set_menu(menu.className !== "open")
@@ -999,6 +1043,21 @@ $("m-shutdown").onclick = function () {
 	play("goodbye")
 	$("shutdown").className = "open"
 }
+
+/*
+ * The desktop's bitmaps. Wired here rather than in the stylesheet because only script knows
+ * where the inbox is mounted — the wallpaper goes on once it has actually decoded, so a slow
+ * load shows the drawn gradient instead of a blank screen.
+ */
+$("start").style.backgroundImage = "url(" + api + "/desktop/start)"
+$("introwordmark").src = api + "/art/logo"
+var paper = new Image()
+paper.onload = function () {
+	$("screen").style.backgroundImage = "url(" + api + "/desktop/wallpaper)"
+	$("screen").classList.add("papered")
+}
+paper.src = api + "/desktop/wallpaper"
+$("bliss").src = api + "/desktop/blissy"
 
 apply_mute(muted)
 $("t-sound").onclick = function () {
@@ -1123,7 +1182,7 @@ export interface InboxUiOptions {
 /** The inbox document. Built per request — it's a dev server, and a string is cheap. */
 export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): string {
 	return `<!doctype html>
-<html lang="en" data-sounds="${sounds ? "on" : "off"}" data-intro="${intro ? "on" : "off"}"
+<html lang="en" data-sounds="${sounds ? "on" : "off"}" data-intro="${intro ? "on" : "off"}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1134,6 +1193,8 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 </head>
 <body>
 <div id="screen">
+
+	<video id="bliss" muted playsinline preload="auto"></video>
 
 	<div id="aol" class="window">
 		<div class="title-bar">
@@ -1212,17 +1273,10 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 						</svg>
 						<span>Mailbox</span>
 					</div>
-					<div class="reminder">
-						<div id="gotmail"><span class="shout">You've Got <b>Mail!</b></span></div>
-						REMINDER: Postboi will never send this mail anywhere.<br>
-						Everything here was captured locally instead of going out.
-					</div>
 				</div>
 
 				<div id="folders">
 					<button class="on">New Mail</button>
-					<button>Old Mail</button>
-					<button>Sent Mail</button>
 				</div>
 				<div id="listwrap">
 					<div id="list" class="thin-sunken">
@@ -1275,7 +1329,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div>
 			</div>
 			<div id="introbody">
-			<div id="intrologo"><img src="${FAVICON}" alt=""><span>post</span><b>boi</b></div>
+			<div id="intrologo"><img id="introwordmark" src="" alt="postboi"></div>
 			<div id="steps">
 			<div class="step" id="s0"><div class="box"></div><span class="cap">1. Locating mailroom&#8230;</span></div>
 			<div class="step" id="s1"><div class="box"></div><span class="cap">2. Connecting to localhost&#8230;</span></div>
@@ -1313,7 +1367,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 	</div>
 
 	<div id="taskbar">
-		<button id="start"><svg class="flag" width="21" height="18" viewBox="0 0 21 18" aria-hidden="true"><path d="M0.5 3.7 8.8 2.1 8.8 8.5 0.5 8.8Z" fill="#f65314"/><path d="M9.9 1.9 20.4 0 20.4 8.4 9.9 8.5Z" fill="#7cbb00"/><path d="M0.5 9.6 8.8 9.8 8.8 16.1 0.5 14.6Z" fill="#00a1f1"/><path d="M9.9 9.8 20.4 10 20.4 18 9.9 16.3Z" fill="#ffbb00"/></svg><span>start</span></button>
+		<button id="start"><span>start</span></button>
 		<button class="task on" id="app-task">Postboi Local</button>
 		<span id="tasks" style="display:flex;gap:4px"></span>
 		<span class="spacer"></span>
@@ -1343,6 +1397,13 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			It&#8217;s now safe to turn off<br>your computer.
 			<small>(Your mail is still in the inbox. Click anywhere.)</small>
 		</div>
+	</div>
+
+	<div id="bsod">
+		<div class="face">:(</div>
+		<p class="lead">Your PC ran into a problem that it couldn&#8217;t handle, and now it needs to restart.</p>
+		<p class="code">You can search for the error online: MAIL_DELIVERY_SUBSYSTEM_FAILED</p>
+		<p class="code hint">Press any key to restart.</p>
 	</div>
 
 </div>

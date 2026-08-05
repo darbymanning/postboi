@@ -93,7 +93,7 @@ describe("inbox middleware", () => {
 	it("serves the UI", async () => {
 		const response = await fetch(`http://127.0.0.1:${inbox.port}${INBOX_PATH}`)
 		expect(response.headers.get("content-type")).toContain("text/html")
-		expect(await response.text()).toContain("You've Got")
+		expect(await response.text()).toContain("Your Local Mailbox")
 	})
 
 	it("ships sound on, and a way to turn it off", async () => {
@@ -179,7 +179,7 @@ describe("inbox middleware", () => {
 	})
 
 	it("serves each sign-on panel as a PNG", async () => {
-		for (const name of ["locating", "connecting", "intercepting"]) {
+		for (const name of ["logo", "locating", "connecting", "intercepting"]) {
 			const response = await fetch(`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/art/${name}`)
 			expect(response.status, name).toBe(200)
 			expect(response.headers.get("content-type")).toBe("image/png")
@@ -187,6 +187,35 @@ describe("inbox middleware", () => {
 			// Decoded back to a real PNG signature, not left as base64 text.
 			expect(Array.from(bytes.slice(0, 4)), name).toEqual([0x89, 0x50, 0x4e, 0x47])
 		}
+	})
+
+	it("serves each desktop asset with its own type", async () => {
+		for (const [name, type] of [
+			["wallpaper", "image/jpeg"],
+			["blissy", "video/webm"],
+			["start", "image/png"],
+		]) {
+			const response = await fetch(
+				`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/desktop/${name}`
+			)
+			expect(response.status, name).toBe(200)
+			expect(response.headers.get("content-type"), name).toBe(type)
+			expect(response.headers.get("accept-ranges"), name).toBe("bytes")
+			expect((await response.arrayBuffer()).byteLength, name).toBeGreaterThan(1000)
+		}
+	})
+
+	it("answers a range request with just that range", async () => {
+		const url = `http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/desktop/blissy`
+		const whole = new Uint8Array(await (await fetch(url)).arrayBuffer())
+		// A video element asks for ranges rather than the whole file, and some browsers refuse a
+		// source that answers with the entire body.
+		const response = await fetch(url, { headers: { range: "bytes=10-19" } })
+		expect(response.status).toBe(206)
+		expect(response.headers.get("content-range")).toBe(`bytes 10-19/${whole.length}`)
+		expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual(
+			Array.from(whole.slice(10, 20))
+		)
 	})
 
 	it("404s a sound that doesn't exist", async () => {

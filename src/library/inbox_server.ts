@@ -4,6 +4,7 @@ import { INBOX_PATH } from "./inbox.js"
 import { inbox_ui, type InboxUiOptions } from "./inbox_ui.js"
 import { SOUNDS } from "./inbox_sounds.js"
 import { ART } from "./inbox_art.js"
+import { DESKTOP } from "./inbox_desktop.js"
 
 /**
  * The dev inbox's storage and HTTP surface. Kept apart from the transport that mounts it:
@@ -18,6 +19,7 @@ import { ART } from "./inbox_art.js"
 export interface InboxRequest {
 	url?: string
 	method?: string
+	headers?: Record<string, string | Array<string> | undefined>
 	on(event: string, listener: (...args: Array<unknown>) => void): unknown
 }
 
@@ -160,6 +162,33 @@ export function inbox_middleware(
 			response.setHeader("content-type", "image/png")
 			response.setHeader("cache-control", "max-age=86400")
 			return void response.end(Buffer.from(png, "base64"))
+		}
+
+		const desktop_match = /^\/api\/desktop\/([a-z]+)$/.exec(route)
+		if (desktop_match && method === "GET") {
+			const asset = DESKTOP[desktop_match[1]]
+			if (!asset) return void send_json(response, 404, { error: "no such desktop asset" })
+			const bytes = Buffer.from(asset.data, "base64")
+			response.setHeader("content-type", asset.type)
+			response.setHeader("cache-control", "max-age=86400")
+			// Video elements ask for ranges rather than the whole file, and some browsers refuse to
+			// play a source that answers a range request with the entire body.
+			response.setHeader("accept-ranges", "bytes")
+			const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers?.range ?? ""))
+			if (range && (range[1] !== "" || range[2] !== "")) {
+				const start = range[1] === "" ? bytes.length - Number(range[2]) : Number(range[1])
+				const end = range[1] === "" || range[2] === "" ? bytes.length - 1 : Number(range[2])
+				if (start < 0 || start > end || end >= bytes.length) {
+					response.statusCode = 416
+					response.setHeader("content-range", `bytes */${bytes.length}`)
+					return void response.end()
+				}
+				response.statusCode = 206
+				response.setHeader("content-range", `bytes ${start}-${end}/${bytes.length}`)
+				return void response.end(bytes.subarray(start, end + 1))
+			}
+			response.statusCode = 200
+			return void response.end(bytes)
 		}
 
 		const sound_match = /^\/api\/sounds\/([a-z]+)$/.exec(route)
