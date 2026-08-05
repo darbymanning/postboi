@@ -146,6 +146,20 @@ describe("inbox middleware", () => {
 		expect(html).not.toContain("SETUP")
 	})
 
+	it("behaves like a Windows list, and a Windows app", async () => {
+		const html = inbox_ui()
+		// Single click selects, double click opens — the convention AOL followed too.
+		expect(html).toContain("tr.ondblclick")
+		// XP's own arrow everywhere; native apps don't show a hand over buttons.
+		expect(html).not.toContain("cursor: pointer")
+		// The app window has working controls and a desktop to reveal.
+		expect(html).toContain('data-app="min"')
+		expect(html).toContain('data-app="max"')
+		expect(html).toContain('data-app="close"')
+		expect(html).toContain('id="app-task"')
+		expect(html).toContain('id="menu-file"')
+	})
+
 	it("defaults every piece on", async () => {
 		const html = inbox_ui()
 		expect(html).toContain('data-sounds="on"')

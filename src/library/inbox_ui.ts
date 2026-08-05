@@ -21,6 +21,19 @@ const FAVICON =
 
 const CSS = `
 * { box-sizing: border-box }
+
+/*
+ * Windows XP's own arrow, everywhere. Native apps don't switch to a hand over buttons —
+ * that's a web convention — so nothing here uses the hand. The arrow-and-hourglass takes
+ * over while the sign-on is connecting, which is what XP showed for "working, but you can
+ * still click".
+ */
+#screen, #screen * { cursor: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAj0lEQVR4nO2WQQqAMAwEN8H/fzkebKU2tQrazSUDYlsPOyw0CACGQLS8wyQUAMwsTKI2ECah7SZCQvsDtoQTYEsMBZgStwIsiakAQ+JRYLXENvsoIs4FgDv8gmtgECrd8ysXgUH4ck6BEi7H8hCh3YImnE5toA+ntaCDcCqzOUBp4dUgisYQ/N+YJEmSLGUHGtQ1GJ7uSPQAAAAASUVORK5CYII=") 0 0, default }
+.connecting #screen, .connecting #screen * { cursor: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA2UlEQVR4nO2WyRLEIAhEu6fy/7/MHLIUGpcmccaLXZVLRHhBhACAYaLoACjuUYElfxsAmBlIWgACZmUOUnax2+++zG/ueRiagQQgAtHJgJyGT8Ez8MfCvAE8gYieexdAgTiDkkRWQ2MAOhBsBA9RNAFUiPzdUIAGhLm15F1Et2uYLJbP9Oqe+b4nx3DLQCEoswc+uLevfYgMEG6jRxEOuYaug/F02LqKPvgbiNo0bM2H8bOgYlyDKBbg5TBYiJtq2Aj0SvLUi045VVIjmi3D5P/GpaWlpaWf6guIkmosdmuLBwAAAABJRU5ErkJggg==") 0 0, progress }
+/* The set has no resize cursors, so the native ones stand in on the handles. */
+.grip { cursor: nwse-resize }
+.edge-r { cursor: ew-resize }
+.edge-b { cursor: ns-resize }
 body {
 	margin: 0; padding: 0; height: 100vh; overflow: hidden;
 	background: #0a0b0c;
@@ -57,18 +70,38 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 .title-bar { flex: none; margin: 0 -3px }
 .title-bar.dim { background: linear-gradient(90deg, #7f7f7f, #b5b5b5) }
 
+/*
+ * The desktop. Bliss drawn rather than photographed — the real wallpaper is Microsoft's
+ * photograph, and this is a package published to npm.
+ */
 #screen {
 	position: relative; height: 100%; overflow: hidden;
-	background: #3a6ea5; display: flex; flex-direction: column;
+	background:
+		radial-gradient(120% 70% at 50% 118%, #6aa83c 0%, #4f8f2c 38%, #3f7d24 55%, rgba(63,125,36,0) 56%),
+		radial-gradient(90% 40% at 18% 104%, #86bf4e 0%, rgba(134,191,78,0) 60%),
+		linear-gradient(180deg, #1f5fb0 0%, #3f8fd8 42%, #86bde8 72%, #cfe4f2 88%, #eaf3f8 100%);
 }
+/* Everything the app is, so it can be hidden to reveal the desktop. */
+#aol { position: absolute; left: 0; top: 0; right: 0; bottom: 30px }
+#aol.min, #aol.closed { display: none }
 
 /* ---- Title bars, shared by the app window and every child window ---- */
 .title-bar-text { display: flex; align-items: center; gap: 5px; margin-right: 12px }
 
 /* ---- The AOL application window ---- */
-#aol { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #c0c0c0; margin: 2px 2px 0 }
+#aol { display: flex; flex-direction: column; min-height: 0; background: #c0c0c0 }
 #menubar { display: flex; gap: 2px; padding: 1px 4px; background: #c0c0c0 }
-#menubar span { padding: 2px 7px }
+#menubar { position: relative }
+#menubar > span { padding: 2px 7px }
+#menubar > span.on { background: #316ac5; color: #fff }
+.menu-pop { display: none; position: absolute; top: 100%; z-index: 400; min-width: 170px; background: #fff;
+	border: 1px solid #808080; box-shadow: 2px 2px 3px rgba(0,0,0,.35); padding: 2px }
+.menu-pop.open { display: block }
+.menu-pop li { list-style: none; padding: 4px 20px 4px 10px }
+.menu-pop li:hover { background: #316ac5; color: #fff }
+.menu-pop li.sep { padding: 0; margin: 3px 2px; height: 1px; background: #c0c0c0 }
+.menu-pop li.sep:hover { background: #c0c0c0 }
+.menu-pop ul { margin: 0; padding: 0 }
 #menubar u { text-decoration: underline }
 
 /* The toolbar: chunky icon-over-label buttons in coloured bands, AOL's signature. */
@@ -81,25 +114,25 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 .band.b5 { flex: 1; background: linear-gradient(90deg, #2a4a8a, #14284f); justify-content: flex-end; align-items: center; padding-right: 10px; border-right: 0 }
 .tb {
 	display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 1px;
-	min-width: 58px; padding: 3px 5px 2px; background: transparent; cursor: pointer;
+	min-width: 58px; padding: 3px 5px 2px; background: transparent; 
 	font: 11px "MS Sans Serif", Tahoma, sans-serif; border: 2px solid transparent;
 }
 .tb:hover { border-color: #fff #808080 #808080 #fff }
 .tb:active { border-color: #808080 #fff #fff #808080; padding: 4px 4px 1px 6px }
 .tb .ico { font-size: 17px; line-height: 18px }
-.tb.inert { cursor: default }
+.tb.inert {  }
 .tb.inert:hover { border-color: transparent }
 .tb.on { border-color: #808080 #fff #fff #808080; background: rgba(255,255,255,.35) }
 
 /* Navigation strip: arrows, Find dropdown, the address field, Go / Keyword. */
 #nav { display: flex; align-items: center; gap: 4px; padding: 4px 6px; background: #c0c0c0; border-bottom: 2px solid #808080 }
 #nav .rnd {
-	width: 26px; height: 22px; background: #c0c0c0; cursor: default; color: #000080;
+	width: 26px; height: 22px; background: #c0c0c0;  color: #000080;
 	border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff;
 	font-size: 12px; line-height: 14px;
 }
 #nav .pill {
-	padding: 3px 10px; background: #c0c0c0; cursor: default;
+	padding: 3px 10px; background: #c0c0c0; 
 	border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff;
 }
 #address { flex: 1; background: #fff; padding: 3px 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
@@ -117,7 +150,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 /* "#reader.open" sets display:flex and outranks a bare ".child.min" on specificity, so
    minimising has to be spelled out at least as strongly or the window never hides. */
 .child.min, .child.closed, #reader.open.min, #reader.open.closed { display: none }
-.child .title-bar { cursor: default; user-select: none }
+.child .title-bar {  user-select: none }
 .child.max .grip, .child.max .edge { display: none }
 .grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 6 }
 /* The Win95 hatch: three stepped highlights, drawn with a repeating gradient. */
@@ -148,7 +181,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 /* Folder tabs — New Mail / Old Mail / Sent Mail. */
 #folders { display: flex; gap: 3px; padding: 4px 10px 0; background: #003399 }
 #folders button {
-	padding: 5px 16px 6px; cursor: pointer; background: #7f9fcf; color: #eaeef8; font-weight: bold;
+	padding: 5px 16px 6px;  background: #7f9fcf; color: #eaeef8; font-weight: bold;
 	border: 0; border-radius: 7px 7px 0 0;
 }
 #folders button.on { background: #fff; color: #003399 }
@@ -157,7 +190,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 
 table { width: 100%; border-collapse: collapse; font: 12px "MS Sans Serif", Tahoma, sans-serif }
 tbody td { padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-tbody tr { cursor: pointer }
+tbody tr {  }
 tbody tr.unread td { font-weight: bold }
 tbody tr.on td { background: #000080; color: #fff }
 td.flag { width: 26px; text-align: center }
@@ -169,11 +202,11 @@ td.who { width: 34% }
 #actions { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #c0c0c0 }
 #actions .spacer { flex: 1 }
 .aolbtn {
-	min-width: 92px; padding: 4px 14px; cursor: pointer; background: #b6c6de; color: #000080; font-weight: bold;
+	min-width: 92px; padding: 4px 14px;  background: #b6c6de; color: #000080; font-weight: bold;
 	border: 2px solid; border-color: #fff #6a7a94 #6a7a94 #fff;
 }
 .aolbtn:active { border-color: #6a7a94 #fff #fff #6a7a94 }
-.aolbtn[disabled] { color: #808080; cursor: default }
+.aolbtn[disabled] { color: #808080;  }
 
 /* The reader opens as its own child window, the way AOL opened mail. */
 #reader { display: none }
@@ -184,7 +217,7 @@ td.who { width: 34% }
 #head dt { color: #000080; font-weight: bold }
 #head dd { margin: 0; overflow: hidden; text-overflow: ellipsis }
 #tabs { display: flex; gap: 3px; padding: 5px 8px 0; background: #c0c0c0 }
-#tabs button { padding: 4px 13px; cursor: pointer; background: #7f9fcf; color: #eaeef8; font-weight: bold; border: 0; border-radius: 7px 7px 0 0 }
+#tabs button { padding: 4px 13px;  background: #7f9fcf; color: #eaeef8; font-weight: bold; border: 0; border-radius: 7px 7px 0 0 }
 #tabs button.on { background: #fff; color: #003399 }
 #pane { flex: 1; margin: 0 8px 8px; background: #fff; min-height: 0; overflow: auto }
 #pane iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff }
@@ -201,7 +234,7 @@ td.who { width: 34% }
 #taskbar {
 	display: flex; align-items: center; gap: 4px; padding: 2px 4px; margin: 0;
 	/* Always on top, and windows can't be dragged under it — same as the real one. */
-	position: relative; z-index: 500; height: 30px; flex: none;
+	position: absolute; left: 0; right: 0; bottom: 0; z-index: 500; height: 30px;
 	background: linear-gradient(180deg, #3f8cf3 0%, #245edb 9%, #245edb 88%, #1941a5 100%);
 	border-top: 1px solid #6ba4f8; color: #fff;
 }
@@ -214,7 +247,7 @@ td.who { width: 34% }
  */
 #start {
 	display: flex; align-items: center; gap: 5px; padding: 0 22px 2px 8px; margin: 0 2px 0 0;
-	height: 30px; flex: none; cursor: pointer; border: 0;
+	height: 30px; flex: none;  border: 0;
 	font: italic bold 17px "Franklin Gothic Medium", "Segoe UI", Tahoma, Arial, sans-serif;
 	color: #fff; text-shadow: 1px 2px 2px rgb(69,76,16), 0 0 3px rgb(69,76,16);
 	border-radius: 0 14px 14px 0;
@@ -228,7 +261,7 @@ td.who { width: 34% }
 #start .flag { flex: none; filter: drop-shadow(1px 1px 1px rgba(0,0,0,.45)) }
 #start.on { background: linear-gradient(180deg, #227d22 0%, #2c8b2c 55%, #3d9f3d 100%); box-shadow: inset 2px 2px 4px rgba(0,0,0,.4) }
 #taskbar .task {
-	flex: 0 0 162px; display: flex; align-items: center; text-align: left; padding: 3px 8px; cursor: pointer;
+	flex: 0 0 162px; display: flex; align-items: center; text-align: left; padding: 3px 8px; 
 	overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 	font: 11px Tahoma, Arial, sans-serif; color: #fff;
 	background: linear-gradient(180deg, #4993f1 0%, #3c83e3 50%, #2f74d6 100%);
@@ -251,9 +284,9 @@ td.who { width: 34% }
 	font: italic bold 15px Arial, sans-serif; text-align: left; padding: 8px 3px; letter-spacing: .5px;
 }
 #startmenu ul { list-style: none; margin: 0; padding: 2px 0; flex: 1 }
-#startmenu li { display: flex; align-items: center; gap: 9px; padding: 5px 22px 5px 8px; cursor: pointer }
+#startmenu li { display: flex; align-items: center; gap: 9px; padding: 5px 22px 5px 8px;  }
 #startmenu li:hover { background: #000080; color: #fff }
-#startmenu li.sep { padding: 0; margin: 3px 2px; height: 2px; border-top: 1px solid #808080; border-bottom: 1px solid #fff; cursor: default }
+#startmenu li.sep { padding: 0; margin: 3px 2px; height: 2px; border-top: 1px solid #808080; border-bottom: 1px solid #fff;  }
 #startmenu li.sep:hover { background: transparent }
 #startmenu li .ico { width: 18px; text-align: center; font-size: 14px }
 
@@ -302,7 +335,7 @@ td.who { width: 34% }
 
 /* "It's now safe…" — the one screen everyone who used a 98 box remembers. */
 #shutdown { display: none; position: absolute; inset: 0; z-index: 400; background: #000; color: #ffa726;
-	align-items: center; justify-content: center; text-align: center; cursor: pointer;
+	align-items: center; justify-content: center; text-align: center; 
 	font: bold 22px "MS Sans Serif", Tahoma, sans-serif; letter-spacing: .3px; line-height: 1.7 }
 #shutdown.open { display: flex }
 #shutdown small { display: block; font-size: 12px; font-weight: normal; color: #8a6a2a; margin-top: 14px }
@@ -314,6 +347,7 @@ var FAVICON_URL = document.querySelector("link[rel=icon]").href
 var api = base + "/api"
 var messages = []
 var current = null
+var selected = null
 var tab = "html"
 var seen = 0
 var read = {}
@@ -348,13 +382,14 @@ function render_list() {
 	$("empty").style.display = messages.length ? "none" : "block"
 	messages.forEach(function (m) {
 		var tr = document.createElement("tr")
-		tr.className = (read[m.id] ? "" : "unread") + (current && current.id === m.id ? " on" : "")
+		tr.className = (read[m.id] ? "" : "unread") + (selected && selected.id === m.id ? " on" : "")
 		tr.innerHTML =
 			'<td class="flag">' + (read[m.id] ? "\\u{1F4E7}" : "\\u2709") + "</td>" +
 			'<td class="when">' + when(m.received_at) + "</td>" +
 			'<td class="who">' + esc(who(m.to)) + "</td>" +
 			"<td>" + esc(m.subject || "(no subject)") + "</td>"
-		tr.onclick = function () { open_message(m) }
+		tr.onclick = function () { select_message(m) }
+		tr.ondblclick = function () { open_message(m) }
 		tbody.appendChild(tr)
 	})
 	var unread = messages.filter(function (m) { return !read[m.id] }).length
@@ -366,10 +401,30 @@ function render_list() {
 		: "Postboi: Welcome back!"
 	document.title = (unread ? "(" + unread + ") " : "") + "Postboi Mail"
 	$("stat").textContent = messages.length ? "Ready" : "Waiting for mail\\u2026"
-	$("keepnew").disabled = !current
+	sync_actions()
+}
+
+/** Highlight a row without opening it. Double-click, or Read, does the opening. */
+function select_message(m) {
+	selected = m
+	render_list()
+}
+
+/**
+ * Nothing to read once the mailbox is closed, or with no row picked — the buttons say so
+ * rather than quietly acting on whatever happened to be open last. Called from the window
+ * manager as well as the list, since closing the mailbox changes the answer.
+ */
+function sync_actions() {
+	var mailbox = find("mailbox")
+	var can_read = (!mailbox || mailbox.open) && !!selected
+	$("keepnew").disabled = !can_read
+	$("a-read").disabled = !can_read
+	$("t-read").disabled = !can_read
 }
 
 function open_message(m) {
+	selected = m
 	current = m
 	read[m.id] = true
 	render_list()
@@ -518,6 +573,22 @@ var wins = []
 var z = 20
 var focused = null
 
+/** Re-place both child windows after the workspace changes size. */
+function relayout() {
+	var box = ws_rect()
+	wins.forEach(function (win) {
+		var el = win.el
+		// Size first, then position — clamping them independently can still leave a window
+		// hanging off the bottom, because its top was fine and its height was fine separately.
+		var w = Math.min(el.offsetWidth, box.w)
+		var h = Math.min(el.offsetHeight, box.h)
+		el.style.width = w + "px"
+		el.style.height = h + "px"
+		el.style.left = Math.max(0, Math.min(el.offsetLeft, box.w - w)) + "px"
+		el.style.top = Math.max(0, Math.min(el.offsetTop, box.h - h)) + "px"
+	})
+}
+
 function ws_rect() {
 	var w = $("workspace")
 	return { w: w.clientWidth, h: w.clientHeight }
@@ -604,6 +675,7 @@ function close_window(win) {
 	win.el.classList.add("closed")
 	if (focused === win.id) focused = null
 	paint()
+	sync_actions()
 }
 
 /** Bring a closed or minimised window back — how the mailbox returns once it's shut. */
@@ -614,6 +686,7 @@ function open_window(id) {
 	win.min = false
 	win.el.classList.remove("closed", "min")
 	focus_window(id)
+	sync_actions()
 }
 
 /** Repaint what depends on window state: title-bar focus and the taskbar buttons. */
@@ -674,7 +747,7 @@ function drag(win, event) {
  * Dragging for a dialog that isn't in the window list — the sign-on, which has no taskbar
  * button and nothing to raise above, but should still be shovable out of the way.
  */
-function drag_dialog(el) {
+function drag_dialog(el, host_el) {
 	var bar = el.querySelector(".title-bar")
 	if (bar.dataset.draggable) return
 	bar.dataset.draggable = "1"
@@ -687,7 +760,7 @@ function drag_dialog(el) {
 		// jump out from under the cursor.
 		el.style.position = "absolute"
 		el.style.margin = "0"
-		var host = el.parentNode.getBoundingClientRect()
+		var host = (host_el || el.parentNode).getBoundingClientRect()
 		var dx = event.clientX - rect.left
 		var dy = event.clientY - rect.top
 		el.style.left = rect.left - host.left + "px"
@@ -714,6 +787,104 @@ function resize(win, event, horizontal, vertical) {
 	})
 }
 
+/* ---- The application window itself ---- */
+
+/*
+ * Maximised by default, like a mail client on a small screen, but restorable to a floating
+ * window you can drag. It isn't in the window list — it's the frame the others live inside,
+ * so it manages its own state and only borrows the taskbar.
+ */
+var app_restore = null
+
+function app_set(state) {
+	var el = $("aol")
+	if (state === "min" || state === "closed") {
+		el.classList.add(state)
+		app_paint()
+		return
+	}
+	el.classList.remove("min", "closed")
+	app_paint()
+}
+
+function app_toggle_max() {
+	var el = $("aol")
+	if (app_restore) {
+		el.style.cssText = app_restore
+		app_restore = null
+	} else {
+		app_restore = el.style.cssText
+		var host = $("screen").getBoundingClientRect()
+		var w = Math.round(host.width * 0.78)
+		var h = Math.round((host.height - 30) * 0.8)
+		el.style.left = Math.round((host.width - w) / 2) + "px"
+		el.style.top = Math.round((host.height - 30 - h) / 2) + "px"
+		el.style.right = "auto"
+		el.style.bottom = "auto"
+		el.style.width = w + "px"
+		el.style.height = h + "px"
+		drag_dialog(el, $("screen"))
+	}
+	// Windows inside are positioned against the workspace, which just changed size.
+	relayout()
+	app_set("open")
+}
+
+/** The app's own taskbar button, kept alongside the child windows' ones. */
+function app_paint() {
+	var el = $("aol")
+	var hidden = el.classList.contains("min") || el.classList.contains("closed")
+	var button = $("app-task")
+	button.style.display = el.classList.contains("closed") ? "none" : ""
+	button.className = "task" + (hidden ? "" : " on")
+	if (hidden) set_menu(false)
+}
+
+$("aol").querySelector(".title-bar-controls").addEventListener("click", function (event) {
+	var act = event.target.dataset && event.target.dataset.app
+	if (act === "min") app_set("min")
+	if (act === "max") app_toggle_max()
+	if (act === "close") app_set("closed")
+})
+$("aol").querySelector(".title-bar").addEventListener("dblclick", function (event) {
+	if (event.target.dataset && event.target.dataset.app) return
+	app_toggle_max()
+})
+$("app-task").onclick = function () {
+	var el = $("aol")
+	if (el.classList.contains("min")) app_set("open")
+	else app_set("min")
+}
+
+/* ---- Menus ---- */
+var open_menu = null
+function set_pop(name) {
+	;["file", "window", "help"].forEach(function (m) {
+		$("menu-" + m).className = "menu-pop" + (m === name ? " open" : "")
+	})
+	Array.prototype.forEach.call($("menubar").querySelectorAll("[data-menu]"), function (el) {
+		el.className = el.dataset.menu === name ? "on" : ""
+	})
+	open_menu = name
+}
+$("menubar").addEventListener("click", function (event) {
+	event.stopPropagation()
+	var name = event.target.dataset && event.target.dataset.menu
+	if (name) return set_pop(open_menu === name ? null : name)
+	var act = event.target.dataset && event.target.dataset.do
+	if (!act) return
+	set_pop(null)
+	if (act === "mailbox") open_window("mailbox")
+	if (act === "check") { open_window("mailbox"); load() }
+	if (act === "print") window.print()
+	if (act === "docs") window.open("https://docs.postboi.email/dev-inbox", "_blank")
+	if (act === "restore") app_set("open")
+	if (act === "minimise") app_set("min")
+	if (act === "signoff") { app_set("open"); run_signon() }
+	if (act === "exit") app_set("closed")
+})
+document.addEventListener("click", function () { set_pop(null) })
+
 /* ---- Toolbar and action wiring ---- */
 $("tabs").onclick = function (event) {
 	if (!event.target.dataset || !event.target.dataset.tab) return
@@ -728,14 +899,16 @@ $("r-next").onclick = function () {
 	var i = messages.indexOf(current)
 	if (i >= 0 && i < messages.length - 1) open_message(messages[i + 1])
 }
-$("t-read").onclick = function () { if (messages.length) open_message(current || messages[0]) }
-$("t-refresh").onclick = function () { load() }
+$("t-read").onclick = function () { if (selected) open_message(selected) }
+// Mail Center brings the mailbox back, which is what it is for.
+$("t-refresh").onclick = function () { open_window("mailbox"); load() }
 $("t-print").onclick = function () { window.print() }
-$("a-read").onclick = function () { if (messages.length) open_message(current || messages[0]) }
+$("a-read").onclick = function () { if (selected) open_message(selected) }
 $("keepnew").onclick = function () {
-	if (!current) return
-	delete read[current.id]
-	current = null
+	if (!selected) return
+	delete read[selected.id]
+	if (current && current.id === selected.id) current = null
+	selected = null
 	render_list()
 	render_reader()
 }
@@ -780,7 +953,8 @@ document.addEventListener("keyup", function (event) {
 	meta_alone = false
 })
 
-$("m-mailbox").onclick = function () { open_window("mailbox"); set_menu(false) }
+$("m-app").onclick = function () { app_set("open"); set_menu(false) }
+$("m-mailbox").onclick = function () { app_set("open"); open_window("mailbox"); set_menu(false) }
 $("m-refresh").onclick = function () { open_window("mailbox"); load(); set_menu(false) }
 $("m-docs").onclick = function () { window.open("https://docs.postboi.email/dev-inbox", "_blank"); set_menu(false) }
 $("m-shutdown").onclick = function () {
@@ -811,6 +985,7 @@ function end_intro() {
 	stop_dialing()
 	pending = null
 	$("intro").className = ""
+	document.body.classList.remove("connecting")
 	// Revealed here rather than by wrapping this function: Cancel and the close box both
 	// captured a reference to it before any wrapper could be installed.
 	$("workspace").classList.remove("signing")
@@ -877,13 +1052,13 @@ load()
  * ever going to be heard on a cold load. Pressing SIGN ON is that interaction, which is
  * why the handshake under the connecting dialog actually plays.
  */
-if (document.documentElement.dataset.intro === "on") {
+function run_signon() {
 	$("signon").className = "open"
 	$("workspace").classList.add("signing")
 	drag_dialog($("signonwin"))
-} else {
-	play("welcome")
 }
+if (document.documentElement.dataset.intro === "on") run_signon()
+else play("welcome")
 $("so-go").onclick = function () {
 	$("signon").className = ""
 	run_intro()
@@ -924,13 +1099,32 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 		<div class="title-bar">
 			<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Postboi Local</div>
 			<div class="title-bar-controls">
-				<button aria-label="Minimize"></button>
-				<button aria-label="Maximize"></button>
-				<button aria-label="Close"></button>
+				<button aria-label="Minimize" data-app="min"></button>
+				<button aria-label="Maximize" data-app="max"></button>
+				<button aria-label="Close" data-app="close"></button>
 			</div>
 		</div>
 		<div id="menubar">
-			<span><u>F</u>ile</span><span><u>E</u>dit</span><span><u>W</u>indow</span><span><u>S</u>ign Off</span><span><u>H</u>elp</span>
+			<span data-menu="file"><u>F</u>ile</span>
+			<span data-menu="window"><u>W</u>indow</span>
+			<span data-menu="help"><u>H</u>elp</span>
+			<div class="menu-pop" id="menu-file"><ul>
+				<li data-do="mailbox">Open Mailbox</li>
+				<li data-do="check">Check Mail Now</li>
+				<li class="sep"></li>
+				<li data-do="print">Print&#8230;</li>
+				<li class="sep"></li>
+				<li data-do="signoff">Sign Off</li>
+				<li data-do="exit">Exit</li>
+			</ul></div>
+			<div class="menu-pop" id="menu-window" style="left:56px"><ul>
+				<li data-do="mailbox">Your Local Mailbox</li>
+				<li data-do="restore">Restore Postboi Local</li>
+				<li data-do="minimise">Minimise Postboi Local</li>
+			</ul></div>
+			<div class="menu-pop" id="menu-help" style="left:118px"><ul>
+				<li data-do="docs">Postboi Help&#8230;</li>
+			</ul></div>
 		</div>
 
 		<div id="toolbar">
@@ -1089,6 +1283,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 
 	<div id="taskbar">
 		<button id="start"><svg class="flag" width="21" height="18" viewBox="0 0 21 18" aria-hidden="true"><path d="M0.5 3.7 8.8 2.1 8.8 8.5 0.5 8.8Z" fill="#f65314"/><path d="M9.9 1.9 20.4 0 20.4 8.4 9.9 8.5Z" fill="#7cbb00"/><path d="M0.5 9.6 8.8 9.8 8.8 16.1 0.5 14.6Z" fill="#00a1f1"/><path d="M9.9 9.8 20.4 10 20.4 18 9.9 16.3Z" fill="#ffbb00"/></svg><span>start</span></button>
+		<button class="task on" id="app-task">Postboi Local</button>
 		<span id="tasks" style="display:flex;gap:4px"></span>
 		<span class="spacer"></span>
 		<!-- The count lives out here rather than in the mailbox header, which is the first
@@ -1101,6 +1296,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 	<div id="startmenu">
 		<div class="rail">Postboi&nbsp;XP</div>
 		<ul>
+			<li id="m-app"><span class="ico">&#128231;</span>Postboi Local</li>
 			<li id="m-mailbox"><span class="ico">&#128236;</span>Your Local Mailbox</li>
 			<li id="m-refresh"><span class="ico">&#128260;</span>Check Mail Now</li>
 			<li id="m-docs"><span class="ico">&#128218;</span>Help&#8230;</li>
