@@ -153,13 +153,13 @@ export function inbox_middleware(
 
 		const sound_match = /^\/api\/sounds\/([a-z]+)$/.exec(route)
 		if (sound_match && method === "GET") {
-			const wav = SOUNDS[sound_match[1]]
-			if (!wav) return void send_json(response, 404, { error: "no such sound" })
+			const sound = SOUNDS[sound_match[1]]
+			if (!sound) return void send_json(response, 404, { error: "no such sound" })
 			response.statusCode = 200
-			response.setHeader("content-type", "audio/wav")
+			response.setHeader("content-type", sound.type)
 			// The bytes never change for a given build, so let the browser keep them.
 			response.setHeader("cache-control", "max-age=86400")
-			return void response.end(Buffer.from(wav, "base64"))
+			return void response.end(Buffer.from(sound.data, "base64"))
 		}
 
 		if (route === "/api/messages" && method === "POST") {

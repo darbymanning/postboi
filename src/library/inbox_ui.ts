@@ -4,10 +4,12 @@
  * production mail is a feature — you can never mistake a screenshot of this for the real
  * thing.
  *
- * Hand-rolled rather than pulled from 98.css/XP.css: the document is served as a single
- * string with no bundler and no CDN, so a stylesheet would have to be vendored whole, and
- * the bevels below are the part those libraries would actually be supplying.
+ * Window chrome comes from XP.css (vendored in inbox_theme.ts); the AOL furniture on top of
+ * it — the coloured toolbar bands, the mailbox header, the folder tabs — is ours, because no
+ * OS framework ships those.
  */
+
+import { THEME_CSS } from "./inbox_theme.js"
 
 const CSS = `
 /* Phosphor primaries, from the reference pen. */
@@ -22,10 +24,21 @@ body {
 }
 button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 
-/* Win95/98 bevels: light source top-left, two tones each way. */
-.raised { border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff }
-.sunken { border: 2px solid; border-color: #808080 #fff #fff #808080; box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #000 }
+/*
+ * XP.css sizes every button for a dialog — 75x23 minimum. The AOL furniture is full of
+ * things that aren't dialog buttons (icon tiles, nav arrows, folder tabs), so they opt out.
+ */
+#toolbar button, #nav button, #folders button, #tabs button, #taskbar button, .aolbtn, .grip {
+	min-width: 0; min-height: 0; box-sizing: border-box;
+}
+#nav .rnd { width: 26px; height: 22px; padding: 0 }
+/* XP.css supplies the bevels; these are the two insets it does not name. */
+.sunken { box-shadow: inset -1px -1px #fff, inset 1px 1px grey, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a }
 .thin-sunken { border: 1px solid; border-color: #808080 #fff #fff #808080 }
+/* Its .window padding is for dialogs; these are frames holding a full-bleed layout. */
+.window { padding: 3px; display: flex; flex-direction: column; min-height: 0 }
+.title-bar { flex: none }
+.title-bar.dim { background: linear-gradient(90deg, #7f7f7f, #b5b5b5) }
 
 /*
  * The CRT. Decoration over a normal DOM — no canvas, no shader, because the message
@@ -37,7 +50,12 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 	background: radial-gradient(120% 90% at 50% 0%, #23262a, #101113 60%, #0a0b0c);
 }
 .crt #bezel { padding: 40px; background: radial-gradient(120% 90% at 50% 0%, #2a2d31, #141517 55%, #0a0b0c), #0a0b0c }
-#screen { position: relative; height: 100%; overflow: hidden; background: #3a6ea5; display: flex; flex-direction: column }
+#screen { position: relative; height: 100%; overflow: hidden; background: #3a6ea5 }
+/* Everything the user actually looks at. Separated from the overlays so the barrel bends
+   the UI without also bending the phosphor mask — displacing a 3px RGB stripe by a
+   smoothly varying offset moirés into a checkerboard, and the mask is on the glass in
+   front of the picture anyway, not part of it. */
+#warp { position: relative; height: 100%; display: flex; flex-direction: column }
 /* Curvature is faked: a rounded, inset-lit tube plus the corner falloff below. Real barrel
    distortion would need a shader, and would bend the mail you're trying to read. */
 /*
@@ -51,9 +69,9 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
  */
 .crt #screen {
 	clip-path: url(#tube);
-	/* The corners are the deepest part of the clip, so the UI is inset past them — otherwise
-	   the curve eats the title bar and the taskbar. */
-	padding: 26px 22px;
+	/* The corners are the deepest part of the clip, and the warp pulls content further in
+	   still, so the UI is inset past both — otherwise the curve eats the title bar. */
+	padding: 44px 30px;
 	filter:
 		drop-shadow(0 0 2px #000)
 		drop-shadow(0 0 26px rgba(70,150,220,.34))
@@ -61,8 +79,8 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 }
 /* Bloom, plus the pen's glow-and-fringe text-shadow. Applied to light text on dark only:
    on the black-on-grey of the Windows chrome, a currentColor glow is a black smudge. */
-.crt #aol { filter: contrast(1.1) saturate(1.18) brightness(1.05) }
-.crt .titlebar, .crt #folders button, .crt #tabs button, .crt .band.b5 span, .crt #shutdown {
+.crt #warp { filter: url(#barrel) contrast(1.1) saturate(1.18) brightness(1.05) }
+.crt .title-bar, .crt #folders button, .crt #tabs button, .crt .band.b5 span, .crt #shutdown {
 	text-shadow: 0 0 .2em currentColor, 1px 1px rgba(255,0,255,.5), -1px -1px rgba(0,255,255,.4);
 }
 /* The active folder/reader tab flips to dark-on-white, where that glow would smudge. */
@@ -126,18 +144,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 }
 
 /* ---- Title bars, shared by the app window and every child window ---- */
-.titlebar {
-	display: flex; align-items: center; gap: 5px; padding: 3px 3px 3px 4px;
-	background: linear-gradient(90deg, #000080, #1084d0);
-	color: #fff; font-weight: bold;
-}
-.titlebar.dim { background: linear-gradient(90deg, #7f7f7f, #b5b5b5) }
-.titlebar .spacer { flex: 1 }
-.titlebar .box {
-	width: 17px; height: 15px; background: #c0c0c0; color: #000; cursor: default;
-	font: bold 10px "MS Sans Serif", Tahoma, sans-serif; line-height: 12px; text-align: center;
-	border: 1px solid; border-color: #fff #000 #000 #fff; padding: 0;
-}
+.title-bar-text { display: flex; align-items: center; gap: 5px; margin-right: 12px }
 
 /* ---- The AOL application window ---- */
 #aol { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #c0c0c0; margin: 2px 2px 0 }
@@ -191,7 +198,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 /* "#reader.open" sets display:flex and outranks a bare ".child.min" on specificity, so
    minimising has to be spelled out at least as strongly or the window never hides. */
 .child.min, #reader.open.min { display: none }
-.child .titlebar { cursor: default; user-select: none }
+.child .title-bar { cursor: default; user-select: none }
 .child.max .grip, .child.max .edge { display: none }
 .grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 6 }
 /* The Win95 hatch: three stepped highlights, drawn with a repeating gradient. */
@@ -412,7 +419,7 @@ function render_reader() {
 	var reader = $("reader")
 	var win = find("reader")
 	if (!current) {
-		reader.className = "child raised"
+		reader.className = "child window"
 		if (win) {
 			win.open = false
 			if (focused === "reader") focused = "mailbox"
@@ -420,7 +427,7 @@ function render_reader() {
 		}
 		return
 	}
-	reader.className = "child raised open" + (win && win.min ? " min" : "")
+	reader.className = "child window open" + (win && win.min ? " min" : "")
 	if (win) {
 		win.title = current.subject || "(no subject)"
 		var reopened = !win.open
@@ -496,21 +503,89 @@ var muted = localStorage.getItem("postboi:sound")
 	: document.documentElement.dataset.sounds === "off"
 
 function play(name) {
-	if (muted) return
+	if (muted) return null
 	var audio = new Audio(api + "/sounds/" + name)
 	audio.volume = 0.7
 	// Browsers refuse audio until the page has been interacted with. That's a promise
 	// rejection, not an error worth surfacing — the next one will play.
 	var played = audio.play()
 	if (played && played.catch) played.catch(function () {})
+	return audio
+}
+
+/** The handshake, held open for as long as the sign-on takes. */
+var dialing = null
+function stop_dialing() {
+	if (!dialing) return
+	dialing.pause()
+	dialing = null
 }
 
 function apply_mute(on) {
 	muted = on
+	if (on) stop_dialing()
 	var button = $("t-sound")
 	button.className = on ? "tb" : "tb on"
 	button.firstChild.textContent = on ? "\\u{1F507}" : "\\u{1F50A}"
 	button.lastChild.nodeValue = on ? "Muted" : "Sound"
+}
+
+/*
+ * The barrel warp. feDisplacementMap resamples the rendered UI through an image whose red
+ * and green channels carry the x and y offsets, so the chrome genuinely bends toward the
+ * tube's edges instead of being sliced off by the clip — open the Start menu in the corner
+ * and it curves with the glass.
+ *
+ * Deliberately gentle. Hit-testing is *not* displaced: the browser still tests clicks
+ * against the undistorted layout, so every pixel of bend is a pixel of aiming error at the
+ * edges. K is set where the curve reads but a Start-menu row still catches its own click.
+ */
+var WARP_K = 0.035
+
+function build_warp() {
+	var el = $("warp")
+	var w = el.offsetWidth
+	var h = el.offsetHeight
+	if (!w || !h) return
+	var size = 256
+	var canvas = document.createElement("canvas")
+	canvas.width = size
+	canvas.height = size
+	var ctx = canvas.getContext("2d")
+	var image = ctx.createImageData(size, size)
+	for (var j = 0; j < size; j++) {
+		for (var i = 0; i < size; i++) {
+			var u = (i / (size - 1)) * 2 - 1
+			var v = (j / (size - 1)) * 2 - 1
+			// Normalised so the corners land at ±1 rather than saturating and flattening out.
+			var r2 = (u * u + v * v) / 2
+			// Sample from nearer the centre the further out you are, so the picture bows. The
+			// offsets are encoded across the *whole* 0–255 range and the strength lives in
+			// the filter's scale instead: squeezed into a few levels either side of 128, an
+			// 8-bit map bands the picture into visible steps.
+			var dx = -u * r2
+			// The vertical offset carries the aspect ratio, because one scale drives both axes.
+			var dy = -v * r2 * (h / w)
+			var p = (j * size + i) * 4
+			image.data[p] = Math.max(0, Math.min(255, Math.round((dx * 0.5 + 0.5) * 255)))
+			image.data[p + 1] = Math.max(0, Math.min(255, Math.round((dy * 0.5 + 0.5) * 255)))
+			image.data[p + 2] = 0
+			image.data[p + 3] = 255
+		}
+	}
+	ctx.putImageData(image, 0, 0)
+	var map = $("warpmap")
+	map.setAttribute("href", canvas.toDataURL())
+	// Explicit pixels, not percentages: anywhere the map fails to cover the filter region
+	// reads as zero, and zero means "displace by half the scale" — which folds the whole UI
+	// into a corner. The image has to blanket the region exactly.
+	map.setAttribute("x", "0")
+	map.setAttribute("y", "0")
+	map.setAttribute("width", String(w))
+	map.setAttribute("height", String(h))
+	// displacement_px = scale * (channel - 0.5), and the encoding now spans the full range,
+	// so the worst-case offset is K * w / 2 and one quantisation step is well under a pixel.
+	$("warpdisp").setAttribute("scale", String(WARP_K * w))
 }
 
 /* ---- Window manager ---- */
@@ -537,7 +612,7 @@ function register(id, title, rect) {
 	place(el, rect)
 
 	el.addEventListener("mousedown", function () { focus_window(id) })
-	var bar = el.querySelector(".titlebar")
+	var bar = el.querySelector(".title-bar")
 	bar.addEventListener("mousedown", function (event) {
 		if (event.target.dataset && event.target.dataset.act) return
 		drag(win, event)
@@ -603,8 +678,8 @@ function paint() {
 	var tasks = $("tasks")
 	tasks.innerHTML = ""
 	wins.forEach(function (win) {
-		win.el.querySelector(".titlebar").className =
-			"titlebar" + (focused === win.id && !win.min ? "" : " dim")
+		win.el.querySelector(".title-bar").className =
+			"title-bar" + (focused === win.id && !win.min ? "" : " dim")
 		if (!win.open) return
 		var button = document.createElement("button")
 		button.className = "task" + (focused === win.id && !win.min ? " on" : "")
@@ -648,6 +723,35 @@ function drag(win, event) {
 		var y = Math.max(0, Math.min(box.h - 24, e.clientY - dy))
 		win.el.style.left = x + "px"
 		win.el.style.top = y + "px"
+	})
+}
+
+/**
+ * Dragging for a dialog that isn't in the window list — the sign-on, which has no taskbar
+ * button and nothing to raise above, but should still be shovable out of the way.
+ */
+function drag_dialog(el) {
+	var bar = el.querySelector(".title-bar")
+	if (bar.dataset.draggable) return
+	bar.dataset.draggable = "1"
+	bar.style.cursor = "default"
+	bar.addEventListener("mousedown", function (event) {
+		if (event.target.dataset && event.target.dataset.act) return
+		event.preventDefault()
+		var rect = el.getBoundingClientRect()
+		// It's centred by flex until it's touched; pin it before the first move so it doesn't
+		// jump out from under the cursor.
+		el.style.position = "absolute"
+		el.style.margin = "0"
+		var host = el.parentNode.getBoundingClientRect()
+		var dx = event.clientX - rect.left
+		var dy = event.clientY - rect.top
+		el.style.left = rect.left - host.left + "px"
+		el.style.top = rect.top - host.top + "px"
+		track(function (e) {
+			el.style.left = e.clientX - dx - host.left + "px"
+			el.style.top = e.clientY - dy - host.top + "px"
+		})
 	})
 }
 
@@ -771,11 +875,16 @@ var intro_timers = []
 function end_intro() {
 	intro_timers.forEach(clearTimeout)
 	intro_timers = []
+	// The handshake belongs to the dialog: it stops the moment the mailbox is up, and the
+	// greeting lands on the main screen rather than over the top of it.
+	stop_dialing()
 	$("intro").className = ""
 	play("welcome")
 }
 function run_intro() {
 	$("intro").className = "open"
+	drag_dialog($("introwin"))
+	dialing = play("dialup")
 	var step = 300
 	for (var i = 0; i < 3; i++) {
 		;(function (n) {
@@ -791,6 +900,7 @@ function run_intro() {
 	intro_timers.push(setTimeout(end_intro, step + 3 * 820 + 380))
 }
 $("intro-cancel").onclick = end_intro
+$("introwin").querySelector('[data-act="close"]').onclick = end_intro
 
 /*
  * Opening layout. The mailbox takes the top third and the reader the rest — mail is the
@@ -798,10 +908,25 @@ $("intro-cancel").onclick = end_intro
  * or maximised from there.
  */
 var box = ws_rect()
-var split = Math.max(200, Math.min(box.h * 0.44, 320))
-register("mailbox", "Your Local Mailbox", { x: 0, y: 0, w: box.w, h: split })
-register("reader", "Message", { x: 18, y: split + 8, w: box.w - 36, h: box.h - split - 16 })
+/* Centred, the way the screenshots have it: the mailbox floating mid-desktop and mail
+   opening in front of it, rather than the two tiled edge to edge. */
+var mb = { w: Math.min(760, box.w - 40), h: Math.min(430, box.h - 40) }
+var mbx = Math.round((box.w - mb.w) / 2)
+var mby = Math.max(0, Math.round((box.h - mb.h) / 2) - 20)
+register("mailbox", "Your Local Mailbox", { x: mbx, y: mby, w: mb.w, h: mb.h })
+/* Mail opens in front of the mailbox but starts below its list, so the message you picked
+   stays in view behind — the way the reference shot has it. */
+var ry = mby + 196
+register("reader", "Message", {
+	x: mbx + 8,
+	y: ry,
+	w: mb.w - 16,
+	h: Math.max(240, Math.min(400, box.h - ry - 8)),
+})
 focus_window("mailbox")
+
+build_warp()
+window.addEventListener("resize", build_warp)
 
 clock()
 setInterval(clock, 10000)
@@ -832,12 +957,19 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Postboi Mail</title>
+<style>${THEME_CSS}</style>
 <style>${CSS}</style>
 </head>
 <body>
 <!-- The tube's silhouette: a rounded rect whose four edges bow outward. In
      objectBoundingBox units (0..1), so it stretches to whatever the window is. -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+	<!-- Barrel distortion. The map is drawn at runtime (see build_warp) because the offsets
+	     depend on the screen's aspect ratio, which CSS can't express in a gradient. -->
+	<filter id="barrel" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+		<feImage id="warpmap" x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" result="map"/>
+		<feDisplacementMap id="warpdisp" in="SourceGraphic" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+	</filter>
 	<clipPath id="tube" clipPathUnits="objectBoundingBox">
 		<path d="M .018 .040
 			C .30 .003, .70 .003, .982 .040
@@ -848,13 +980,16 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 </defs></svg>
 <div id="bezel">
 <div id="screen">
+<div id="warp">
 
-	<div id="aol" class="raised">
-		<div class="titlebar">
-			<span>&#9650;</span>
-			<span>Postboi&nbsp; Local</span>
-			<span class="spacer"></span>
-			<span class="box">_</span><span class="box">&#9633;</span><span class="box">&times;</span>
+	<div id="aol" class="window">
+		<div class="title-bar">
+			<div class="title-bar-text"><span>&#9650;</span> Postboi Local</div>
+			<div class="title-bar-controls">
+				<button aria-label="Minimize"></button>
+				<button aria-label="Maximize"></button>
+				<button aria-label="Close"></button>
+			</div>
 		</div>
 		<div id="menubar">
 			<span><u>F</u>ile</span><span><u>E</u>dit</span><span><u>W</u>indow</span><span><u>S</u>ign Off</span><span><u>H</u>elp</span>
@@ -892,13 +1027,13 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 		</div>
 
 		<div id="workspace">
-			<div id="mailbox" class="child raised">
-				<div class="titlebar">
-					<span>&#9650;</span>
-					<span>Your Local Mailbox</span>
-					<span class="spacer"></span>
-					<button class="box" data-act="min">_</button>
-					<button class="box" data-act="max">&#9633;</button>
+			<div id="mailbox" class="child window">
+				<div class="title-bar">
+					<div class="title-bar-text"><span>&#9650;</span> Your Local Mailbox</div>
+					<div class="title-bar-controls">
+						<button aria-label="Minimize" data-act="min"></button>
+						<button aria-label="Maximize" data-act="max"></button>
+					</div>
 				</div>
 
 				<div id="mbhead">
@@ -949,14 +1084,14 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 				<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 			</div>
 
-			<div id="reader" class="child raised">
-				<div class="titlebar">
-					<span>&#9993;</span>
-					<span id="reader-title"></span>
-					<span class="spacer"></span>
-					<button class="box" data-act="min">_</button>
-					<button class="box" data-act="max">&#9633;</button>
-					<button class="box" data-act="close" id="reader-close">&times;</button>
+			<div id="reader" class="child window">
+				<div class="title-bar">
+					<div class="title-bar-text"><span>&#9993;</span> <span id="reader-title"></span></div>
+					<div class="title-bar-controls">
+						<button aria-label="Minimize" data-act="min"></button>
+						<button aria-label="Maximize" data-act="max"></button>
+						<button aria-label="Close" data-act="close" id="reader-close"></button>
+					</div>
 				</div>
 				<div id="head"></div>
 				<div id="tabs">
@@ -999,9 +1134,10 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 	</div>
 
 	<div id="intro">
-		<div id="introwin" class="child raised">
-			<div class="titlebar">
-				<span>&#9650;</span><span>Connecting To Postboi&#8230;</span><span class="spacer"></span>
+		<div id="introwin" class="child window">
+			<div class="title-bar">
+				<div class="title-bar-text"><span>&#9650;</span> Connecting To Postboi&#8230;</div>
+				<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div>
 			</div>
 			<div id="introbody">
 				<div id="intrologo"><i>&#128238;</i><span>post</span><b>boi</b></div>
@@ -1021,6 +1157,8 @@ export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOpt
 			<small>(Your mail is still in the inbox. Click anywhere.)</small>
 		</div>
 	</div>
+
+</div>
 
 	<div id="mask-h"></div>
 	<div id="mask-v"></div>

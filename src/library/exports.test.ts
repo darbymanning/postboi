@@ -44,6 +44,7 @@ describe("package exports", () => {
 			"inbox_server.ts", // dev inbox HTTP surface, mounted by postboi/vite and the CLI
 			"inbox_ui.ts", // the dev inbox document, served by inbox_server.ts
 			"inbox_sounds.ts", // the dev inbox's audio, served by inbox_server.ts
+			"inbox_theme.ts", // vendored XP.css, inlined into the dev inbox document
 		])
 		const providers = readdirSync(`${root}src/library`).filter(
 			(f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !internal.has(f)
