@@ -107,14 +107,21 @@ describe("inbox middleware", () => {
 		expect(html).toContain("prefers-reduced-motion")
 	})
 
-	it("starts with either turned off when the server says so", async () => {
-		const store = create_inbox_store()
-		const html = inbox_ui({ crt: false, sounds: false })
+	it("starts with each piece turned off when the server says so", async () => {
+		const html = inbox_ui({ crt: false, sounds: false, intro: false })
 		expect(html).not.toContain('class="crt"')
 		expect(html).toContain('data-sounds="off"')
+		expect(html).toContain('data-intro="off"')
 		// The controls stay — the option sets the starting state, it doesn't remove the toggle.
 		expect(html).toContain('id="t-crt"')
-		expect(store.list()).toHaveLength(0)
+		expect(html).toContain('id="t-sound"')
+	})
+
+	it("defaults every piece on", async () => {
+		const html = inbox_ui()
+		expect(html).toContain('class="crt"')
+		expect(html).toContain('data-sounds="on"')
+		expect(html).toContain('data-intro="on"')
 	})
 
 	it("serves each sound as playable audio", async () => {

@@ -282,6 +282,29 @@ td.who { width: 34% }
 #startmenu li.sep:hover { background: transparent }
 #startmenu li .ico { width: 18px; text-align: center; font-size: 14px }
 
+/* ---- The sign-on dialog ---- */
+#intro { display: none; position: absolute; inset: 0; z-index: 250; background: #6a6a6a; align-items: center; justify-content: center }
+#intro.open { display: flex }
+#introwin { width: min(660px, 86%); background: #f2f0e6 }
+#introbody { padding: 16px 20px 14px; background: #f2f0e6 }
+#intrologo { text-align: center; font: italic bold 34px Verdana, Arial, sans-serif; letter-spacing: -1px; margin-bottom: 16px }
+#intrologo i { font-style: normal; font-size: 30px; vertical-align: -2px; margin-right: 6px }
+#intrologo span { color: #17265c }
+#intrologo b { color: #fdc005; text-shadow: 0 1px 0 #b98d00 }
+#steps { display: flex; gap: 14px }
+.step { flex: 1; text-align: center }
+/* Empty on purpose — the boxes are where the animation would go if we had one. */
+.step .box { height: 92px; background: #c9c9f0; border: 3px solid; border-color: #6a7ab8 #aab4dc #aab4dc #6a7ab8;
+	display: flex; align-items: center; justify-content: center; font-size: 30px; color: #3b4a86 }
+.step .cap { display: block; margin-top: 7px; color: #555 }
+.step.on .cap { color: #000; font-weight: bold }
+.step.on .box { background: #d8d8fa; box-shadow: 0 0 0 2px #17265c }
+.step.done .box { background: #bcd8bc }
+#introfoot { border-top: 2px solid #17265c; margin-top: 14px; padding-top: 12px; text-align: center }
+/* Ellipsis that actually animates, so a paused step doesn't look like a hang. */
+@keyframes dots { 0% { content: "." } 33% { content: ".." } 66% { content: "..." } }
+.step.on .box::after { content: "."; animation: dots 900ms steps(1) infinite; font: bold 34px monospace; letter-spacing: 2px }
+
 /* "It's now safe…" — the one screen everyone who used a 98 box remembers. */
 #shutdown { display: none; position: absolute; inset: 0; z-index: 400; background: #000; color: #ffa726;
 	align-items: center; justify-content: center; text-align: center; cursor: pointer;
@@ -540,10 +563,41 @@ $("t-sound").onclick = function () {
 }
 $("shutdown").onclick = function () { $("shutdown").className = "" }
 
+/*
+ * The sign-on. Purely theatre over an inbox that's already live behind it — the fetch and
+ * the event stream start immediately, so cancelling never costs you anything.
+ */
+var intro_timers = []
+function end_intro() {
+	intro_timers.forEach(clearTimeout)
+	intro_timers = []
+	$("intro").className = ""
+	play("welcome")
+}
+function run_intro() {
+	$("intro").className = "open"
+	var step = 300
+	for (var i = 0; i < 3; i++) {
+		;(function (n) {
+			intro_timers.push(setTimeout(function () {
+				if (n > 0) $("s" + (n - 1)).className = "step done"
+				$("s" + n).className = "step on"
+			}, step + n * 820))
+		})(i)
+	}
+	intro_timers.push(setTimeout(function () {
+		$("s2").className = "step done"
+	}, step + 3 * 820))
+	intro_timers.push(setTimeout(end_intro, step + 3 * 820 + 380))
+}
+$("intro-cancel").onclick = end_intro
+
 clock()
 setInterval(clock, 10000)
 new EventSource(api + "/events").onmessage = function () { load() }
-load().then(function () { play("welcome") })
+load()
+if (document.documentElement.dataset.intro === "on") run_intro()
+else play("welcome")
 `
 
 /** How the page starts out. Both are still toggleable in the UI, and the choice sticks. */
@@ -552,12 +606,17 @@ export interface InboxUiOptions {
 	crt?: boolean
 	/** Start with sounds on. Defaults to true. */
 	sounds?: boolean
+	/**
+	 * Play the "Connecting To Postboi…" sign-on before showing the inbox. Defaults to true.
+	 * Theatre only — the inbox loads behind it, so turning it off costs nothing but the joke.
+	 */
+	intro?: boolean
 }
 
 /** The inbox document. Built per request — it's a dev server, and a string is cheap. */
-export function inbox_ui({ crt = true, sounds = true }: InboxUiOptions = {}): string {
+export function inbox_ui({ crt = true, sounds = true, intro = true }: InboxUiOptions = {}): string {
 	return `<!doctype html>
-<html lang="en"${crt ? ' class="crt"' : ""} data-sounds="${sounds ? "on" : "off"}"
+<html lang="en"${crt ? ' class="crt"' : ""} data-sounds="${sounds ? "on" : "off"}" data-intro="${intro ? "on" : "off"}"
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -716,6 +775,23 @@ export function inbox_ui({ crt = true, sounds = true }: InboxUiOptions = {}): st
 			<li class="sep"></li>
 			<li id="m-shutdown"><span class="ico">&#9211;</span>Shut Down&#8230;</li>
 		</ul>
+	</div>
+
+	<div id="intro">
+		<div id="introwin" class="child raised">
+			<div class="titlebar">
+				<span>&#9650;</span><span>Connecting To Postboi&#8230;</span><span class="spacer"></span>
+			</div>
+			<div id="introbody">
+				<div id="intrologo"><i>&#128238;</i><span>post</span><b>boi</b></div>
+				<div id="steps">
+					<div class="step" id="s0"><div class="box"></div><span class="cap">1. Locating mailroom&#8230;</span></div>
+					<div class="step" id="s1"><div class="box"></div><span class="cap">2. Connecting to localhost&#8230;</span></div>
+					<div class="step" id="s2"><div class="box"></div><span class="cap">3. Intercepting outgoing mail&#8230;</span></div>
+				</div>
+				<div id="introfoot"><button class="aolbtn" id="intro-cancel">Cancel</button></div>
+			</div>
+		</div>
 	</div>
 
 	<div id="shutdown">

@@ -152,17 +152,24 @@ because a dev tool that says "Welcome!" in an open-plan office is a dev tool peo
 uninstall. Browsers won't play anything until you've clicked the page once, so the first
 greeting usually waits for you.
 
+### Signing on
+
+Opening the inbox dials in first — _Locating mailroom… Connecting to localhost…
+Intercepting outgoing mail…_ — then greets you. It's about two and a half seconds, **Cancel**
+skips it, and it's pure theatre: the inbox is already loaded and listening behind the
+dialog, so cancelling costs nothing but the joke.
+
 ### Configuring the defaults
 
-Both the CRT and the sound can start off, for everyone on the project:
+The CRT, the sound and the sign-on can each start off, for everyone on the project:
 
 ```ts
 // vite.config.ts
-postboi({ inbox: { crt: false, sounds: false } })
+postboi({ inbox: { crt: false, sounds: false, intro: false } })
 ```
 
 ```bash
-bunx postboi dev --no-crt --no-sound
+bunx postboi dev --no-crt --no-sound --no-intro
 ```
 
 These set what the page *starts* with. The toolbar toggles still work, and a viewer's own

@@ -105,6 +105,7 @@ export async function dev_command(args: Array<string>): Promise<void> {
 	const middleware = inbox_middleware(store, INBOX_PATH, {
 		crt: !args.includes("--no-crt"),
 		sounds: !args.includes("--no-sound") && !args.includes("--no-sounds"),
+		intro: !args.includes("--no-intro"),
 	})
 	const server = createServer((request, response) => {
 		middleware(request, response, () => {
