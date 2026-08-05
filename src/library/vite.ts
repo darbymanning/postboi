@@ -13,7 +13,11 @@ export interface ViteDevServer {
 		on(event: string, listener: () => void): unknown
 		address(): { port?: number } | string | null
 	} | null
-	config: { root: string }
+	config: {
+		root: string
+		/** `server.https` is truthy whenever the dev server is serving over TLS. */
+		server?: { https?: unknown }
+	}
 }
 
 /**
@@ -90,11 +94,11 @@ function is_inbox_module(id: string): boolean {
  * filesystem, but it's baked in when the module is first transformed. Between them every
  * runtime is covered.
  */
-function advertise(root: string, port: number): () => void {
+function advertise(root: string, port: number, secure: boolean): () => void {
 	const file = join(root, INBOX_DISCOVERY)
 	try {
 		mkdirSync(dirname(file), { recursive: true })
-		writeFileSync(file, JSON.stringify({ port, pid: process.pid }))
+		writeFileSync(file, JSON.stringify({ port, pid: process.pid, secure }))
 	} catch {
 		// Read-only or no node_modules — the injected port still covers the common case.
 	}
@@ -127,6 +131,7 @@ function advertise(root: string, port: number): () => void {
 export function postboi(options: PluginOptions = {}): VitePlugin {
 	let file: string | undefined
 	let inbox_port: number | null = null
+	let inbox_secure = false
 
 	return {
 		name: "postboi",
@@ -158,11 +163,16 @@ export function postboi(options: PluginOptions = {}): VitePlugin {
 				const address = http.address()
 				if (!address || typeof address === "string" || !address.port) return
 				inbox_port = address.port
-				const cleanup = advertise(server.config.root, address.port)
+				// The inbox is mounted on this server, so it is served however this server is. Get
+				// this wrong and the printed link 404s in the browser and, worse, the capture POSTs
+				// plaintext at a TLS port and quietly falls back to the console.
+				inbox_secure = !!server.config.server?.https
+				const cleanup = advertise(server.config.root, address.port, inbox_secure)
 				http.on("close", cleanup)
 				process.once("exit", cleanup)
+				const scheme = inbox_secure ? "https" : "http"
 				console.log(
-					`  \x1b[33m➜\x1b[0m  \x1b[1mPostboi\x1b[0m:  dev inbox at http://localhost:${address.port}${INBOX_PATH}`
+					`  \x1b[33m➜\x1b[0m  \x1b[1mPostboi\x1b[0m:  dev inbox at ${scheme}://localhost:${address.port}${INBOX_PATH}`
 				)
 			})
 		},
@@ -181,7 +191,7 @@ export function postboi(options: PluginOptions = {}): VitePlugin {
 			// different module registries — see `set_inbox_port`. Runtimes with a filesystem
 			// would find the discovery file anyway; Workers only have this.
 			if (inbox_port !== null && is_inbox_module(id)) {
-				return { code: `${code}\nset_inbox_port(${inbox_port})\n`, map: null }
+				return { code: `${code}\nset_inbox_port(${inbox_port}, ${inbox_secure})\n`, map: null }
 			}
 			return null
 		},

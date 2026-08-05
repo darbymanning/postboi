@@ -121,9 +121,9 @@ describe("inbox middleware", () => {
 		expect(html).toContain('aria-label="Close" data-act="close" id="reader-close"')
 		// The mailbox closes too, and the Start menu is how it comes back.
 		expect(html).toContain('id="m-mailbox"')
-		// Resize handles on both windows — the reading pane is only ever big enough
-		// because you can make it bigger.
-		expect(html.match(/class="grip"/g)).toHaveLength(2)
+		// Resize handles on the mailbox, the reader and the app frame itself — the reading pane
+		// is only ever big enough because you can make it bigger.
+		expect(html.match(/class="grip"/g)).toHaveLength(3)
 	})
 
 	it("is branded Postboi, not the client it's dressed as", async () => {
@@ -160,6 +160,27 @@ describe("inbox middleware", () => {
 		expect(html).toContain('id="menu-file"')
 	})
 
+	it("puts the app on the desktop, and keeps the crash for turning the machine off", async () => {
+		const html = inbox_ui()
+		// Closing the app leaves a desktop, so there has to be something on it to open it again.
+		expect(html).toContain('id="sc-app"')
+		expect(html).toContain('id="m-shutdown"')
+		// The stop error is reachable from Turn Off Computer and nowhere else; the old
+		// "it's now safe" screen went with it.
+		expect(html).toContain('id="bsod"')
+		expect(html).not.toContain('id="shutdown"')
+		expect(html).toContain("app_close()")
+	})
+
+	it("files mail into an outbox, and a folder for what hasn't gone yet", async () => {
+		const html = inbox_ui()
+		expect(html).toContain('id="f-outbox"')
+		expect(html).toContain('id="f-scheduled"')
+		expect(html).toContain(">Outbox<")
+		// These are messages on their way out, not mail that arrived.
+		expect(html).not.toMatch(/>(New|Old|Sent) Mail</)
+	})
+
 	it("defaults every piece on", async () => {
 		const html = inbox_ui()
 		expect(html).toContain('data-sounds="on"')
@@ -193,6 +214,8 @@ describe("inbox middleware", () => {
 		for (const [name, type] of [
 			["wallpaper", "image/jpeg"],
 			["start", "image/png"],
+			["icon", "image/png"],
+			["avatar", "image/svg+xml"],
 		]) {
 			const response = await fetch(
 				`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/desktop/${name}`
@@ -367,6 +390,41 @@ describe("delivery", () => {
 
 		expect(inbox.store.list()).toHaveLength(1)
 		expect(inbox.store.list()[0].subject).toBe("Captured")
+		await inbox.stop()
+	})
+
+	it("builds an https url when the dev server is serving over https", async () => {
+		set_inbox_port(5173, true)
+		expect((await resolve_inbox())?.url).toBe(`https://localhost:5173${INBOX_PATH}`)
+		set_inbox_port(5173, false)
+		expect((await resolve_inbox())?.url).toBe(`http://localhost:5173${INBOX_PATH}`)
+	})
+
+	it("takes a whole url in POSTBOI_INBOX, not only a port", async () => {
+		// An https dev server is exactly the case where you might have to say so by hand.
+		process.env.POSTBOI_INBOX = "https://localhost:5173"
+		expect((await resolve_inbox())?.url).toBe(`https://localhost:5173${INBOX_PATH}`)
+		delete process.env.POSTBOI_INBOX
+	})
+
+	it("carries a schedule all the way to the inbox", async () => {
+		const inbox = await start_inbox()
+		set_inbox_port(inbox.port)
+		const resolved = await resolve_inbox()
+
+		const mail = new Mock({ sink: resolved!.deliver, default: { from: "dev@example.com" } })
+		const when = new Date(Date.now() + 86_400_000)
+		await mail.send({
+			to: "ada@example.com",
+			subject: "Next week",
+			body: "<p>Later</p>",
+			scheduled_at: when,
+		})
+
+		// Without this a mail queued for next Tuesday is indistinguishable in the inbox from one
+		// that has already gone, which is the one thing you open the inbox to check.
+		expect(mail.sent[0].scheduled_at).toEqual(when)
+		expect(inbox.store.list()[0].scheduled_at).toBe(when.toISOString())
 		await inbox.stop()
 	})
 

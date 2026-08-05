@@ -23,6 +23,12 @@ export interface SentMessage {
 	html?: string
 	text?: string
 	attachments: Array<MailAttachment>
+	/**
+	 * When the send asked for future delivery. Captured because it is the most important thing
+	 * about a scheduled message and the easiest to lose: without it a mail queued for next
+	 * Tuesday is indistinguishable from one sent a second ago.
+	 */
+	scheduled_at?: Date
 }
 
 /** Options for the mock provider constructor. */
@@ -65,6 +71,9 @@ function log_message(message: SentMessage): void {
 	if (message.attachments.length) {
 		lines.push(`  files: ${message.attachments.map((a) => a.name).join(", ")}`)
 	}
+	// Printed rather than left implicit: "sent" and "queued for Tuesday" look identical here
+	// otherwise, and the difference is the whole point of the send.
+	if (message.scheduled_at) lines.push(`  send: ${message.scheduled_at.toISOString()}`)
 	const body = message.text ?? message.html
 	if (body) lines.push("", body.trim())
 	console.log(lines.join("\n"))
@@ -168,6 +177,7 @@ export default class Mock extends ProviderBase<SendResponse> {
 				html: message.html,
 				text: message.text,
 				attachments: message.attachments ? await this.parse_attachments(message.attachments) : [],
+				scheduled_at: message.scheduled_at,
 			}
 
 			this.sent.push(captured)

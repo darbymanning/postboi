@@ -39,10 +39,18 @@ export type InboxMiddleware = (
 	next: () => void
 ) => void
 
+/**
+ * A message on its way in. In-process it still carries a `Date`; over HTTP it has already
+ * been through JSON and carries the ISO string. The store takes either and settles on one.
+ */
+export type CapturedMessage = Omit<SentMessage, "scheduled_at"> & {
+	scheduled_at?: Date | string
+}
+
 /** The captured messages, and the means to watch for more. */
 export interface InboxStore {
 	/** Store a captured message and return it with its assigned id. */
-	add(message: SentMessage): InboxMessage
+	add(message: CapturedMessage): InboxMessage
 	/** Every stored message, newest first. */
 	list(): Array<InboxMessage>
 	/** One message by id. */
@@ -71,7 +79,14 @@ export function create_inbox_store(limit = 200): InboxStore {
 
 	return {
 		add(message) {
-			const stored: InboxMessage = { ...message, id: `${++counter}`, received_at: Date.now() }
+			const stored: InboxMessage = {
+				...message,
+				scheduled_at: message.scheduled_at
+					? new Date(message.scheduled_at).toISOString()
+					: undefined,
+				id: `${++counter}`,
+				received_at: Date.now(),
+			}
 			messages.unshift(stored)
 			if (messages.length > limit) messages.length = limit
 			notify()
@@ -327,7 +342,7 @@ export function inbox_middleware(
 		if (route === "/api/messages" && method === "POST") {
 			return void read_body(request)
 				.then((body) => {
-					const message = store.add(JSON.parse(body) as SentMessage)
+					const message = store.add(JSON.parse(body) as CapturedMessage)
 					send_json(response, 201, { id: message.id })
 				})
 				.catch((error: unknown) => {

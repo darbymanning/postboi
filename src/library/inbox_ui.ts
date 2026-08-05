@@ -34,8 +34,9 @@ const CSS = `
 .grip { cursor: nwse-resize }
 .edge-r { cursor: ew-resize }
 .edge-b { cursor: ns-resize }
+/* The machine sits inset on black, the way a screenshot of one does. */
 body {
-	margin: 0; padding: 0; height: 100vh; overflow: hidden;
+	margin: 0; padding: 16px; height: 100vh; overflow: hidden; box-sizing: border-box;
 	background: #0a0b0c;
 	font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif;
 	color: #000;
@@ -47,10 +48,9 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
  * XP.css sizes every button for a dialog — 75x23 minimum. The AOL furniture is full of
  * things that aren't dialog buttons (icon tiles, nav arrows, folder tabs), so they opt out.
  */
-#toolbar button, #nav button, #folders button, #tabs button, #taskbar button, .aolbtn, .grip {
+#toolbar button, #folders button, #tabs button, #taskbar button, .aolbtn, .grip {
 	min-width: 0; min-height: 0; box-sizing: border-box;
 }
-#nav .rnd { width: 26px; height: 22px; padding: 0 }
 /* XP.css supplies the bevels; these are the two insets it does not name. */
 .sunken { box-shadow: inset -1px -1px #fff, inset 1px 1px grey, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a }
 .thin-sunken { border: 1px solid; border-color: #808080 #fff #fff #808080 }
@@ -76,7 +76,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
  * read as a flash.
  */
 #screen {
-	position: relative; height: 100%; overflow: hidden;
+	position: relative; height: 100%; overflow: hidden; border-radius: 7px;
 	background:
 		radial-gradient(120% 70% at 50% 118%, #6aa83c 0%, #4f8f2c 38%, #3f7d24 55%, rgba(63,125,36,0) 56%),
 		radial-gradient(90% 40% at 18% 104%, #86bf4e 0%, rgba(134,191,78,0) 60%),
@@ -86,11 +86,11 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
    known — the UI is served from wherever it's mounted, not a fixed URL. */
 #screen.papered { background-size: cover; background-position: center }
 /*
- * The clip, which rests on exactly the still behind it. It sits above the wallpaper and below
- * everything else, so minimising reveals it and it holds its last frame afterwards.
+ * The clip. It sits above the wallpaper and below everything else, so minimising reveals it.
+ *
+ * Sized explicitly: a replaced element given only insets still lays out at its intrinsic size,
+ * so it would sit at its own width in the corner rather than filling the desktop.
  */
-/* Sized explicitly: a replaced element given only insets still lays out at its intrinsic
-   size, so the clip would sit at 960px in the corner rather than filling the desktop. */
 #bliss {
 	position: absolute; left: 0; top: 0; width: 100%; height: calc(100% - 30px);
 	object-fit: cover; z-index: 0; display: none;
@@ -99,6 +99,23 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 /* Everything the app is, so it can be hidden to reveal the desktop. */
 #aol { position: absolute; left: 0; top: 0; right: 0; bottom: 30px; z-index: 10 }
 #aol.min, #aol.closed { display: none }
+
+/*
+ * The shortcut on the desktop, which is how you get the app back once you've closed it.
+ * Below every window and above the wallpaper, and draggable, because an icon you can't move
+ * is a picture of an icon.
+ */
+#icons { position: absolute; left: 0; top: 0; right: 0; bottom: 30px; z-index: 1 }
+.shortcut {
+	position: absolute; width: 82px; padding: 4px; border: 0; background: none;
+	display: flex; flex-direction: column; align-items: center; gap: 3px;
+	font: 11px Tahoma, Arial, sans-serif; color: #fff; text-align: center; line-height: 1.25;
+}
+.shortcut img { width: 48px; height: 45px; filter: drop-shadow(1px 2px 2px rgba(0,0,0,.5)) }
+/* XP's label: a soft shadow unselected, the selection blue behind it when picked. */
+.shortcut span { padding: 1px 3px; text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 3px rgba(0,0,0,.7) }
+.shortcut.on img { filter: drop-shadow(1px 2px 2px rgba(0,0,0,.5)) brightness(.82) saturate(1.3) }
+.shortcut.on span { background: #0b61ff; text-shadow: none }
 
 /* ---- Title bars, shared by the app window and every child window ---- */
 .title-bar-text { display: flex; align-items: center; gap: 5px; margin-right: 12px }
@@ -137,14 +154,6 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 .tb.inert:hover { border-color: transparent }
 .tb.on { border-color: #808080 #fff #fff #808080; background: rgba(255,255,255,.35) }
 
-/* Navigation strip: arrows, Find dropdown, the address field, Go / Keyword. */
-#nav { display: flex; align-items: center; gap: 4px; padding: 4px 6px; background: #c0c0c0; border-bottom: 2px solid #808080 }
-#nav .rnd {
-	width: 26px; height: 22px; background: #c0c0c0;  color: #000080;
-	border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff;
-	font-size: 12px; line-height: 14px;
-}
-#address { flex: 1; background: #fff; padding: 3px 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
 
 /* The MDI workspace child windows float in. */
 /* The app's empty interior. The mail windows used to live in here; they are the desktop's
@@ -163,6 +172,8 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 .child.min, .child.closed, #reader.open.min, #reader.open.closed { display: none }
 .child .title-bar {  user-select: none }
 .child.max .grip, .child.max .edge { display: none }
+/* Maximised, the app fills the desktop and there is no edge to take hold of. */
+#aol.maxed .grip, #aol.maxed .edge { display: none }
 .grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 6 }
 /* The Win95 hatch: three stepped highlights, drawn with a repeating gradient. */
 .grip::after {
@@ -184,8 +195,11 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 /* Only the flag waves — a wobbling mailbox reads as a rendering bug, not as delight. */
 #mbhead .flag { animation: wave 1.5s ease-in-out infinite; transform-box: view-box; transform-origin: 28px 30px }
 
-/* The folder tab. Old Mail and Sent Mail went with it: this inbox has neither, and a
-   tab that does nothing is worse than no tab. */
+/*
+ * The folder tabs. Outbox rather than New Mail, because that is what these are — messages
+ * on their way out, caught. Scheduled is the ones that were never going out today: without
+ * it a mail queued for next Tuesday sits in the list looking exactly like one already gone.
+ */
 #folders { display: flex; gap: 3px; padding: 4px 10px 0; background: #003399 }
 #folders button {
 	padding: 5px 16px 6px;  background: #7f9fcf; color: #eaeef8; font-weight: bold;
@@ -202,6 +216,13 @@ tbody tr.unread td { font-weight: bold }
 tbody tr.on td { background: #000080; color: #fff }
 td.flag { width: 26px; text-align: center }
 .mailico { width: 16px; height: 13px; vertical-align: -2px }
+/* The when, stated in the row itself — a scheduled message should not need opening to spot. */
+.sched { color: #8a5a00; font-weight: normal; font-style: italic }
+tr.on .sched { color: #ffd98a }
+#head .schedbar {
+	margin: 6px 0 0; padding: 4px 8px; background: #fff4d0; border: 1px solid #d8ae4a;
+	color: #6b4a00;
+}
 td.when { width: 88px }
 td.who { width: 34% }
 #empty { padding: 26px; text-align: center; color: #808080; line-height: 1.6 }
@@ -276,20 +297,65 @@ td.who { width: 34% }
 }
 #clock { background: linear-gradient(180deg, #1c8ad6 0%, #14a5e0 40%, #1291d8 100%); border-left: 1px solid #1a5fc8 }
 
-/* Sits above the taskbar, the way it opens off the Start button rather than under it. */
-#startmenu { display: none; position: absolute; left: 2px; bottom: 30px; z-index: 200; background: #c0c0c0; padding: 2px; min-width: 210px }
-#startmenu.open { display: flex }
-#startmenu .rail {
-	width: 24px; background: linear-gradient(180deg, #000080, #1084d0); color: #fff;
-	writing-mode: vertical-rl; transform: rotate(180deg);
-	font: italic bold 15px Arial, sans-serif; text-align: left; padding: 8px 3px; letter-spacing: .5px;
+/*
+ * The XP Start menu: a blue header with your face in it, two columns of shortcuts, and a
+ * footer of the two things that end a session. The 98-era one this replaces was a grey strip
+ * with a vertical rail, which sat oddly against everything else here being XP.
+ */
+#startmenu {
+	display: none; position: absolute; left: 2px; bottom: 28px; z-index: 200; width: 385px;
+	flex-direction: column; font: 11px Tahoma, Arial, sans-serif; color: #00318f;
+	border: 1px solid #0831d9; border-radius: 6px 6px 0 0;
+	box-shadow: 3px 3px 10px rgba(0,0,0,.45);
 }
-#startmenu ul { list-style: none; margin: 0; padding: 2px 0; flex: 1 }
-#startmenu li { display: flex; align-items: center; gap: 9px; padding: 5px 22px 5px 8px;  }
-#startmenu li:hover { background: #000080; color: #fff }
-#startmenu li.sep { padding: 0; margin: 3px 2px; height: 2px; border-top: 1px solid #808080; border-bottom: 1px solid #fff;  }
-#startmenu li.sep:hover { background: transparent }
-#startmenu li .ico { width: 18px; text-align: center; font-size: 14px }
+#startmenu.open { display: flex }
+#startmenu .head {
+	display: flex; align-items: center; gap: 9px; padding: 6px 9px; height: 54px;
+	border-radius: 5px 5px 0 0; color: #fff; font: bold 15px "Trebuchet MS", Tahoma, sans-serif;
+	text-shadow: 1px 1px 2px rgba(0,0,0,.5);
+	background: linear-gradient(180deg, #1b56c4 0%, #2f76e0 12%, #1c56c8 44%, #164ab5 100%);
+	border-bottom: 2px solid #d8ecfc;
+}
+#startmenu .head img {
+	width: 42px; height: 42px; flex: none; background: #fff; padding: 1px;
+	border: 2px solid #e3edfb; border-radius: 3px; object-fit: cover;
+}
+#startmenu .cols { display: flex; background: #fff; border-bottom: 2px solid #d8ecfc }
+#startmenu .cols ul { list-style: none; margin: 0; padding: 5px 0; flex: 1 }
+/* The right column is the pale blue one, and it is narrower than the left. */
+#startmenu .cols .right { flex: 0 0 168px; background: #d3e5fa; padding: 5px 0 }
+#startmenu li {
+	display: flex; align-items: center; gap: 8px; padding: 5px 10px; line-height: 1.2;
+}
+#startmenu li:hover { background: #2f71cd; color: #fff }
+#startmenu li b { display: block; font-weight: bold }
+#startmenu li small { display: block; font-size: 10px; color: #4a6fa5 }
+#startmenu li:hover small { color: #dbe8fb }
+#startmenu li.sep { padding: 0; margin: 4px 10px; height: 1px; background: #b6d3ef }
+#startmenu li.sep:hover { background: #b6d3ef }
+#startmenu li img, #startmenu li .ico {
+	width: 24px; height: 24px; flex: none; text-align: center; font-size: 17px; line-height: 24px;
+}
+#startmenu .cols .right li img, #startmenu .cols .right li .ico {
+	width: 20px; height: 20px; font-size: 14px; line-height: 20px;
+}
+#startmenu .foot {
+	display: flex; justify-content: flex-end; gap: 14px; padding: 6px 12px;
+	background: linear-gradient(180deg, #1c56c8 0%, #2f76e0 40%, #164ab5 100%);
+	color: #fff; text-shadow: 1px 1px 2px rgba(0,0,0,.5);
+}
+#startmenu .foot button {
+	display: flex; align-items: center; gap: 6px; border: 0; background: none;
+	color: inherit; font: inherit; text-shadow: inherit; padding: 2px 4px;
+}
+#startmenu .foot button:hover { text-decoration: underline }
+#startmenu .foot .badge {
+	width: 21px; height: 21px; border-radius: 3px; display: flex; align-items: center;
+	justify-content: center; font-size: 12px; color: #fff;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 1px 2px rgba(0,0,0,.35);
+}
+#startmenu .foot .off { background: linear-gradient(180deg, #f08e3c, #d1471a) }
+#startmenu .foot .logoff { background: linear-gradient(180deg, #6fa8e8, #2a63c4) }
 
 /* ---- Sign On: the first screen, and the click that lets the modem be heard ---- */
 #signon { display: none; position: absolute; inset: 0; z-index: 260; align-items: center; justify-content: center }
@@ -332,12 +398,6 @@ td.who { width: 34% }
 #introfoot { border-top: 2px solid #17265c; margin-top: 14px; padding-top: 12px; text-align: center }
 
 
-/* "It's now safe…" — the one screen everyone who used a 98 box remembers. */
-#shutdown { display: none; position: absolute; inset: 0; z-index: 400; background: #000; color: #ffa726;
-	align-items: center; justify-content: center; text-align: center; 
-	font: bold 22px "MS Sans Serif", Tahoma, sans-serif; letter-spacing: .3px; line-height: 1.7 }
-#shutdown.open { display: flex }
-#shutdown small { display: block; font-size: 12px; font-weight: normal; color: #8a6a2a; margin-top: 14px }
 
 /*
  * Quitting doesn't close a tab — it does what quitting Windows always seemed to. Over the
@@ -406,29 +466,63 @@ var ICON_OPEN =
 	'<rect x=".5" y="4.6" width="15" height="7.4" fill="#fdfbf2" stroke="#3f3f3f"/>' +
 	'<path d="M.5 11.6 5.9 7.3m4.2 0 5.4 4.3" fill="none" stroke="#cfcab4"/>' +
 	"</svg>"
+/* Scheduled mail gets a clock over the envelope: it is not going anywhere yet. */
+var ICON_CLOCK =
+	'<svg class="mailico" viewBox="0 0 16 13" aria-hidden="true">' +
+	'<rect x=".5" y="1.5" width="12" height="9" fill="#fdfbf2" stroke="#3f3f3f"/>' +
+	'<path d="M.5 1.5 6.5 6.4l6-4.9" fill="none" stroke="#3f3f3f"/>' +
+	'<circle cx="11.4" cy="8.6" r="4.1" fill="#fff2c9" stroke="#3f3f3f"/>' +
+	'<path d="M11.4 6.3v2.4l1.7 1.1" fill="none" stroke="#3f3f3f" stroke-linecap="round"/>' +
+	"</svg>"
+
+/** The folder showing: everything captured, or only what is waiting on a clock. */
+var folder = "outbox"
+function in_folder(m) {
+	return folder === "scheduled" ? !!m.scheduled_at : true
+}
+/* Long enough to be unambiguous — the point of the column is the date, not the time of day. */
+function when_full(iso) {
+	var d = new Date(iso)
+	if (isNaN(d.getTime())) return String(iso)
+	return d.toLocaleString(undefined, {
+		year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+	})
+}
 
 function render_list() {
 	var tbody = $("rows")
 	tbody.innerHTML = ""
-	$("empty").style.display = messages.length ? "none" : "block"
-	messages.forEach(function (m) {
+	var shown = messages.filter(in_folder)
+	var scheduled = messages.filter(function (m) { return !!m.scheduled_at })
+	$("empty").style.display = shown.length ? "none" : "block"
+	$("empty").innerHTML =
+		folder === "scheduled"
+			? "Nothing is waiting on a clock.<br>Send with <b>scheduled_at</b> and it will queue up here."
+			: "Your outbox is empty.<br>Send something from your app and it will arrive here."
+	shown.forEach(function (m) {
 		var tr = document.createElement("tr")
 		tr.className = (read[m.id] ? "" : "unread") + (selected && selected.id === m.id ? " on" : "")
 		tr.innerHTML =
-			'<td class="flag">' + (read[m.id] ? ICON_OPEN : ICON_SEALED) + "</td>" +
+			'<td class="flag">' +
+			(m.scheduled_at ? ICON_CLOCK : read[m.id] ? ICON_OPEN : ICON_SEALED) +
+			"</td>" +
 			'<td class="when">' + when(m.received_at) + "</td>" +
 			'<td class="who">' + esc(who(m.to)) + "</td>" +
-			"<td>" + esc(m.subject || "(no subject)") + "</td>"
+			"<td>" + esc(m.subject || "(no subject)") +
+			(m.scheduled_at ? ' <span class="sched">sends ' + esc(when_full(m.scheduled_at)) + "</span>" : "") +
+			"</td>"
 		tr.onclick = function () { select_message(m) }
 		tr.ondblclick = function () { open_message(m) }
 		tbody.appendChild(tr)
 	})
+	// The tab shouts the count, because a message that hasn't gone yet is the one thing here
+	// you would want to know without going looking for it.
+	$("f-scheduled").textContent = scheduled.length ? "Scheduled (" + scheduled.length + ")" : "Scheduled"
+	$("f-scheduled").className = "" + (folder === "scheduled" ? "on" : "")
+	$("f-outbox").className = "" + (folder === "outbox" ? "on" : "")
 	var unread = messages.filter(function (m) { return !read[m.id] }).length
 	$("count").textContent =
 		messages.length + " message" + (messages.length === 1 ? "" : "s") + (unread ? ", " + unread + " new" : "")
-	$("address").textContent = unread
-		? "Postboi: You Have Mail! (" + unread + " new)"
-		: "Postboi: Welcome back!"
 	document.title = (unread ? "(" + unread + ") " : "") + "Postboi Mail"
 	$("stat").textContent = messages.length ? "Ready" : "Waiting for mail\\u2026"
 	sync_actions()
@@ -490,8 +584,6 @@ function render_reader() {
 	$("r-count").textContent = index < 0 ? "" : index + 1 + " of " + messages.length
 	$("r-prev").disabled = index <= 0
 	$("r-next").disabled = index < 0 || index >= messages.length - 1
-	$("n-prev").disabled = $("r-prev").disabled
-	$("n-next").disabled = $("r-next").disabled
 	$("head").innerHTML =
 		'<div class="subject">' + esc(current.subject || "(no subject)") + "</div><dl>" +
 		row("From", who([current.from])) +
@@ -499,8 +591,13 @@ function render_reader() {
 		row("Cc", who(current.cc)) +
 		row("Bcc", who(current.bcc)) +
 		row("Reply-To", who(current.reply_to)) +
-		row("Sent", new Date(current.received_at).toLocaleString()) +
-		"</dl>"
+		row("Captured", new Date(current.received_at).toLocaleString()) +
+		// Named "Sends" rather than "Sent" because it hasn't: this one is still waiting.
+		(current.scheduled_at ? row("Sends", when_full(current.scheduled_at)) : "") +
+		"</dl>" +
+		(current.scheduled_at
+			? '<div class="schedbar">This message is scheduled. It would not have gone out yet.</div>'
+			: "")
 
 	var tabs = $("tabs")
 	Array.prototype.forEach.call(tabs.children, function (b) {
@@ -689,8 +786,12 @@ function find(id) {
 
 /** Raise the app above the mail windows. It shares their stack; it does not contain them. */
 var app_focused = true
+/*
+ * Focus the app without raising it. It keeps its fixed place at the bottom of the stack: the
+ * mail windows are always in front of it, so clicking the frame can never bury the message
+ * you were reading behind a maximised application window.
+ */
 function focus_app() {
-	$("aol").style.zIndex = ++z
 	app_focused = true
 	focused = null
 	paint()
@@ -855,6 +956,27 @@ function resize(win, event, horizontal, vertical) {
 	})
 }
 
+/** Resizing for the app window, which isn't in the window list and so can't share resize(). */
+function resize_app(event, horizontal, vertical) {
+	if (app_maximised) return
+	event.preventDefault()
+	event.stopPropagation()
+	var el = $("aol")
+	var x0 = event.clientX
+	var y0 = event.clientY
+	var w0 = el.offsetWidth
+	var h0 = el.offsetHeight
+	var box = ws_rect()
+	track(function (e) {
+		if (horizontal) {
+			el.style.width = Math.max(420, Math.min(box.w - el.offsetLeft, w0 + e.clientX - x0)) + "px"
+		}
+		if (vertical) {
+			el.style.height = Math.max(220, Math.min(box.h - el.offsetTop, h0 + e.clientY - y0)) + "px"
+		}
+	})
+}
+
 /* ---- The application window itself ---- */
 
 /*
@@ -894,7 +1016,19 @@ function run_bliss() {
 	if (playing && playing.catch) playing.catch(function () { video.className = "" })
 }
 
-/* The stop error, for quitting. Any key or click restarts the machine, as it always did. */
+/*
+ * Quitting Postboi Local. Its windows are the desktop's, not its own, so it has to take them
+ * with it deliberately — an application that closes and leaves its documents open is a bug.
+ * The shortcut on the desktop is how it comes back.
+ */
+function app_close() {
+	wins.forEach(function (win) {
+		if (win.open) close_window(win)
+	})
+	app_set("closed")
+}
+
+/* The stop error, for turning the computer off. Any key or click restarts it, as ever. */
 function app_crash() {
 	set_pop(null)
 	set_menu(false)
@@ -927,6 +1061,7 @@ function app_toggle_max() {
 		el.style.height = h + "px"
 		drag_dialog(el, $("screen"))
 	}
+	el.classList.toggle("maxed", app_maximised)
 	var button = el.querySelector('[data-app="max"]')
 	button.setAttribute("aria-label", app_maximised ? "Restore" : "Maximize")
 	app_set("open")
@@ -943,11 +1078,14 @@ function app_paint() {
 }
 
 $("aol").addEventListener("mousedown", function () { focus_app() })
+$("aol").querySelector(".grip").addEventListener("mousedown", function (e) { resize_app(e, true, true) })
+$("aol").querySelector(".edge-r").addEventListener("mousedown", function (e) { resize_app(e, true, false) })
+$("aol").querySelector(".edge-b").addEventListener("mousedown", function (e) { resize_app(e, false, true) })
 $("aol").querySelector(".title-bar-controls").addEventListener("click", function (event) {
 	var act = event.target.dataset && event.target.dataset.app
 	if (act === "min") app_set("min")
 	if (act === "max") app_toggle_max()
-	if (act === "close") app_crash()
+	if (act === "close") app_close()
 })
 $("aol").querySelector(".title-bar").addEventListener("dblclick", function (event) {
 	if (event.target.dataset && event.target.dataset.app) return
@@ -988,7 +1126,7 @@ $("menubar").addEventListener("click", function (event) {
 	if (act === "restore") app_set("open")
 	if (act === "minimise") app_set("min")
 	if (act === "signoff") { app_set("open"); run_signon() }
-	if (act === "exit") app_crash()
+	if (act === "exit") app_close()
 })
 // With a menu already open, sliding across the bar switches to the next one — the way a
 // real menu bar behaves once it has focus.
@@ -1016,11 +1154,6 @@ $("t-read").onclick = function () { if (selected) open_message(selected) }
 // Mail Center brings the mailbox back, which is what it is for.
 $("t-refresh").onclick = function () { open_window("mailbox"); load() }
 $("t-print").onclick = function () { window.print() }
-// The navigation strip drives the reader, which is the only thing here it can mean.
-$("n-prev").onclick = function () { $("r-prev").click() }
-$("n-next").onclick = function () { $("r-next").click() }
-$("n-reload").onclick = function () { open_window("mailbox"); load() }
-$("n-home").onclick = function () { open_window("mailbox") }
 $("a-read").onclick = function () { if (selected) open_message(selected) }
 $("keepnew").onclick = function () {
 	if (!selected) return
@@ -1064,7 +1197,7 @@ var meta_alone = false
 document.addEventListener("keydown", function (event) {
 	if (event.key === "Meta") meta_alone = true
 	else meta_alone = false
-	if (event.key === "Escape") { set_menu(false); $("shutdown").className = "" }
+	if (event.key === "Escape") set_menu(false)
 	restart()
 })
 document.addEventListener("keyup", function (event) {
@@ -1072,15 +1205,26 @@ document.addEventListener("keyup", function (event) {
 	meta_alone = false
 })
 
-$("m-app").onclick = function () { app_set("open"); set_menu(false) }
+function launch_app() {
+	app_set("open")
+	open_window("mailbox")
+	focus_app()
+}
+$("m-app").onclick = function () { launch_app(); set_menu(false) }
 // The mailbox is its own window: bringing it back does not drag the app up with it.
 $("m-mailbox").onclick = function () { open_window("mailbox"); set_menu(false) }
 $("m-refresh").onclick = function () { open_window("mailbox"); load(); set_menu(false) }
 $("m-docs").onclick = function () { window.open("https://docs.postboi.email/dev-inbox", "_blank"); set_menu(false) }
+$("m-sound").onclick = function () { $("t-sound").click(); set_menu(false) }
+$("f-outbox").onclick = function () { folder = "outbox"; render_list() }
+$("f-scheduled").onclick = function () { folder = "scheduled"; render_list() }
+$("m-signoff").onclick = function () { set_menu(false); app_set("open"); run_signon() }
+// Turning the computer off is the only way to reach the stop error — closing the app just
+// closes the app, the way closing an application does.
 $("m-shutdown").onclick = function () {
 	set_menu(false)
 	play("goodbye")
-	$("shutdown").className = "open"
+	app_crash()
 }
 
 /*
@@ -1089,6 +1233,9 @@ $("m-shutdown").onclick = function () {
  * load shows the drawn gradient instead of a blank screen.
  */
 $("start").style.backgroundImage = "url(" + api + "/desktop/start)"
+$("sc-app").querySelector("img").src = api + "/desktop/icon"
+$("m-app").querySelector("img").src = api + "/desktop/icon"
+$("m-face").src = api + "/desktop/avatar"
 $("introwordmark").src = api + "/art/logo"
 var paper = new Image()
 paper.onload = function () {
@@ -1108,13 +1255,34 @@ $("bliss").addEventListener("canplaythrough", function () { bliss_ready = true }
 $("bliss").addEventListener("error", function () { bliss_ready = false })
 $("bliss").src = api + "/desktop/blissy"
 
+/*
+ * The desktop shortcut. Double click to launch, the way a desktop icon works — and the drag
+ * has to distinguish itself from a click, or picking the icon up would open the app as well.
+ */
+var shortcut = $("sc-app")
+shortcut.ondblclick = function () { launch_app() }
+shortcut.addEventListener("mousedown", function (event) {
+	event.preventDefault()
+	shortcut.className = "shortcut on"
+	var dx = event.clientX - shortcut.offsetLeft
+	var dy = event.clientY - shortcut.offsetTop
+	var box = ws_rect()
+	track(function (e) {
+		shortcut.style.left = Math.max(0, Math.min(box.w - shortcut.offsetWidth, e.clientX - dx)) + "px"
+		shortcut.style.top = Math.max(0, Math.min(box.h - shortcut.offsetHeight, e.clientY - dy)) + "px"
+	})
+})
+// Clicking the desktop itself drops the selection, as it does on a real one.
+$("icons").addEventListener("mousedown", function (event) {
+	if (event.target === $("icons")) shortcut.className = "shortcut"
+})
+
 apply_mute(muted)
 $("t-sound").onclick = function () {
 	localStorage.setItem("postboi:sound", muted ? "on" : "off")
 	apply_mute(!muted)
 	if (!muted) play("welcome")
 }
-$("shutdown").onclick = function () { $("shutdown").className = "" }
 
 /*
  * The sign-on. Purely theatre over an inbox that's already live behind it — the fetch and
@@ -1188,6 +1356,7 @@ register("reader", "Message", {
 	w: rd.w,
 	h: rd.h,
 })
+$("aol").classList.add("maxed")
 focus_window("mailbox")
 // They sit on the desktop, so it is the browser window changing size they have to survive.
 window.addEventListener("resize", relayout)
@@ -1247,6 +1416,12 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 
 	<video id="bliss" muted playsinline preload="auto"></video>
 
+	<div id="icons">
+		<button class="shortcut" id="sc-app" style="left:22px;top:18px">
+			<img src="" alt=""><span>Postboi</span>
+		</button>
+	</div>
+
 	<div id="aol" class="window">
 		<div class="title-bar">
 			<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Postboi Local</div>
@@ -1292,15 +1467,9 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			<div class="band b5"><span style="color:#fff;font:italic bold 15px Arial,sans-serif">postboi.</span></div>
 		</div>
 
-		<div id="nav">
-			<button class="rnd" id="n-prev" title="Previous message">&#9664;</button>
-			<button class="rnd" id="n-next" title="Next message">&#9654;</button>
-			<button class="rnd" id="n-reload" title="Check mail now">&#8635;</button>
-			<button class="rnd" id="n-home" title="Open mailbox">&#8962;</button>
-			<span id="address" class="thin-sunken">Postboi: Welcome back!</span>
-		</div>
 
 		<div id="workspace"></div>
+		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 	</div>
 
 	<div id="mailbox" class="child window">
@@ -1329,12 +1498,13 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 		</div>
 
 		<div id="folders">
-			<button class="on">New Mail</button>
+			<button id="f-outbox" class="on">Outbox</button>
+			<button id="f-scheduled">Scheduled</button>
 		</div>
 		<div id="listwrap">
 			<div id="list" class="thin-sunken">
 				<table><tbody id="rows"></tbody></table>
-				<div id="empty">Your online mailbox is empty.<br>Send something from your app and it will arrive here.</div>
+				<div id="empty"></div>
 			</div>
 		</div>
 
@@ -1430,25 +1600,27 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 	</div>
 
 	<div id="startmenu">
-		<div class="rail">Postboi&nbsp;XP</div>
-		<ul>
-			<li id="m-app"><span class="ico">&#128231;</span>Postboi Local</li>
-			<li id="m-mailbox"><span class="ico">&#128236;</span>Your Local Mailbox</li>
-			<li id="m-refresh"><span class="ico">&#128260;</span>Check Mail Now</li>
-			<li id="m-docs"><span class="ico">&#128218;</span>Help&#8230;</li>
-			<li class="sep"></li>
-			<li id="m-shutdown"><span class="ico">&#9211;</span>Shut Down&#8230;</li>
-		</ul>
-	</div>
-
-
-
-	<div id="shutdown">
-		<div>
-			It&#8217;s now safe to turn off<br>your computer.
-			<small>(Your mail is still in the inbox. Click anywhere.)</small>
+		<div class="head"><img id="m-face" src="" alt=""> Postboi</div>
+		<div class="cols">
+			<ul class="left">
+				<li id="m-app"><img class="ico-app" src="" alt=""><span><b>Postboi Local</b><small>Your mail, going nowhere</small></span></li>
+				<li id="m-mailbox"><span class="ico">&#128236;</span>Your Local Mailbox</li>
+				<li class="sep"></li>
+				<li id="m-refresh"><span class="ico">&#128260;</span>Check Mail Now</li>
+			</ul>
+			<ul class="right">
+				<li id="m-docs"><span class="ico">&#10067;</span>Help and Support</li>
+				<li id="m-sound"><span class="ico">&#128266;</span>Sounds and Audio</li>
+			</ul>
+		</div>
+		<div class="foot">
+			<button id="m-signoff"><span class="badge logoff">&#8617;</span>Log Off</button>
+			<button id="m-shutdown"><span class="badge off">&#9211;</span>Turn Off Computer</button>
 		</div>
 	</div>
+
+
+
 
 	<div id="bsod">
 		<div class="face">:(</div>

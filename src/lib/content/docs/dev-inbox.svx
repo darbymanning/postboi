@@ -88,6 +88,15 @@ Two guards keep that from ever biting a deploy:
   **printed to the console**, never sent. A send you thought was captured can't quietly
   become real mail.
 
+> **On an HTTPS dev server**, the inbox is served over HTTPS too — it's mounted on that same
+> server — and Postboi works this out for itself. Its certificate doesn't need to be one
+> anything trusts. If you're pointing at an inbox by hand, `POSTBOI_INBOX` takes a whole URL
+> as well as a bare port:
+>
+> ```bash
+> POSTBOI_INBOX=https://localhost:5173 bun run dev
+> ```
+
 ## Turning it off
 
 To send for real from your machine, pick whichever fits:
@@ -137,12 +146,36 @@ did.
 
 They don't belong to Postboi Local. Minimise the app and your mail windows stay where they
 were; bring one back from the taskbar and it comes back on its own, with no application
-frame behind it. Everything shares one z-order, so clicking the app raises it over your
-windows and clicking a window raises it over the app.
+frame behind it. The app itself resizes and windows the same way, and it always sits behind
+your mail — focusing the frame can't bury the message you were reading.
+
+**Close** Postboi Local and it takes its windows with it and leaves the desktop. The
+**Postboi** shortcut sitting there opens it again on a double-click, and it drags around
+like any other icon.
 
 That matters more than the nostalgia: the reading pane is only ever big enough because you
 can make it bigger. **Prev** and **Next** at the bottom of the reader step through the
 mailbox without going back to the list.
+
+### Outbox and Scheduled
+
+The list is an **Outbox**, not an inbox — these are messages on their way out, caught before
+they went. Anything sent with [`scheduled_at`](/scheduling) also lands in a
+**Scheduled** folder, which counts what's in it, and those rows say when they were due:
+
+```ts
+await mail({
+  to: "ada@example.com",
+  subject: "Your weekly digest",
+  body: "<p>News.</p>",
+  scheduled_at: { days: 7 },
+})
+```
+
+Without this, a mail queued for next Tuesday would sit in the list looking exactly like one
+already gone, which is the one thing you'd have opened the inbox to check. Opening it says
+so again at the top: *This message is scheduled. It would not have gone out yet.* Nothing is
+actually queued — the inbox captured it instead of sending it, and no timer is running.
 
 ### Sound
 
@@ -184,10 +217,9 @@ for themselves. `inbox: false` disables the whole thing.
 
 ### Yes, there's a Start menu
 
-Press the **Windows key** (**Cmd** on macOS) and the Start menu opens, with Check
-Mail Now, help, and a Shut Down that does exactly what you'd hope. Only a
-bare press counts — held as a modifier it's left alone, since that's how you copy and
-reload.
+Press the **Windows key** (**Cmd** on macOS) and the Start menu opens, with Check Mail Now,
+help, and a **Turn Off Computer** that does exactly what you'd hope. Only a bare press
+counts — held as a modifier it's left alone, since that's how you copy and reload.
 
 ### The desktop
 
