@@ -47,7 +47,7 @@ export interface PluginOptions {
 	 *
 	 * @example
 	 * ```ts
-	 * postboi({ inbox: { crt: false, sounds: false } })
+	 * postboi({ inbox: { sounds: false, intro: false } })
 	 * ```
 	 */
 	inbox?: boolean | InboxUiOptions

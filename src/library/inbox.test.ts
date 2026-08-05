@@ -96,24 +96,19 @@ describe("inbox middleware", () => {
 		expect(await response.text()).toContain("You've Got")
 	})
 
-	it("ships the CRT and sound on, and a way to turn each off", async () => {
+	it("ships sound on, and a way to turn it off", async () => {
 		const html = await (await fetch(`http://127.0.0.1:${inbox.port}${INBOX_PATH}`)).text()
-		// Scanlines over a message you're checking the design of — and a "Welcome!" in a
-		// shared office — are the opposite of useful, so the toggles are not decoration.
-		expect(html).toContain('class="crt"')
+		// A "Welcome!" in a shared office is the opposite of useful, so the toggle is not
+		// decoration.
 		expect(html).toContain('data-sounds="on"')
-		expect(html).toContain('id="t-crt"')
 		expect(html).toContain('id="t-sound"')
-		expect(html).toContain("prefers-reduced-motion")
 	})
 
 	it("starts with each piece turned off when the server says so", async () => {
-		const html = inbox_ui({ crt: false, sounds: false, intro: false })
-		expect(html).not.toContain('class="crt"')
+		const html = inbox_ui({ sounds: false, intro: false })
 		expect(html).toContain('data-sounds="off"')
 		expect(html).toContain('data-intro="off"')
-		// The controls stay — the option sets the starting state, it doesn't remove the toggle.
-		expect(html).toContain('id="t-crt"')
+		// The control stays — the option sets the starting state, it doesn't remove the toggle.
 		expect(html).toContain('id="t-sound"')
 	})
 
@@ -138,7 +133,6 @@ describe("inbox middleware", () => {
 
 	it("defaults every piece on", async () => {
 		const html = inbox_ui()
-		expect(html).toContain('class="crt"')
 		expect(html).toContain('data-sounds="on"')
 		expect(html).toContain('data-intro="on"')
 	})

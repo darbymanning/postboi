@@ -89,7 +89,7 @@ ${bold("Usage")}
   ${cyan("bunx postboi init")}     Set up the Postboi provider or a provider of your own
   ${cyan("bunx postboi sync")}     Refresh the generated from types from your Postboi domains
   ${cyan("bunx postboi dev")}      Local inbox for mail sent in development
-  ${dim("                          · --port <n> --demo --no-crt --no-sound --no-intro")}
+  ${dim("                          · --port <n> --demo --no-sound --no-intro")}
   ${dim("                          (Vite projects already serve it at /__postboi)")}
 
 ${bold("Account")} ${dim("(Postboi provider — full reference: https://api.postboi.email)")}

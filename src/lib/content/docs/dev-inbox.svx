@@ -138,23 +138,6 @@ That matters more than the nostalgia: the reading pane is only ever big enough b
 can make it bigger. **Prev** and **Next** at the bottom of the reader step through the
 mailbox without going back to the list.
 
-### The CRT
-
-The whole thing renders inside a cathode-ray tube. The screen's edges genuinely bow —
-that's an SVG clip path, so it scales with the window — and over it sit a phosphor mask
-(coloured RGB gradients blended with `overlay`, which modulates hue the way phosphor does,
-rather than black lines that just look like dirt), film grain, corner falloff, a glass
-highlight, flicker, a slow roll, and glow spilling onto the bezel.
-
-It's CSS over the normal DOM rather than a shader, because the message preview is an iframe
-and an iframe can't go through one. That's also why the *content* stays flat while the edges
-curve: bending live DOM needs a displacement map, and it would bend the mail you're reading.
-
-Scanlines across an email you're checking the design of are the opposite of useful, so the
-**CRT** button in the toolbar turns all of it off, and the choice is remembered. Flicker and
-the rolling band also respect `prefers-reduced-motion`; the static texture stays, since it's
-the movement that makes people queasy.
-
 ### Sound
 
 New mail announces itself, and there's a greeting on load and a sign-off on Shut Down — the
@@ -172,25 +155,25 @@ dialog, so cancelling costs nothing but the joke.
 
 ### Configuring the defaults
 
-The CRT, the sound and the sign-on can each start off, for everyone on the project:
+The sound and the sign-on can each start off, for everyone on the project:
 
 ```ts
 // vite.config.ts
-postboi({ inbox: { crt: false, sounds: false, intro: false } })
+postboi({ inbox: { sounds: false, intro: false } })
 ```
 
 ```bash
-bunx postboi dev --no-crt --no-sound --no-intro
+bunx postboi dev --no-sound --no-intro
 ```
 
-These set what the page *starts* with. The toolbar toggles still work, and a viewer's own
+These set what the page *starts* with. The toolbar toggle still works, and a viewer's own
 choice is remembered and wins — so muting the project doesn't stop anyone turning it back on
 for themselves. `inbox: false` disables the whole thing.
 
 ### Yes, there's a Start menu
 
-Press the **Windows key** (**Cmd** on macOS) and Windows 98's Start menu opens, with Check
-Mail Now, the CRT toggle, help, and a Shut Down that does exactly what you'd hope. Only a
+Press the **Windows key** (**Cmd** on macOS) and the Start menu opens, with Check
+Mail Now, help, and a Shut Down that does exactly what you'd hope. Only a
 bare press counts — held as a modifier it's left alone, since that's how you copy and
 reload.
 
