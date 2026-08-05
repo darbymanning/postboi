@@ -148,10 +148,16 @@ greeting usually waits for you.
 
 ### Signing on
 
-Opening the inbox dials in first — _Locating mailroom… Connecting to localhost…
-Intercepting outgoing mail…_ — then greets you. It's about two and a half seconds, **Cancel**
-skips it, and it's pure theatre: the inbox is already loaded and listening behind the
-dialog, so cancelling costs nothing but the joke.
+The inbox opens on a Sign On dialog. The credentials are set dressing — there's nothing to
+authenticate against — so the fields are filled in and disabled. Press **SIGN ON** and it
+dials in: _Locating mailroom… Connecting to localhost… Intercepting outgoing mail…_ — then
+greets you and hands over the desktop. **Cancel** skips straight through.
+
+It isn't only theatre. Browsers refuse to play audio until the page has been interacted
+with, so on a cold load the handshake and the greeting would never be heard. Pressing SIGN
+ON is that interaction, which is what makes the sound work at all.
+
+The inbox is loaded and listening the whole time, so nothing is waiting on the dialog.
 
 ### Configuring the defaults
 

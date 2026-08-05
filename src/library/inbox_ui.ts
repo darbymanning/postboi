@@ -238,8 +238,29 @@ td.who { width: 34% }
 #startmenu li.sep:hover { background: transparent }
 #startmenu li .ico { width: 18px; text-align: center; font-size: 14px }
 
+/* ---- Sign On: the first screen, and the click that lets the modem be heard ---- */
+#signon { display: none; position: absolute; inset: 0; z-index: 260; align-items: center; justify-content: center }
+#signon.open { display: flex }
+/* Windows stay out of sight until sign-on completes. */
+.signing .child:not(#signonwin):not(#introwin) { visibility: hidden }
+#signonwin { width: 420px }
+#signonbody { display: flex; background: #efeee2 }
+#signonbody .side {
+	width: 116px; flex: none; padding: 16px 8px 10px; text-align: center; color: #cfe3f5;
+	display: flex; flex-direction: column; align-items: center;
+	background: linear-gradient(180deg, #2a7fbd, #14527e);
+}
+#signonbody .side img { width: 62px; height: 62px }
+#signonbody .side .name { margin-top: 6px; font: italic bold 15px Georgia, serif; color: #fff }
+#signonbody .side .ver { margin-top: auto; font-size: 10px; opacity: .85 }
+#signonbody .fields { flex: 1; padding: 16px 16px 12px }
+#signonbody label { display: block; font-weight: bold; margin: 0 0 3px }
+#signonbody select, #signonbody input { width: 100%; margin-bottom: 12px }
+#signonbody .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px }
+#signonbody .row button { min-width: 84px }
+
 /* ---- The sign-on dialog ---- */
-#intro { display: none; position: absolute; inset: 0; z-index: 250; background: #6a6a6a; align-items: center; justify-content: center }
+#intro { display: none; position: absolute; inset: 0; z-index: 250; align-items: center; justify-content: center }
 #intro.open { display: flex }
 #introwin { width: min(660px, 86%); background: #f2f0e6 }
 #introbody { padding: 16px 20px 14px; background: #f2f0e6 }
@@ -771,6 +792,9 @@ function end_intro() {
 	stop_dialing()
 	pending = null
 	$("intro").className = ""
+	// Revealed here rather than by wrapping this function: Cancel and the close box both
+	// captured a reference to it before any wrapper could be installed.
+	$("workspace").classList.remove("signing")
 	play("welcome")
 }
 function run_intro() {
@@ -820,8 +844,27 @@ clock()
 setInterval(clock, 10000)
 new EventSource(api + "/events").onmessage = function () { load() }
 load()
-if (document.documentElement.dataset.intro === "on") run_intro()
-else play("welcome")
+/*
+ * Sign On first. It's the era-correct front door, and it doubles as the fix for a real
+ * problem: browsers refuse audio until the page has been interacted with, so nothing was
+ * ever going to be heard on a cold load. Pressing SIGN ON is that interaction, which is
+ * why the handshake under the connecting dialog actually plays.
+ */
+if (document.documentElement.dataset.intro === "on") {
+	$("signon").className = "open"
+	$("workspace").classList.add("signing")
+	drag_dialog($("signonwin"))
+} else {
+	play("welcome")
+}
+$("so-go").onclick = function () {
+	$("signon").className = ""
+	run_intro()
+}
+
+$("so-help").onclick = function () {
+	window.open("https://docs.postboi.email/dev-inbox", "_blank")
+}
 `
 
 /** How the page starts out. Both are still toggleable in the UI, and the choice sticks. */
@@ -945,6 +988,51 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 				<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 			</div>
 
+
+			<div id="signon">
+			<div id="signonwin" class="child window">
+			<div class="title-bar">
+			<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Sign On</div>
+			</div>
+			<div id="signonbody">
+			<div class="side">
+			<img src="${FAVICON}" alt="">
+			<div class="name">postboi</div>
+						<div class="ver">local edition</div>
+			</div>
+			<div class="fields">
+			<label for="so-name">Select Screen Name:</label>
+			<select id="so-name" disabled><option>Postboi</option></select>
+			<label for="so-pass">Enter Password:</label>
+			<input id="so-pass" type="password" value="secret" disabled>
+			<label for="so-loc">Select Location:</label>
+			<select id="so-loc" disabled><option>Local 33.6k Modem</option></select>
+			<div class="row">
+			<button id="so-help">HELP</button>
+			<button id="so-go">SIGN ON</button>
+			</div>
+			</div>
+			</div>
+			</div>
+			</div>
+
+			<div id="intro">
+			<div id="introwin" class="child window">
+			<div class="title-bar">
+			<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Connecting To Postboi&#8230;</div>
+			<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div>
+			</div>
+			<div id="introbody">
+			<div id="intrologo"><img src="${FAVICON}" alt=""><span>post</span><b>boi</b></div>
+			<div id="steps">
+			<div class="step" id="s0"><div class="box"></div><span class="cap">1. Locating mailroom&#8230;</span></div>
+			<div class="step" id="s1"><div class="box"></div><span class="cap">2. Connecting to localhost&#8230;</span></div>
+			<div class="step" id="s2"><div class="box"></div><span class="cap">3. Intercepting outgoing mail&#8230;</span></div>
+			</div>
+			<div id="introfoot"><button class="aolbtn" id="intro-cancel">Cancel</button></div>
+			</div>
+			</div>
+			</div>
 			<div id="reader" class="child window">
 				<div class="title-bar">
 					<div class="title-bar-text"><span>&#9993;</span> <span id="reader-title"></span></div>
@@ -994,23 +1082,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 		</ul>
 	</div>
 
-	<div id="intro">
-		<div id="introwin" class="child window">
-			<div class="title-bar">
-				<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Connecting To Postboi&#8230;</div>
-				<div class="title-bar-controls"><button aria-label="Close" data-act="close"></button></div>
-			</div>
-			<div id="introbody">
-				<div id="intrologo"><img src="${FAVICON}" alt=""><span>post</span><b>boi</b></div>
-				<div id="steps">
-					<div class="step" id="s0"><div class="box"></div><span class="cap">1. Locating mailroom&#8230;</span></div>
-					<div class="step" id="s1"><div class="box"></div><span class="cap">2. Connecting to localhost&#8230;</span></div>
-					<div class="step" id="s2"><div class="box"></div><span class="cap">3. Intercepting outgoing mail&#8230;</span></div>
-				</div>
-				<div id="introfoot"><button class="aolbtn" id="intro-cancel">Cancel</button></div>
-			</div>
-		</div>
-	</div>
+
 
 	<div id="shutdown">
 		<div>

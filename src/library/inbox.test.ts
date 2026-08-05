@@ -133,6 +133,19 @@ describe("inbox middleware", () => {
 		expect(html).not.toMatch(/>AOL\.?</)
 	})
 
+	it("opens on Sign On, with nothing to fill in", async () => {
+		const html = inbox_ui()
+		// The click on SIGN ON is what lets the modem be heard: browsers refuse audio until
+		// the page has been interacted with, so a cold load could never play it.
+		expect(html).toContain('id="so-go"')
+		expect(html).toContain('id="so-help"')
+		// Credentials are set dressing — there is nothing to authenticate against.
+		expect(html).toMatch(/<select id="so-name" disabled>/)
+		expect(html).toMatch(/<input id="so-pass" type="password" value="[^"]*" disabled>/)
+		expect(html).toMatch(/<select id="so-loc" disabled>/)
+		expect(html).not.toContain("SETUP")
+	})
+
 	it("defaults every piece on", async () => {
 		const html = inbox_ui()
 		expect(html).toContain('data-sounds="on"')
