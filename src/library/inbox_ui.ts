@@ -109,8 +109,6 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 .band { display: flex; align-items: stretch; padding: 3px 2px; gap: 1px; border-right: 1px solid #808080 }
 .band.b1 { background: #b8c4dc }
 .band.b2 { background: #86c0c0 }
-.band.b3 { background: #a89ec8 }
-.band.b4 { background: #7fb0d8 }
 .band.b5 { flex: 1; background: linear-gradient(90deg, #2a4a8a, #14284f); justify-content: flex-end; align-items: center; padding-right: 10px; border-right: 0 }
 .tb {
 	display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 1px;
@@ -130,10 +128,6 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 	width: 26px; height: 22px; background: #c0c0c0;  color: #000080;
 	border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff;
 	font-size: 12px; line-height: 14px;
-}
-#nav .pill {
-	padding: 3px 10px; background: #c0c0c0; 
-	border: 2px solid; border-color: #dfdfdf #000 #000 #dfdfdf; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #fff;
 }
 #address { flex: 1; background: #fff; padding: 3px 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
 
@@ -460,6 +454,8 @@ function render_reader() {
 	$("r-count").textContent = index < 0 ? "" : index + 1 + " of " + messages.length
 	$("r-prev").disabled = index <= 0
 	$("r-next").disabled = index < 0 || index >= messages.length - 1
+	$("n-prev").disabled = $("r-prev").disabled
+	$("n-next").disabled = $("r-next").disabled
 	$("head").innerHTML =
 		'<div class="subject">' + esc(current.subject || "(no subject)") + "</div><dl>" +
 		row("From", who([current.from])) +
@@ -580,12 +576,18 @@ function relayout() {
 		var el = win.el
 		// Size first, then position — clamping them independently can still leave a window
 		// hanging off the bottom, because its top was fine and its height was fine separately.
-		var w = Math.min(el.offsetWidth, box.w)
-		var h = Math.min(el.offsetHeight, box.h)
+		var w = Math.min(win.size.w, box.w - 16)
+		var h = Math.min(win.size.h, box.h - 16)
 		el.style.width = w + "px"
 		el.style.height = h + "px"
-		el.style.left = Math.max(0, Math.min(el.offsetLeft, box.w - w)) + "px"
-		el.style.top = Math.max(0, Math.min(el.offsetTop, box.h - h)) + "px"
+		if (win.placed) {
+			// Moved or resized by hand: keep it where it was put, just inside the frame.
+			el.style.left = Math.max(0, Math.min(el.offsetLeft, box.w - w)) + "px"
+			el.style.top = Math.max(0, Math.min(el.offsetTop, box.h - h)) + "px"
+		} else {
+			el.style.left = Math.round((box.w - w) / 2) + "px"
+			el.style.top = Math.round((box.h - h) / 2) + "px"
+		}
 	})
 }
 
@@ -603,7 +605,18 @@ function place(el, r) {
 
 function register(id, title, rect) {
 	var el = $(id)
-	var win = { id: id, el: el, title: title, restore: null, min: false, open: id === "mailbox" }
+	var win = {
+		id: id,
+		el: el,
+		title: title,
+		restore: null,
+		min: false,
+		open: id === "mailbox",
+		// The size it wants, and whether the user has taken charge of where it sits. Until
+		// they have, it re-centres whenever the app window changes size.
+		size: { w: rect.w, h: rect.h },
+		placed: false,
+	}
 	wins.push(win)
 	place(el, rect)
 
@@ -731,6 +744,7 @@ function drag(win, event) {
 	if (win.restore) return
 	event.preventDefault()
 	focus_window(win.id)
+	win.placed = true
 	var dx = event.clientX - win.el.offsetLeft
 	var dy = event.clientY - win.el.offsetTop
 	var box = ws_rect()
@@ -777,6 +791,7 @@ function resize(win, event, horizontal, vertical) {
 	event.preventDefault()
 	event.stopPropagation()
 	focus_window(win.id)
+	win.placed = true
 	var x0 = event.clientX
 	var y0 = event.clientY
 	var w0 = win.el.offsetWidth
@@ -784,6 +799,7 @@ function resize(win, event, horizontal, vertical) {
 	track(function (e) {
 		if (horizontal) win.el.style.width = Math.max(320, w0 + e.clientX - x0) + "px"
 		if (vertical) win.el.style.height = Math.max(140, h0 + e.clientY - y0) + "px"
+		win.size = { w: win.el.offsetWidth, h: win.el.offsetHeight }
 	})
 }
 
@@ -795,6 +811,7 @@ function resize(win, event, horizontal, vertical) {
  * so it manages its own state and only borrows the taskbar.
  */
 var app_restore = null
+var app_maximised = true
 
 function app_set(state) {
 	var el = $("aol")
@@ -809,11 +826,15 @@ function app_set(state) {
 
 function app_toggle_max() {
 	var el = $("aol")
-	if (app_restore) {
-		el.style.cssText = app_restore
+	// Tracked with a flag, not the truthiness of the saved styles: a maximised window has no
+	// inline styles at all, so the saved string is empty and a truthiness check never fires.
+	if (!app_maximised) {
+		el.style.cssText = app_restore || ""
 		app_restore = null
+		app_maximised = true
 	} else {
 		app_restore = el.style.cssText
+		app_maximised = false
 		var host = $("screen").getBoundingClientRect()
 		var w = Math.round(host.width * 0.78)
 		var h = Math.round((host.height - 30) * 0.8)
@@ -825,6 +846,8 @@ function app_toggle_max() {
 		el.style.height = h + "px"
 		drag_dialog(el, $("screen"))
 	}
+	var button = el.querySelector('[data-app="max"]')
+	button.setAttribute("aria-label", app_maximised ? "Restore" : "Maximize")
 	// Windows inside are positioned against the workspace, which just changed size.
 	relayout()
 	app_set("open")
@@ -864,6 +887,9 @@ function set_pop(name) {
 	})
 	Array.prototype.forEach.call($("menubar").querySelectorAll("[data-menu]"), function (el) {
 		el.className = el.dataset.menu === name ? "on" : ""
+		// Under its own label rather than at a hardcoded offset, so it lines up whatever the
+		// labels say.
+		if (el.dataset.menu === name) $("menu-" + name).style.left = el.offsetLeft + "px"
 	})
 	open_menu = name
 }
@@ -882,6 +908,12 @@ $("menubar").addEventListener("click", function (event) {
 	if (act === "minimise") app_set("min")
 	if (act === "signoff") { app_set("open"); run_signon() }
 	if (act === "exit") app_set("closed")
+})
+// With a menu already open, sliding across the bar switches to the next one — the way a
+// real menu bar behaves once it has focus.
+$("menubar").addEventListener("mouseover", function (event) {
+	var name = event.target.dataset && event.target.dataset.menu
+	if (name && open_menu && open_menu !== name) set_pop(name)
 })
 document.addEventListener("click", function () { set_pop(null) })
 
@@ -903,6 +935,11 @@ $("t-read").onclick = function () { if (selected) open_message(selected) }
 // Mail Center brings the mailbox back, which is what it is for.
 $("t-refresh").onclick = function () { open_window("mailbox"); load() }
 $("t-print").onclick = function () { window.print() }
+// The navigation strip drives the reader, which is the only thing here it can mean.
+$("n-prev").onclick = function () { $("r-prev").click() }
+$("n-next").onclick = function () { $("r-next").click() }
+$("n-reload").onclick = function () { open_window("mailbox"); load() }
+$("n-home").onclick = function () { open_window("mailbox") }
 $("a-read").onclick = function () { if (selected) open_message(selected) }
 $("keepnew").onclick = function () {
 	if (!selected) return
@@ -1029,9 +1066,12 @@ var box = ws_rect()
 /* Centred, the way the screenshots have it: the mailbox floating mid-desktop and mail
    opening in front of it, rather than the two tiled edge to edge. */
 var mb = { w: Math.min(760, box.w - 40), h: Math.min(430, box.h - 40) }
-var mbx = Math.round((box.w - mb.w) / 2)
-var mby = Math.max(0, Math.round((box.h - mb.h) / 2) - 20)
-register("mailbox", "Your Local Mailbox", { x: mbx, y: mby, w: mb.w, h: mb.h })
+register("mailbox", "Your Local Mailbox", {
+	x: Math.round((box.w - mb.w) / 2),
+	y: Math.round((box.h - mb.h) / 2),
+	w: mb.w,
+	h: mb.h,
+})
 /* Centred both ways, in front of the mailbox. */
 var rd = { w: Math.min(700, box.w - 60), h: Math.min(430, box.h - 60) }
 register("reader", "Message", {
@@ -1100,7 +1140,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			<div class="title-bar-text"><img class="mark" src="${FAVICON}" alt=""> Postboi Local</div>
 			<div class="title-bar-controls">
 				<button aria-label="Minimize" data-app="min"></button>
-				<button aria-label="Maximize" data-app="max"></button>
+				<button aria-label="Restore" data-app="max"></button>
 				<button aria-label="Close" data-app="close"></button>
 			</div>
 		</div>
@@ -1117,12 +1157,12 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 				<li data-do="signoff">Sign Off</li>
 				<li data-do="exit">Exit</li>
 			</ul></div>
-			<div class="menu-pop" id="menu-window" style="left:56px"><ul>
+			<div class="menu-pop" id="menu-window"><ul>
 				<li data-do="mailbox">Your Local Mailbox</li>
 				<li data-do="restore">Restore Postboi Local</li>
 				<li data-do="minimise">Minimise Postboi Local</li>
 			</ul></div>
-			<div class="menu-pop" id="menu-help" style="left:118px"><ul>
+			<div class="menu-pop" id="menu-help"><ul>
 				<li data-do="docs">Postboi Help&#8230;</li>
 			</ul></div>
 		</div>
@@ -1137,24 +1177,15 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			<div class="band b2">
 				<button class="tb" id="t-sound"><span class="ico">&#128266;</span>Sound</button>
 			</div>
-			<!-- Set dressing: the bar looked wrong without them, and they do nothing on purpose. -->
-			<div class="band b3">
-				<span class="tb inert"><span class="ico">&#127760;</span>Internet</span>
-				<span class="tb inert"><span class="ico">&#128225;</span>Channels</span>
-			</div>
-			<div class="band b4">
-				<span class="tb inert"><span class="ico">&#128101;</span>People</span>
-			</div>
 			<div class="band b5"><span style="color:#fff;font:italic bold 15px Arial,sans-serif">postboi.</span></div>
 		</div>
 
 		<div id="nav">
-			<button class="rnd">&#9664;</button><button class="rnd">&#9654;</button>
-			<button class="rnd">&#10006;</button><button class="rnd">&#8635;</button>
-			<button class="rnd">&#8962;</button>
-			<span class="pill">Find &#9662;</span>
+			<button class="rnd" id="n-prev" title="Previous message">&#9664;</button>
+			<button class="rnd" id="n-next" title="Next message">&#9654;</button>
+			<button class="rnd" id="n-reload" title="Check mail now">&#8635;</button>
+			<button class="rnd" id="n-home" title="Open mailbox">&#8962;</button>
 			<span id="address" class="thin-sunken">Postboi: Welcome back!</span>
-			<span class="pill">Go</span><span class="pill">Keyword</span>
 		</div>
 
 		<div id="workspace">
