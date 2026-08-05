@@ -43,7 +43,11 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 .thin-sunken { border: 1px solid; border-color: #808080 #fff #fff #808080 }
 /* Its .window padding is for dialogs; these are frames holding a full-bleed layout. */
 .window { padding: 3px; display: flex; flex-direction: column; min-height: 0 }
-.title-bar { flex: none }
+/* XP.css draws its title-bar controls at 21px, sized for XP's taller bar. Left at the
+   98-era height they sit flush against every edge and read as oversized, so the bar gets
+   the height they expect and the controls get a little breathing room. */
+.title-bar { flex: none; height: 28px; padding: 0 3px 0 5px; align-items: center }
+.title-bar-controls { align-items: center; gap: 1px }
 .title-bar.dim { background: linear-gradient(90deg, #7f7f7f, #b5b5b5) }
 
 #screen {
@@ -105,7 +109,7 @@ button { font: 12px "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif }
 .child { position: absolute }
 /* "#reader.open" sets display:flex and outranks a bare ".child.min" on specificity, so
    minimising has to be spelled out at least as strongly or the window never hides. */
-.child.min, #reader.open.min { display: none }
+.child.min, .child.closed, #reader.open.min, #reader.open.closed { display: none }
 .child .title-bar { cursor: default; user-select: none }
 .child.max .grip, .child.max .edge { display: none }
 .grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 6 }
@@ -195,12 +199,15 @@ td.who { width: 34% }
 .title-bar-text .mark, #taskbar .mark { width: 14px; height: 14px; flex: none; vertical-align: -3px; margin-right: 4px }
 #intrologo img { width: 34px; height: 34px; vertical-align: -7px; margin-right: 8px }
 #start {
-	display: flex; align-items: center; gap: 5px; padding: 2px 16px 3px 8px; cursor: pointer;
-	font: italic bold 14px Tahoma, Arial, sans-serif; color: #fff; text-shadow: 1px 1px 1px rgba(0,0,0,.5);
-	background: linear-gradient(180deg, #3c993c 0%, #33912f 40%, #23801f 55%, #34a334 100%);
-	border: 0; border-radius: 0 9px 9px 0; box-shadow: inset -1px -1px 2px rgba(0,0,0,.35), inset 1px 1px 1px rgba(255,255,255,.4);
+	display: flex; align-items: center; gap: 6px; padding: 1px 20px 3px 7px; cursor: pointer;
+	font: italic bold 15px "Franklin Gothic Medium", Tahoma, Arial, sans-serif;
+	color: #fff; text-shadow: 1px 1px 1px rgba(0,0,0,.45);
+	background: linear-gradient(180deg, #4aab4a 0%, #37993a 12%, #2c8b2c 42%, #227d22 55%, #2f912f 80%, #43a843 100%);
+	border: 0; border-radius: 0 11px 11px 0;
+	box-shadow: inset -1px -2px 3px rgba(0,0,0,.35), inset 1px 1px 1px rgba(255,255,255,.45);
 }
-#start.on { background: linear-gradient(180deg, #23801f 0%, #2c8c28 50%, #3c993c 100%) }
+#start .flag { flex: none; filter: drop-shadow(1px 1px 1px rgba(0,0,0,.4)) }
+#start.on { background: linear-gradient(180deg, #227d22 0%, #2c8b2c 55%, #3d9f3d 100%); box-shadow: inset 2px 2px 4px rgba(0,0,0,.4) }
 #taskbar .task {
 	flex: 0 1 180px; display: flex; align-items: center; text-align: left; padding: 3px 8px; cursor: pointer;
 	overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
@@ -547,9 +554,27 @@ function toggle_max(win) {
 
 function close_window(win) {
 	win.open = false
-	current = null
-	render_list()
-	render_reader()
+	// The reader's visibility is driven by whether a message is selected, so closing it is
+	// really deselecting; the mailbox just goes away and is reopened from the Start menu.
+	if (win.id === "reader") {
+		current = null
+		render_list()
+		render_reader()
+		return
+	}
+	win.el.classList.add("closed")
+	if (focused === win.id) focused = null
+	paint()
+}
+
+/** Bring a closed or minimised window back — how the mailbox returns once it's shut. */
+function open_window(id) {
+	var win = find(id)
+	if (!win) return
+	win.open = true
+	win.min = false
+	win.el.classList.remove("closed", "min")
+	focus_window(id)
 }
 
 /** Repaint what depends on window state: title-bar focus and the taskbar buttons. */
@@ -716,7 +741,8 @@ document.addEventListener("keyup", function (event) {
 	meta_alone = false
 })
 
-$("m-refresh").onclick = function () { load(); set_menu(false) }
+$("m-mailbox").onclick = function () { open_window("mailbox"); set_menu(false) }
+$("m-refresh").onclick = function () { open_window("mailbox"); load(); set_menu(false) }
 $("m-docs").onclick = function () { window.open("https://docs.postboi.email/dev-inbox", "_blank"); set_menu(false) }
 $("m-shutdown").onclick = function () {
 	set_menu(false)
@@ -874,6 +900,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 					<div class="title-bar-controls">
 						<button aria-label="Minimize" data-act="min"></button>
 						<button aria-label="Maximize" data-act="max"></button>
+						<button aria-label="Close" data-act="close"></button>
 					</div>
 				</div>
 
@@ -946,7 +973,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 	</div>
 
 	<div id="taskbar">
-		<button id="start"><span>&#9783;</span> Start</button>
+		<button id="start"><svg class="flag" width="21" height="18" viewBox="0 0 21 18" aria-hidden="true"><path d="M0.5 3.7 8.8 2.1 8.8 8.5 0.5 8.8Z" fill="#f65314"/><path d="M9.9 1.9 20.4 0 20.4 8.4 9.9 8.5Z" fill="#7cbb00"/><path d="M0.5 9.6 8.8 9.8 8.8 16.1 0.5 14.6Z" fill="#00a1f1"/><path d="M9.9 9.8 20.4 10 20.4 18 9.9 16.3Z" fill="#ffbb00"/></svg><span>start</span></button>
 		<span id="tasks" style="display:flex;gap:4px"></span>
 		<span class="spacer"></span>
 		<!-- The count lives out here rather than in the mailbox header, which is the first
@@ -957,8 +984,9 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 	</div>
 
 	<div id="startmenu">
-		<div class="rail">Postboi&nbsp;98</div>
+		<div class="rail">Postboi&nbsp;XP</div>
 		<ul>
+			<li id="m-mailbox"><span class="ico">&#128236;</span>Your Local Mailbox</li>
 			<li id="m-refresh"><span class="ico">&#128260;</span>Check Mail Now</li>
 			<li id="m-docs"><span class="ico">&#128218;</span>Help&#8230;</li>
 			<li class="sep"></li>

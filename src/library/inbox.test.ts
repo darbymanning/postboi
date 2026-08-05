@@ -119,6 +119,8 @@ describe("inbox middleware", () => {
 		expect(html).toContain('aria-label="Minimize" data-act="min"')
 		expect(html).toContain('aria-label="Maximize" data-act="max"')
 		expect(html).toContain('aria-label="Close" data-act="close" id="reader-close"')
+		// The mailbox closes too, and the Start menu is how it comes back.
+		expect(html).toContain('id="m-mailbox"')
 		// Resize handles on both windows — the reading pane is only ever big enough
 		// because you can make it bigger.
 		expect(html.match(/class="grip"/g)).toHaveLength(2)
