@@ -232,7 +232,7 @@ describe("inbox middleware", () => {
 		for (const [name, type] of [
 			["wallpaper", "image/jpeg"],
 			["start", "image/png"],
-			["icon", "image/png"],
+			["icon", "image/svg+xml"],
 			["avatar", "image/svg+xml"],
 		]) {
 			const response = await fetch(

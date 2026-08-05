@@ -1100,16 +1100,42 @@ function resize_app(event, horizontal, vertical) {
 var app_restore = null
 var app_maximised = true
 
+/*
+ * Minimising the frame takes the mail windows down with it, and restoring brings back exactly
+ * the ones that were up. They are still independent — closing one, or minimising one on its
+ * own, leaves the rest alone — but "show me the desktop" has to mean the whole desktop, or
+ * minimising just puts a hole in the middle of a pile of windows.
+ */
+var stashed = []
 function app_set(state) {
 	var el = $("aol")
 	if (state === "min" || state === "closed") {
+		if (state === "min" && !el.classList.contains("min")) {
+			stashed = wins
+				.filter(function (win) { return win.open && !win.min })
+				.map(function (win) {
+					win.min = true
+					win.el.classList.add("min")
+					return win.id
+				})
+			focused = null
+		}
 		el.classList.add(state)
 		if (state === "min") run_bliss()
-		app_paint()
+		paint()
 		return
 	}
+	if (el.classList.contains("min")) {
+		stashed.forEach(function (id) {
+			var win = find(id)
+			if (!win || !win.open) return
+			win.min = false
+			win.el.classList.remove("min")
+		})
+		stashed = []
+	}
 	el.classList.remove("min", "closed")
-	app_paint()
+	paint()
 }
 
 /*
@@ -1135,6 +1161,7 @@ function run_bliss() {
  * The shortcut on the desktop is how it comes back.
  */
 function app_close() {
+	play("goodbye")
 	wins.forEach(function (win) {
 		if (win.open) close_window(win)
 	})
@@ -1239,7 +1266,7 @@ $("menubar").addEventListener("click", function (event) {
 	if (act === "mailbox") open_window("mailbox")
 	if (act === "check") { open_window("mailbox"); load() }
 	if (act === "print") window.print()
-	if (act === "docs") window.open("https://docs.postboi.email/dev-inbox", "_blank")
+	if (act === "docs") window.open("https://docs.postboi.email/dev-inbox", "_blank", "noopener")
 	if (act === "restore") app_set("open")
 	if (act === "minimise") app_set("min")
 	if (act === "signoff") { app_set("open"); run_signon() }
@@ -1343,7 +1370,16 @@ $("m-app").onclick = function () { launch_app(); set_menu(false) }
 // The mailbox is its own window: bringing it back does not drag the app up with it.
 $("m-mailbox").onclick = function () { ensure_signed_on(); open_window("mailbox"); set_menu(false) }
 $("m-refresh").onclick = function () { ensure_signed_on(); open_window("mailbox"); load(); set_menu(false) }
-$("m-docs").onclick = function () { window.open("https://docs.postboi.email/dev-inbox", "_blank"); set_menu(false) }
+/* noopener on every outward link: the opened tab has no business reaching back in here. */
+function open_link(url) {
+	window.open(url, "_blank", "noopener")
+	set_menu(false)
+}
+$("m-docs").onclick = function () { open_link("https://docs.postboi.email") }
+$("m-help").onclick = function () { open_link("https://docs.postboi.email/dev-inbox") }
+$("m-dashboard").onclick = function () { open_link("https://postboi.email/dashboard") }
+$("m-site").onclick = function () { open_link("https://postboi.email") }
+$("m-wipe").onclick = function () { set_menu(false); wipe() }
 $("m-sound").onclick = function () { $("t-sound").click(); set_menu(false) }
 FOLDERS.forEach(function (name) {
 	$("f-" + name).onclick = function () {
@@ -1356,7 +1392,7 @@ $("m-signoff").onclick = function () { set_menu(false); app_set("open"); run_sig
 // closes the app, the way closing an application does.
 $("m-shutdown").onclick = function () {
 	set_menu(false)
-	play("goodbye")
+	play("shutdown")
 	app_crash()
 }
 
@@ -1538,7 +1574,7 @@ $("so-go").onclick = function () {
 }
 
 $("so-help").onclick = function () {
-	window.open("https://docs.postboi.email/dev-inbox", "_blank")
+	window.open("https://docs.postboi.email/dev-inbox", "_blank", "noopener")
 }
 `
 
@@ -1765,9 +1801,15 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 				<li id="m-mailbox"><span class="ico">&#128236;</span>Your Local Mailbox</li>
 				<li class="sep"></li>
 				<li id="m-refresh"><span class="ico">&#128260;</span>Check Mail Now</li>
+				<li id="m-wipe"><span class="ico">&#128465;</span>Delete All Mail&#8230;</li>
 			</ul>
 			<ul class="right">
-				<li id="m-docs"><span class="ico">&#10067;</span>Help and Support</li>
+				<li id="m-dashboard"><span class="ico">&#128202;</span>Postboi Dashboard</li>
+				<li id="m-site"><span class="ico">&#127760;</span>postboi.email</li>
+				<li class="sep"></li>
+				<li id="m-docs"><span class="ico">&#128218;</span>Documentation</li>
+				<li id="m-help"><span class="ico">&#10067;</span>Help and Support</li>
+				<li class="sep"></li>
 				<li id="m-sound"><span class="ico">&#128266;</span>Sounds and Audio</li>
 			</ul>
 		</div>

@@ -149,6 +149,10 @@ were; bring one back from the taskbar and it comes back on its own, with no appl
 frame behind it. The app itself resizes and windows the same way, and it always sits behind
 your mail — focusing the frame can't bury the message you were reading.
 
+**Minimise** Postboi Local and the mail windows go down with it, so what you get is the
+desktop rather than a hole in a pile of windows — and restoring brings back exactly the ones
+that were up. Minimise or close one on its own and the rest are unaffected.
+
 **Close** Postboi Local and it takes its windows with it and leaves the desktop. The
 **Postboi** shortcut sitting there opens it again on a double-click, and it drags around
 like any other icon.
@@ -193,10 +197,11 @@ them, and the only clock involved is the one in the page.
 
 ### Sound
 
-New mail announces itself, and there's a greeting on load and a sign-off on Shut Down — the
-real 1990s ones. The **Sound** button in the toolbar mutes it, and the choice is remembered,
-because a dev tool that says "Welcome!" in an open-plan office is a dev tool people
-uninstall. Pressing **SIGN ON** is what lets any of it play — see below.
+New mail announces itself. There's a greeting on the way in, a sign-off when you close
+Postboi Local, a different one for turning the computer off, and a noise when a scheduled
+message reaches its time. The **Sound** button in the toolbar mutes the lot, and the choice
+is remembered, because a dev tool that says "Welcome!" in an open-plan office is a dev tool
+people uninstall. Pressing **SIGN ON** is what lets any of it play — see below.
 
 ### Signing on
 
@@ -231,9 +236,10 @@ for themselves. `inbox: false` disables the whole thing.
 
 ### Yes, there's a Start menu
 
-Press the **Windows key** (**Cmd** on macOS) and the Start menu opens, with Check Mail Now,
-help, and a **Turn Off Computer** that does exactly what you'd hope. Only a bare press
-counts — held as a modifier it's left alone, since that's how you copy and reload.
+Press the **Windows key** (**Cmd** on macOS) and the Start menu opens: your mailbox, Check
+Mail Now, Delete All Mail, links out to the dashboard and the docs, the sound toggle, and a
+**Turn Off Computer** that does exactly what you'd hope. Only a bare press counts — held as
+a modifier it's left alone, since that's how you copy and reload.
 
 ### The desktop
 
