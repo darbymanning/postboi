@@ -597,6 +597,70 @@ describe("top-level mail() — provider-agnostic dispatch", () => {
 	})
 })
 
+describe("the dev inbox", () => {
+	/** Configure a real, fully-credentialled provider — the case interception has to beat. */
+	function configure_real_provider() {
+		vi.stubEnv("POSTBOI_PROVIDER", "")
+		vi.stubEnv("POSTBOI_TOKEN", "pb_live_token")
+		vi.stubEnv("POSTBOI_FROM", "from@test.com")
+	}
+
+	beforeEach(() => vi.spyOn(console, "log").mockImplementation(() => {}))
+	afterEach(() => vi.restoreAllMocks())
+
+	it("captures mail that a configured provider would otherwise have sent for real", async () => {
+		configure_real_provider()
+		vi.stubEnv("NODE_ENV", "development")
+		vi.stubEnv("POSTBOI_INBOX", "4599")
+		fetch.mockResolvedValue(respond({ json: { id: "1" } }))
+
+		await mail({ to: "to@test.com", subject: "Local only", body: "<p>x</p>" })
+
+		// The one thing that must never happen in dev: a real send to a real address.
+		expect(sent_url()).toBe("http://127.0.0.1:4599/__postboi/api/messages")
+		expect(sent_json()).toMatchObject({ subject: "Local only" })
+	})
+
+	it("never intercepts outside development, however loudly the env asks", async () => {
+		for (const node_env of ["production", "staging", ""]) {
+			configure_real_provider()
+			vi.stubEnv("NODE_ENV", node_env)
+			vi.stubEnv("POSTBOI_INBOX", "4599")
+			fetch.mockResolvedValue(respond({ json: { id: "cloud-1" } }))
+
+			await mail({ to: "to@test.com", subject: "Real", body: "<p>x</p>" })
+
+			expect(sent_url(), `NODE_ENV=${node_env}`).toBe("https://postboi.email/v1/send")
+		}
+	})
+
+	it("sends for real when POSTBOI_INBOX is off", async () => {
+		configure_real_provider()
+		vi.stubEnv("NODE_ENV", "development")
+		vi.stubEnv("POSTBOI_INBOX", "off")
+		fetch.mockResolvedValue(respond({ json: { id: "cloud-1" } }))
+
+		await mail({ to: "to@test.com", subject: "Real", body: "<p>x</p>" })
+
+		expect(sent_url()).toBe("https://postboi.email/v1/send")
+	})
+
+	it("stands in front of sending only — lists still reach the real API", async () => {
+		configure_real_provider()
+		vi.stubEnv("NODE_ENV", "development")
+		vi.stubEnv("POSTBOI_INBOX", "4599")
+		fetch.mockResolvedValue(respond({ json: { lists: [] } }))
+
+		await mail.lists.all()
+
+		expect(sent_url()).toBe("https://postboi.email/v1/lists")
+	})
+
+	// The stopped-inbox fallback lives in inbox.test.ts instead, against a socket that has
+	// genuinely been closed — a truer test than a rejecting fetch mock, and it stays clear of
+	// this file's mocked-fetch setup.
+})
+
 describe("escape_html", () => {
 	it("is reachable from the package root for hand-rolled HTML bodies", () => {
 		// the FormData table escapes itself; this is for callers interpolating user

@@ -1,5 +1,24 @@
-import { existsSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
+import { INBOX_DISCOVERY, INBOX_PATH } from "./inbox.js"
+import { create_inbox_store, inbox_middleware, type InboxMiddleware } from "./inbox_server.js"
+import type { InboxUiOptions } from "./inbox_ui.js"
+
+/**
+ * The slice of Vite's dev server this uses. See {@link VitePlugin} for why it's structural.
+ */
+export interface ViteDevServer {
+	middlewares: { use(handler: InboxMiddleware): unknown }
+	httpServer: {
+		on(event: string, listener: () => void): unknown
+		address(): { port?: number } | string | null
+	} | null
+	config: {
+		root: string
+		/** `server.https` is truthy whenever the dev server is serving over TLS. */
+		server?: { https?: unknown }
+	}
+}
 
 /**
  * The slice of Vite's `Plugin` interface this uses, declared locally so importing
@@ -9,6 +28,7 @@ export interface VitePlugin {
 	name: string
 	config(): { optimizeDeps: { exclude: Array<string> } }
 	configResolved(config: { root: string }): void
+	configureServer(server: ViteDevServer): void
 	transform(
 		code: string,
 		id: string,
@@ -23,6 +43,18 @@ export interface PluginOptions {
 	 * `postboi.config.*` found from the root upward; `false` skips bundling it entirely.
 	 */
 	config?: string | false
+	/**
+	 * Serve the local dev inbox at `/__postboi` and capture mail into it instead of sending.
+	 * On by default; `false` leaves the dev server alone and sends for real. An object turns
+	 * it on and sets what the page starts with — both remain toggleable in the UI, where the
+	 * viewer's choice is remembered and wins.
+	 *
+	 * @example
+	 * ```ts
+	 * postboi({ inbox: { sounds: false, intro: false } })
+	 * ```
+	 */
+	inbox?: boolean | InboxUiOptions
 }
 
 const CONFIG_FILES = [
@@ -49,6 +81,36 @@ function is_config_module(id: string): boolean {
 	return id.replace(/\\/g, "/").split("?")[0].endsWith("/postboi/dist/config.js")
 }
 
+/** Is this Postboi's inbox module — the one that holds the port hook? */
+function is_inbox_module(id: string): boolean {
+	return id.replace(/\\/g, "/").split("?")[0].endsWith("/postboi/dist/inbox.js")
+}
+
+/**
+ * Tell the running app where the inbox is, two ways, because one of them is always wrong.
+ *
+ * The discovery file is read at send time, so it survives whatever order things started in
+ * — but it needs a filesystem, which a Worker doesn't have. The injected port needs no
+ * filesystem, but it's baked in when the module is first transformed. Between them every
+ * runtime is covered.
+ */
+function advertise(root: string, port: number, secure: boolean): () => void {
+	const file = join(root, INBOX_DISCOVERY)
+	try {
+		mkdirSync(dirname(file), { recursive: true })
+		writeFileSync(file, JSON.stringify({ port, pid: process.pid, secure }))
+	} catch {
+		// Read-only or no node_modules — the injected port still covers the common case.
+	}
+	return () => {
+		try {
+			rmSync(file, { force: true })
+		} catch {
+			// Best-effort: a leftover file just means one failed POST, which falls back to the console.
+		}
+	}
+}
+
 /**
  * Vite plugin. Two jobs, both of them ceremony you'd otherwise write by hand:
  *
@@ -68,6 +130,8 @@ function is_config_module(id: string): boolean {
  */
 export function postboi(options: PluginOptions = {}): VitePlugin {
 	let file: string | undefined
+	let inbox_port: number | null = null
+	let inbox_secure = false
 
 	return {
 		name: "postboi",
@@ -83,14 +147,53 @@ export function postboi(options: PluginOptions = {}): VitePlugin {
 				: find_config(config.root)
 		},
 
+		// Dev only, by construction — Vite never calls this for a build, so the inbox cannot
+		// leak into production no matter how the plugin is configured.
+		configureServer(server) {
+			if (options.inbox === false) return
+			const store = create_inbox_store()
+			const ui = typeof options.inbox === "object" ? options.inbox : {}
+			server.middlewares.use(inbox_middleware(store, INBOX_PATH, ui))
+
+			const http = server.httpServer
+			// Middleware mode (a custom Express/Hono dev server) owns its own listener, so
+			// there's no port to read here. `postboi dev` is the answer for those.
+			if (!http) return
+			http.on("listening", () => {
+				const address = http.address()
+				if (!address || typeof address === "string" || !address.port) return
+				inbox_port = address.port
+				// The inbox is mounted on this server, so it is served however this server is. Get
+				// this wrong and the printed link 404s in the browser and, worse, the capture POSTs
+				// plaintext at a TLS port and quietly falls back to the console.
+				inbox_secure = !!server.config.server?.https
+				const cleanup = advertise(server.config.root, address.port, inbox_secure)
+				http.on("close", cleanup)
+				process.once("exit", cleanup)
+				const scheme = inbox_secure ? "https" : "http"
+				console.log(
+					`  \x1b[33m➜\x1b[0m  \x1b[1mPostboi\x1b[0m:  dev inbox at ${scheme}://localhost:${address.port}${INBOX_PATH}`
+				)
+			})
+		},
+
 		transform(code, id, transform_options) {
 			// Server builds only: the config file can hold secrets and hooks, and inlining it
 			// into a client bundle would ship them to the browser.
-			if (!file || !transform_options?.ssr || !is_config_module(id)) return null
-			return {
-				code: `${code}\nset_bundled_config(() => import(${JSON.stringify(file)}))\n`,
-				map: null,
+			if (!transform_options?.ssr) return null
+			if (file && is_config_module(id)) {
+				return {
+					code: `${code}\nset_bundled_config(() => import(${JSON.stringify(file)}))\n`,
+					map: null,
+				}
 			}
+			// The port goes in the module because the plugin and the app's server code live in
+			// different module registries — see `set_inbox_port`. Runtimes with a filesystem
+			// would find the discovery file anyway; Workers only have this.
+			if (inbox_port !== null && is_inbox_module(id)) {
+				return { code: `${code}\nset_inbox_port(${inbox_port}, ${inbox_secure})\n`, map: null }
+			}
+			return null
 		},
 	}
 }

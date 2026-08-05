@@ -23,6 +23,12 @@ export interface SentMessage {
 	html?: string
 	text?: string
 	attachments: Array<MailAttachment>
+	/**
+	 * When the send asked for future delivery. Captured because it is the most important thing
+	 * about a scheduled message and the easiest to lose: without it a mail queued for next
+	 * Tuesday is indistinguishable from one sent a second ago.
+	 */
+	scheduled_at?: Date
 }
 
 /** Options for the mock provider constructor. */
@@ -36,6 +42,17 @@ type Options = CommonProviderOptions & {
 	 * point is seeing the mail you would have sent (a magic link, a confirmation code).
 	 */
 	log?: boolean
+	/**
+	 * Hand each captured message somewhere it can be read — the local dev inbox, in
+	 * practice. Returning false means it didn't arrive, and the message is printed instead,
+	 * so a stopped inbox degrades to the console rather than swallowing the mail.
+	 */
+	sink?: (message: SentMessage, id: string) => boolean | Promise<boolean>
+	/**
+	 * Tell the sink a scheduled send was cancelled. Paired with {@link Options.sink}: without
+	 * it the dev inbox goes on showing a cancelled message as though it were still going out.
+	 */
+	on_cancel?: (id: string) => unknown
 }
 
 type SendResponse = { id: string; message: SentMessage }
@@ -59,6 +76,9 @@ function log_message(message: SentMessage): void {
 	if (message.attachments.length) {
 		lines.push(`  files: ${message.attachments.map((a) => a.name).join(", ")}`)
 	}
+	// Printed rather than left implicit: "sent" and "queued for Tuesday" look identical here
+	// otherwise, and the difference is the whole point of the send.
+	if (message.scheduled_at) lines.push(`  send: ${message.scheduled_at.toISOString()}`)
 	const body = message.text ?? message.html
 	if (body) lines.push("", body.trim())
 	console.log(lines.join("\n"))
@@ -91,6 +111,8 @@ export default class Mock extends ProviderBase<SendResponse> {
 	protected override readonly captcha_mode = "none" as const
 	#fail: boolean
 	#log: boolean
+	#sink?: (message: SentMessage, id: string) => boolean | Promise<boolean>
+	#on_cancel?: (id: string) => unknown
 	#counter = 0
 
 	/** Every message captured by this instance, in send order. */
@@ -99,10 +121,12 @@ export default class Mock extends ProviderBase<SendResponse> {
 	/** Ids passed to `cancel`, in call order. */
 	readonly canceled: Array<string> = []
 
-	constructor({ fail, log, ...options }: Options = {}) {
+	constructor({ fail, log, sink, on_cancel, ...options }: Options = {}) {
 		super(options)
 		this.#fail = fail ?? false
 		this.#log = log ?? false
+		this.#sink = sink
+		this.#on_cancel = on_cancel
 	}
 
 	/** The most recently captured message, or undefined if nothing has been sent. */
@@ -122,6 +146,12 @@ export default class Mock extends ProviderBase<SendResponse> {
 			throw new PostboiError({ provider: "mock", message: "Simulated failure from mock provider" })
 		}
 		this.canceled.push(id)
+		// Best-effort, like the sink: an inbox that has gone away must not fail the cancel.
+		try {
+			await this.#on_cancel?.(id)
+		} catch {
+			// Nothing to do about it, and nothing that depends on it.
+		}
 		return { id }
 	}
 
@@ -160,11 +190,18 @@ export default class Mock extends ProviderBase<SendResponse> {
 				html: message.html,
 				text: message.text,
 				attachments: message.attachments ? await this.parse_attachments(message.attachments) : [],
+				scheduled_at: message.scheduled_at,
 			}
 
 			this.sent.push(captured)
-			if (this.#log) log_message(captured)
-			return { id: `mock-${++this.#counter}`, message: captured }
+			// Assigned before delivery so the inbox is told the same id the caller gets back,
+			// which is the id a later cancel() will arrive with.
+			const id = `mock-${++this.#counter}`
+			// The console is the fallback, not a duplicate: printing as well as delivering
+			// would put the whole body in the terminal on every send with the inbox open.
+			const delivered = this.#sink ? await this.#sink(captured, id) : false
+			if (this.#log || (this.#sink && !delivered)) log_message(captured)
+			return { id, message: captured }
 		})
 	}
 

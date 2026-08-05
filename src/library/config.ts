@@ -54,6 +54,14 @@ export interface PostboiConfig {
 	hooks?: Hooks
 	/** Spam-protection settings applied to every FormData send (honeypot + Turnstile). */
 	captcha?: CaptchaOptions
+	/** Development-only behaviour. Ignored outside `NODE_ENV=development`. */
+	dev?: {
+		/**
+		 * Capture mail in the local dev inbox whenever one is running, instead of sending it.
+		 * On by default — set false if you want local sends to reach the real provider.
+		 */
+		inbox?: boolean
+	}
 }
 
 /** Keep only defined entries so a shallow merge never clobbers a value with `undefined`. */
