@@ -531,6 +531,70 @@ the platform above the transport, not in the transport.** If we ever ship hosted
 it as convenience bundled alongside email — never as a margin business — and be honest in
 the docs that BYO is cheaper.
 
+### Can we use a cheap US provider to message UK/EU numbers?
+
+**No. SMS is priced by destination, not origin** — "the price of sending an SMS message is
+based on the country in which the message recipient is located". Twilio's GB page
+($0.056) *is* what a US Twilio account pays to message a UK number. The fee being paid is
+the UK network's termination charge, so account location, company HQ and sending number
+country are all irrelevant to it. There is no arbitrage here.
+
+The three things that look like they'd get around it are each worse:
+
+1. **Sending from a US long code to UK/EU numbers.** Cross-border long code sending is
+   restricted by providers (Twilio documents e.g. Australian numbers being unable to
+   long-code to the US), short codes are domestic-only, deliverability suffers, and the
+   recipient sees a `+1` number that reads as spam and can't usefully be replied to.
+2. **Alphanumeric sender IDs — this one is decisive, and it runs backwards.**
+   Alphanumeric senders are **not supported in the US or Canada at all**; those markets
+   require 10DLC, toll-free or short codes. Alphanumeric is exactly the free, no-number
+   option that makes UK/EU sending good. So a US-centric provider setup is **worse
+   equipped for UK sending, not cheaper**.
+3. **Grey routes** — the actual "cheap international route" on offer in this market. They
+   bypass commercial A2P agreements by disguising A2P traffic as P2P to dodge termination
+   fees, and they cost MNOs ~$7.7bn a year (~$37bn cumulative 2020–24). Operators now run
+   SMS firewalls doing real-time traffic classification and spoofed-sender detection, so
+   the practical result is unreliable delivery, missing or fabricated DLRs, rewritten
+   sender IDs, and eventual cut-off. **Not viable for anything that sells reliability.**
+
+#### EU is worse than the UK, not better
+
+Western Europe is the most expensive SMS region in the world. Netherlands, Belgium and
+Germany can exceed **$0.09 per single-segment message**; Switzerland, France, Germany and
+the Netherlands top the table. The drivers are the same as the UK's — high carrier
+termination, fragmented markets, two or three dominant carriers per country. For contrast,
+the US, Canada, India and Brazil often sit under $0.02.
+
+Note the EU's intra-EU price cap (6c + VAT per SMS) is **consumer-only** — business/A2P
+traffic is explicitly excluded, so it doesn't help us.
+
+EU also adds per-country sender ID **pre-registration**: France requires it, Spain and
+Australia were added in 2026, and the list is longer. Unregistered traffic into those
+markets gets content-filtered rather than cleanly rejected, which is worse — it fails
+quietly.
+
+⚠️ **Unresolved:** sources disagree on whether the **UK** belongs on that mandatory
+pre-registration list. Ofcom declined to mandate registration and the MEF registry is
+voluntary (see onboarding friction below), but at least one provider's compliance guide
+lists the UK as pre-registration required. These are probably describing different layers
+— regulator versus individual carrier/aggregator practice — but **get a definitive answer
+from whichever provider we ship before writing it into the docs.**
+
+#### What this actually changes
+
+The cost problem is structural and geographic, and no routing trick touches it. That
+pushes in two directions:
+
+- **It makes BYO more right, not less.** Route quality and price to a given destination is
+  exactly the thing a customer should be able to choose, and exactly the thing we'd be
+  guessing at on their behalf.
+- **It gives `notify()` a genuinely useful job.** For expensive destinations, prefer push,
+  WhatsApp or email and fall back to SMS only when nothing else can reach the user. That
+  is real cost optimisation, and unlike sent.dm's live rate-card routing **we can do it in
+  a library**, because the channel ordering is a per-send policy decision rather than
+  something requiring live wholesale pricing. Worth designing into Phase 4's fallback
+  chain: order by cost-class, not just availability.
+
 ### Onboarding friction — is BYO actually "get a token and go"?
 
 The fair worry about bring-your-own-provider is that a developer doesn't know which
@@ -700,7 +764,11 @@ Thin once the channels exist. A fan-out over the per-channel resolvers reusing
 failure must not lose the email. Two modes:
 
 - **fan-out** (default): every channel in `to` gets it, results keyed by channel
-- **fallback chain** (`channels: [...]`): first success wins, for OTPs and alerts
+- **fallback chain** (`channels: [...]`): first success wins, for OTPs and alerts.
+  **Order by cost-class, not just availability** — SMS to Western Europe can be 100×
+  the cost of a push notification carrying the same words, so "push, then WhatsApp, then
+  SMS" is a real optimisation rather than a preference. This is the one piece of
+  cost-aware routing a library can honestly do (see the destination-pricing section).
 
 Shares `subject` / `message` / `body` across channels, with per-channel overrides for the
 cases where the copy genuinely differs (SMS is 160 chars; email isn't).
