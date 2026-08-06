@@ -341,10 +341,32 @@ subscription store and an API around it — surface area neither other channel n
 
 ### APNs (iOS)
 
-- HTTP/2 to `api.push.apple.com`. **Node's `fetch` won't do HTTP/2** — needs `node:http2`,
-  which does not exist on Workers. Either route APNs through FCM (Firebase proxies it), or
-  accept that the APNs provider is Node-only. Worth deciding before writing it.
-- Token auth: ES256 JWT signed with the `.p8` key, refreshed hourly.
+- `POST https://api.push.apple.com/3/device/{token}`. APNs is HTTP/2-only and drops the
+  connection outright on HTTP/1.1.
+- **This is not the blocker it first looks like.** APNs needs plain unary
+  request/response over HTTP/2, not bidirectional streaming, and both target runtimes
+  negotiate that via ALPN already:
+  - **Workers:** outbound `fetch()` speaks HTTP/2 to origins that require it, and APNs
+    works in deployed Workers today. `@fivesheepco/cloudflare-apns2` is a zero-dependency
+    Workers-native client and a good reference for the request shape.
+  - **Node:** undici's `allowH2` now defaults to `true` ("Enables HTTP/2 support when the
+    server assigns it a higher priority through ALPN negotiation"), so global `fetch`
+    should negotiate h2 with APNs. **Verify empirically on the target Node version
+    before relying on it** — the default flipped from `false` at some point and the
+    global dispatcher's inheritance of it is worth one throwaway script. Fallback if it
+    doesn't hold: `node:http2` behind a runtime check, or proxy through FCM.
+- **Known gap: local development.** `wrangler dev` / workerd on macOS fails APNs requests
+  while production succeeds — [workerd#4841](https://github.com/cloudflare/workerd/issues/4841),
+  open since Aug 2025, no Cloudflare response. Doesn't block shipping, but it means the
+  dev-inbox interception has to cover push properly, because a developer can't smoke-test
+  APNs locally on a Mac.
+- Token auth: ES256 JWT signed with the `.p8` key, refreshed hourly. WebCrypto does ES256,
+  so no dependency on either runtime.
+
+**Not our issue:** [workerd#6455](https://github.com/cloudflare/workerd/issues/6455) asks
+for HTTP/2 *bidirectional streaming* (gRPC) in Workers. That's a different capability —
+unary HTTP/2 already works, which is all APNs needs. Only relevant if postboi ever wants
+a gRPC transport.
 
 ### The subscription store
 
@@ -352,7 +374,7 @@ subscription store and an API around it — surface area neither other channel n
 (simplest, punts the problem), or the Postboi provider grows a `push.subscriptions`
 namespace next to `contacts`. Start with raw tokens; the namespace is Phase 2-shaped work.
 
-**Effort: 1–2 weeks**, most of it Web Push encryption and the APNs HTTP/2 question.
+**Effort: 1–2 weeks**, most of it Web Push encryption and the subscription store.
 
 ---
 
@@ -397,9 +419,24 @@ Cheap, high value-per-line, all straight `Transport` subclasses with no new conc
 | A dev send reaches a real handset | Dev-inbox interception is not optional for SMS. Same precedence as email: inbox outranks a credentialled provider |
 | Leaked token → real money | Phase 2 only. Rate limits are launch-blocking, unlike for email |
 | The library sprawls | Per-channel subdirectories from the start (decision 4) |
-| APNs needs HTTP/2 | Decide early: FCM-proxied, or Node-only provider |
+| APNs can't be smoke-tested locally on macOS | workerd#4841 — production is fine. Make the dev inbox cover push properly |
 
 ---
+
+## Upstream things to track
+
+None of these block shipping — they're the "has this got better yet?" list to re-check
+when a phase starts.
+
+| What | Where | Why we care |
+| --- | --- | --- |
+| APNs over `fetch()` fails in local workerd on macOS (works in production) | [cloudflare/workerd#4841](https://github.com/cloudflare/workerd/issues/4841) — open, Aug 2025, no CF response | Closing it means push can be smoke-tested locally. Until then the dev inbox is the only local path |
+| HTTP/2 bidirectional streaming (gRPC) in Workers | [cloudflare/workerd#6455](https://github.com/cloudflare/workerd/issues/6455) — open, Mar 2026, unlabelled | **Not needed for APNs.** Only if postboi ever wants a gRPC transport |
+| undici `allowH2` default | [nodejs/undici](https://github.com/nodejs/undici) `docs/docs/api/Client.md` | Currently `true`. If it ever flips back, Node-side APNs needs a `node:http2` fallback |
+| Workers runtime changes generally | [Workers changelog](https://developers.cloudflare.com/workers/platform/changelog/) | Protocol and API support moves without issue-tracker noise |
+
+Watching the two workerd issues on GitHub is enough — neither has CF engagement yet, so a
+notification on either is real signal.
 
 ## Effort summary
 
@@ -408,7 +445,7 @@ Cheap, high value-per-line, all straight `Transport` subclasses with no new conc
 | 0 | `Transport` split, generic hooks, `aws.ts` | 1–2 days | decision 2 |
 | 1 | SMS, BYO providers | ~1 week | Phase 0, decisions 3 & 4 |
 | 2 | SMS on the Postboi provider | ~1 week code | carrier + 10DLC + STOP handling |
-| 3 | Push (Web Push, FCM, APNs) | 1–2 weeks | APNs HTTP/2 decision |
+| 3 | Push (Web Push, FCM, APNs) | 1–2 weeks | — |
 | 4 | `notify()` | ~2 days | Phases 1 & 3 |
 | 5 | Chat webhooks, WhatsApp, voice, fax | hours each | Phase 0 |
 
