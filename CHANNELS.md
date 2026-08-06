@@ -466,6 +466,71 @@ exactly postboi's audience.
    Prepaid caps the blast radius structurally rather than relying on detection. Pair it
    with country allowlisting by default, since IRSF targets expensive destinations.
 
+### If we became the SMS provider ourselves, what could we get per message?
+
+**UK answer: ~2.0–2.2p at absolute best, ~2.4–2.6p realistically — against 2.8p a
+developer pays PureSMS today with no commitment.** There is a hard regulated-ish floor and
+it is most of the retail price.
+
+#### The floor is the MNO termination fee, and it's now fixed until 2028
+
+UK mobile networks charge a **termination fee** to deliver each A2P message. That is paid
+to the terminating operator, so no amount of scale competes it away — it is not aggregator
+margin.
+
+- Wholesale A2P termination rose **15–75% since 2021** (some cases ~70%), which triggered
+  an Ofcom market review.
+- Ofcom's **March 2025 consultation proposed a cap of 1.96p per SMS** — their own
+  cost-based view of a fair rate.
+- Ofcom then **accepted voluntary commitments instead of formal regulation** (statement
+  Oct/Nov 2025), from **BT/EE, Sky, Virgin Media O2 and VodafoneThree** — over **90% of
+  A2P SMS sold to aggregators**. They run **1 Jan 2026 → 31 Dec 2028** and cap the maximum
+  standard price, limit rises to once per 12 months, and require 60 days' notice (up from
+  30) plus pre-notification to Ofcom.
+- **The agreed maximum prices are redacted.** Market evidence puts the range at roughly
+  **2.00p–2.80p** across operators.
+
+So the floor is ~2.0–2.8p, and **PureSMS at 2.8p and Esendex from 2.4p are already selling
+at or very near termination cost.** There is almost nothing between their retail price and
+what the networks charge them.
+
+#### The three routes down, and where each lands
+
+| Route | Realistic cost/msg | What it costs to get there |
+| --- | --- | --- |
+| Resell a CPaaS (what Phase 1 users already do) | 2.8p–4.3p | Nothing. And no better than our own customers get |
+| Wholesale aggregator with volume commitment | ~2.2–2.6p | Minimum monthly commitments — infrastructure platforms quote **2M SMS/month**, or ~**800k/month** for "micro aggregator" status |
+| Direct MNO SMPP connections | ~2.0–2.8p (the termination rate itself) | Four separate commercial relationships (BT/EE, VMO2, VodafoneThree, Sky), SMPP infrastructure, credit-worthy counterparty status, and enough volume for them to take the meeting |
+
+#### Why that doesn't make a business
+
+Best case is **~0.6–0.8p of gross margin per message** (2.0–2.2p cost against 2.8p that a
+developer can already get themselves), so **~25% gross at the very best** — before
+compliance, fraud, and 24/7 operations.
+
+The volume commitment is the killer. At the ~800k/month micro-aggregator floor we'd be
+committing to roughly **£22k/month of traffic before having a single customer**, to earn
+~£5.6k/month of gross profit if we filled it completely.
+
+Set against email, where SES costs $0.0001 and the app's tiers sell at ~$0.0004–0.0005 for
+**60–75% margins, with no minimum commitment and no carrier infrastructure**, this is a
+categorically worse business.
+
+#### Two things that could change the answer
+
+- **The US is a much better market for this than the UK.** US wholesale is ~$0.008 all-in
+  against ~$0.012 Twilio retail — a genuine ~1.5× spread to capture, because US termination
+  surcharges ($0.0035–0.0045) are a far smaller share of the retail price than UK
+  termination is. If hosted SMS is ever worth doing, it's a US play. We are, ironically,
+  based in the wrong country for it.
+- **The commitments expire 31 December 2028.** Rates could move after that, in either
+  direction. Worth a diary note rather than a plan.
+
+**Bottom line: UK SMS is commodity pass-through with a regulated floor. The margin lives in
+the platform above the transport, not in the transport.** If we ever ship hosted SMS, price
+it as convenience bundled alongside email — never as a margin business — and be honest in
+the docs that BYO is cheaper.
+
 ### Onboarding friction — is BYO actually "get a token and go"?
 
 The fair worry about bring-your-own-provider is that a developer doesn't know which
@@ -761,6 +826,7 @@ when a phase starts.
 | HTTP/2 bidirectional streaming (gRPC) in Workers | [cloudflare/workerd#6455](https://github.com/cloudflare/workerd/issues/6455) — open, Mar 2026, unlabelled | **Not needed for APNs.** Only if postboi ever wants a gRPC transport |
 | undici `allowH2` default | [nodejs/undici](https://github.com/nodejs/undici) `docs/docs/api/Client.md` | Currently `true`. If it ever flips back, Node-side APNs needs a `node:http2` fallback |
 | Workers runtime changes generally | [Workers changelog](https://developers.cloudflare.com/workers/platform/changelog/) | Protocol and API support moves without issue-tracker noise |
+| UK A2P SMS termination rates | [Ofcom A2P SMS termination market](https://www.ofcom.org.uk/phones-and-broadband/mobile-phones/a2p-sms-termination-market) | The MNO commitments expire **31 Dec 2028**. They set the floor under every UK SMS price, ours included |
 
 Watching the two workerd issues on GitHub is enough — neither has CF engagement yet, so a
 notification on either is real signal.
