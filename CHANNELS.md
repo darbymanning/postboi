@@ -8,6 +8,17 @@ channel work — read it before starting a phase, and update it when a decision 
 
 ---
 
+## Decided
+
+- **This is a pivot, not a side feature.** Postboi becomes a multi-channel messaging
+  library that happens to have started with email — not an email library with extras.
+  That settles the positioning question and reorders the work: the channel abstraction is
+  the product, so `Transport` (Phase 0) is load-bearing rather than tidy-up.
+- **Email stays the anchor.** It's the channel we're best at, the one the closest
+  comparable doesn't have at all, and the one that needs no approval process to use.
+
+---
+
 ## The target API
 
 ```ts
@@ -40,6 +51,46 @@ await notify({ to: { push: token, sms: "+447788223344" }, channels: ["push", "sm
 Every one of these keeps the properties `mail()` already has: zero-config resolution from
 the environment, dev-inbox interception, lifecycle hooks, opt-in retries, normalized
 errors.
+
+---
+
+## Positioning
+
+The closest comparable is **[sent.dm](https://www.sent.dm/)** — "one API for SMS,
+WhatsApp and RCS", with channel-availability detection, automatic fallback and
+cost-optimised routing. Worth being precise about where we differ, because it decides
+what's worth building.
+
+**Where postboi is genuinely different:**
+
+- **Email is first-class. sent.dm has none.** SMS + WhatsApp + RCS is a messaging product;
+  email + SMS + push + chat in one call is a *notifications* product. That's the wedge —
+  most apps need "tell this user something" across both worlds, and today that means two
+  vendors.
+- **Bring-your-own providers.** sent.dm is hosted-only at $0.015/contact/month plus carrier
+  fees. Postboi runs in your process against your own Twilio/Resend/SES keys, with no
+  per-contact tax and no lock-in. The hosted Postboi provider is an option, not the
+  product.
+- **It's a library, not a service.** Hooks, the dev inbox, zero-config env resolution,
+  and it runs on Workers. None of that is available from a black-box API.
+
+**Where they're ahead, and what it would take to match:**
+
+- **Channel availability detection** ("can this contact receive WhatsApp?") needs a
+  hosted backend with per-contact state. Library-side, we can't know.
+- **Cost-optimised routing** needs live per-destination rate cards. Same constraint.
+- **Delivery profiles / identity resolution** — their contact object stores channel
+  preferences, availability, and last-contacted channel.
+
+That last one is closer than it looks: the Postboi provider **already has `contacts`**
+(`postboi_provider.ts:550`) — one contact per address, with `data` and list memberships.
+Extending a contact to carry `phone`, `whatsapp`, and push tokens turns it into a delivery
+profile, and `notify({ to: contact })` resolves channels from it. That's the natural home
+for identity resolution, and it's Phase 2-shaped (hosted) work rather than library work.
+
+**The honest read:** availability detection and cost routing are hosted-service features
+we should not try to fake in a library. Fan-out and fallback (Phase 4) we can do locally
+and well. Email + push is territory sent.dm isn't in at all.
 
 ---
 
@@ -164,11 +215,12 @@ These are the ones that change the shape of the work. They need answering, not a
    (`exports.test.ts:11`) to handle the nesting. Email files stay put — moving them churns
    every import for no benefit.
 
-5. **Is postboi still "an email library"?**
-   README, docs, the site's tagline ("Send email from anywhere with zero configuration",
-   `src/lib/config/navigation.ts:34`) and the domain all say email. `sms()` is the point
-   where that stops being true. Positioning work, not engineering, but it blocks the
-   release announcement rather than the code.
+5. ~~**Is postboi still "an email library"?**~~ **Decided: no** — see Decided, above.
+   What that leaves is mechanical, and worth doing in one pass rather than drifting:
+   README opener, the site tagline ("Send email from anywhere with zero configuration",
+   `src/lib/config/navigation.ts:34`), the `docs` section description, `package.json`
+   `keywords` (currently just `["svelte"]`), the shipped agent skill in `skills/`, and
+   `llms.txt`. The domain and package name stay — `postboi` was never literally "mail".
 
 ---
 
@@ -390,22 +442,97 @@ failure must not lose the email. Two modes:
 Shares `subject` / `message` / `body` across channels, with per-channel overrides for the
 cases where the copy genuinely differs (SMS is 160 chars; email isn't).
 
+**Design for template-only channels up front**, even though WhatsApp lands in Phase 6.
+Some channels cannot accept free-form text at arbitrary times (see the 24-hour window
+there), so `notify()` needs either a per-channel template mapping or a rule that a
+channel refusing free-form content triggers the fallback rather than an error. Retrofitting
+that into a shipped `notify()` is far worse than allowing for it now.
+
 **Effort: ~2 days.**
 
 ---
 
-## Phase 5 — the other channels
+## Phase 5 — chat channels (no approval needed)
 
 Cheap, high value-per-line, all straight `Transport` subclasses with no new concepts:
 
 - **Slack / Discord / Teams incoming webhooks** — one POST each, no auth beyond the URL.
   A couple of hours apiece and arguably the best return in this whole document.
-- **Telegram** — bot API, one POST.
-- **WhatsApp Business** — via Twilio (reuses the Twilio provider) or Meta directly.
-  Template pre-approval is the real cost, same shape as 10DLC.
-- **Voice / TTS** — a small extension of the Twilio and Vonage providers.
-- **Fax** — genuinely still exists. Twilio killed theirs in 2021, but Documo and Phaxio
-  are plain REST. ~80 lines, and mostly worth it for the README line.
+- **Telegram** — `POST https://api.telegram.org/bot{token}/sendMessage` with
+  `{ chat_id, text }`. No approval, no registration, genuinely trivial.
+  **But:** the recipient must have started a chat with your bot first, and you address
+  them by `chat_id`, not by anything you can know in advance. Same registered-identity
+  problem as push tokens — plan it alongside the subscription store, not alongside SMS.
+
+**Effort: hours each.** These are the ones to ship first after Phase 1, because they cost
+almost nothing and make `notify()` immediately worth having.
+
+---
+
+## Phase 6 — WhatsApp and RCS (the approval-gated tier)
+
+These are the channels sent.dm leads with, and they are **not** the cheap tier. Both need
+brand approval before a single message sends, and WhatsApp imposes a constraint that
+reshapes the API rather than sitting behind it.
+
+### WhatsApp
+
+Two routes: Meta's Cloud API directly
+(`POST https://graph.facebook.com/v{version}/{phone_number_id}/messages`, Bearer token),
+or via Twilio using `whatsapp:+44…` prefixed `To`/`From` — which reuses the Phase 1 Twilio
+provider almost entirely and is the cheaper way in.
+
+**The constraint that matters:** WhatsApp has a **24-hour customer service window**, opened
+when the user last messaged or called you and reset by each new inbound message. Inside it
+you may send free-form text. **Outside it you may only send pre-approved templates** —
+free-form sends are rejected. Most transactional sends (order shipped, OTP, appointment
+reminder) happen outside any window, so *template-only is the normal case, not the edge*.
+
+This breaks the `message: string` shape that SMS, push and chat all share:
+
+```ts
+await whatsapp({
+	to: "+447788223344",
+	template: "order_shipped",           // pre-approved with Meta, by name
+	variables: { name: "Ada", tracking: "AB123" },
+})
+```
+
+So `PreparedWhatsApp` is template-shaped, and **`notify()` must handle "this channel can
+only send a template right now"** — either by requiring a template mapping per channel, or
+by treating a window-closed WhatsApp send as a fallback trigger rather than an error. Worth
+settling in Phase 4's design even though WhatsApp lands later.
+
+Pricing is per delivered template since July 2025, by category (marketing / utility /
+authentication) and recipient country. Utility templates and service messages inside the
+window are free today, but **that ends 1 October 2026** — relevant if we ever meter it.
+
+### RCS
+
+Now genuinely viable: Android throughout, plus iOS 18.1+ (2024), and Twilio took it
+generally available in August 2025 across all accounts via Programmable Messaging. Brand
+and sender verification is configured in the Twilio console rather than in code, so the
+provider itself is thin — it's the same Twilio messaging endpoint with an RCS-capable
+sender.
+
+The genuinely useful property is **automatic upgrade**: send to a number, get RCS where
+the handset supports it and SMS where it doesn't, with branding and read receipts on the
+RCS path. That's channel fallback the carrier does for us, and it's the cheapest possible
+version of what sent.dm sells.
+
+_Recommendation: RCS before WhatsApp._ It's a thinner provider, has no window semantics to
+model, and rides Phase 1's Twilio work.
+
+**Effort: ~3 days RCS, ~1 week WhatsApp**, both gated behind brand approval lead time.
+
+### Deliberately not doing
+
+- **iMessage** — Apple Messages for Business is approval-gated, enterprise-shaped, and has
+  no general send API. Revisit only if Apple opens it up.
+- **Voice / TTS** — a small extension of the Twilio and Vonage providers if ever wanted.
+  Not a notification channel in the sense the rest of this doc means.
+- **Fax** — genuinely still exists (Twilio killed theirs in 2021; Documo and Phaxio are
+  plain REST, ~80 lines). Worth it for the README line and nothing else. Not scheduled.
 
 ---
 
@@ -420,6 +547,8 @@ Cheap, high value-per-line, all straight `Transport` subclasses with no new conc
 | Leaked token → real money | Phase 2 only. Rate limits are launch-blocking, unlike for email |
 | The library sprawls | Per-channel subdirectories from the start (decision 4) |
 | APNs can't be smoke-tested locally on macOS | workerd#4841 — production is fine. Make the dev inbox cover push properly |
+| `notify()` ships assuming free-form text, then WhatsApp needs templates | Design the template path into Phase 4, build it in Phase 6 |
+| Chasing sent.dm's routing/availability features into a library that can't have them | Those need hosted per-contact state. Extend the existing `contacts` namespace if we want them, don't fake them client-side |
 
 ---
 
@@ -447,7 +576,13 @@ notification on either is real signal.
 | 2 | SMS on the Postboi provider | ~1 week code | carrier + 10DLC + STOP handling |
 | 3 | Push (Web Push, FCM, APNs) | 1–2 weeks | — |
 | 4 | `notify()` | ~2 days | Phases 1 & 3 |
-| 5 | Chat webhooks, WhatsApp, voice, fax | hours each | Phase 0 |
+| 5 | Slack / Discord / Teams / Telegram | hours each | Phase 0 |
+| 6 | RCS, then WhatsApp | ~3 days + ~1 week | brand approval lead time |
 
-Phases 0, 1, 4 and 5 are ~2.5 weeks and need no external dependency. That's the
-ship-it-first slice.
+Phases 0, 1, 4 and 5 are ~2.5 weeks and need no external dependency. **That's the
+ship-it-first slice** — and with email already in place it's a more complete notifications
+story than the SMS-only comparables on day one.
+
+Phase 5 is deliberately ordered before the flashier Phase 6: Slack and Telegram cost hours
+and make `notify()` immediately useful, while WhatsApp and RCS can't send anything until
+someone else approves a brand.
