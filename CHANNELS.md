@@ -289,8 +289,19 @@ normalisation, default merging and length/segment validation.
 | Plivo | `POST https://api.plivo.com/v1/Account/{auth_id}/Message/` | Basic | JSON. |
 | Telnyx | `POST https://api.telnyx.com/v2/messages` | Bearer | JSON. Cheapest per-segment of the group. |
 
-_Ship Twilio + Vonage + SNS in Phase 1._ The rest are copy-paste once the shape is proven
-and can land as follow-ups.
+Plus at least one **UK-native** provider, since UK traffic is 4–7× US and the UK-native
+route is ~1.5× cheaper than Twilio there (see economics). Both candidates are plain REST
+with GBP billing and free sender IDs:
+
+| Provider | Endpoint shape | Why |
+| --- | --- | --- |
+| PureSMS | REST + API key | Cheapest verified UK flat rate (2.8p), no tiers or minimum |
+| The SMS Works | REST + API key/JWT | Charges only for **delivered** messages — a genuinely better default, and a nice fit for our `BatchResult` reporting |
+
+_Ship Twilio + one UK-native + AWS SNS in Phase 1._ Twilio because it's the one everyone
+has heard of and every example uses; a UK-native because it's materially cheaper in our
+home market; SNS because it's nearly free once `aws.ts` exists (Phase 0 step 5). Vonage and
+the rest are copy-paste once the shape is proven and can land as follow-ups.
 
 ### Zero-config `sms()`
 
@@ -317,7 +328,13 @@ Adding a channel touches more than the provider file. This list is the actual co
       or per-channel lookups.
 - [ ] CLI: `bunx postboi init` gains a channel step; `DEFAULT_FIELDS`
       (`src/cli/providers.ts:19`) is email-shaped and needs an SMS set; `render_config`
-      (`src/cli/providers.ts:41`) writes an `sms:` block.
+      (`src/cli/providers.ts:41`) writes an `sms:` block. For SMS the CLI should also ask
+      for a **sender ID** and prompt by destination country — unlike email, the right
+      provider depends on where you're sending (see onboarding friction).
+- [ ] `registry.ts` entries for SMS want more than credentials: a `regions` hint, an
+      indicative price, and a one-line "why you'd pick this", so `init` can recommend
+      rather than just list. Prices go stale — carry a verified-on date and don't put
+      them in code where they'll rot silently.
 - [ ] `config.ts:27` — `PostboiConfig` gains `sms?: { provider, default, … }` and
       `push?: { … }`. `merge()` (`config.ts:84`) needs the new keys deep-merged.
 - [ ] Dev inbox: `SentMessage` (`mock.ts:16`) and `InboxMessage` (`inbox.ts:25`) are
@@ -353,9 +370,54 @@ Plus non-per-message costs: number rental ~$1.15/mo, 10DLC brand registration $4
 prop) to $48+ (standard), campaign registration ~$15 and ~$1.50–4/mo ongoing. Real cost
 lands 1.5–2× the headline rate.
 
-UK and international are materially higher — Twilio lists UK around $0.04/message retail.
-I could not pin a reliable UK *wholesale* figure; treat non-US rates as
-needing a real quote before any pricing decision.
+### The UK cost floor — and it's a different market
+
+**UK SMS costs roughly 4–7× US SMS.** This is the single most important number in this
+document for a UK-based business, and it inverts several conclusions.
+
+Outbound, per message segment:
+
+| Provider | Price | Notes |
+| --- | --- | --- |
+| **PureSMS** | **2.8p** + VAT | UK-native. Flat rate, no tiers, no minimum, no monthly, free sender ID |
+| **Esendex** | from 2.4p | UK-native, but plans start at £54/mo — effective rate depends on volume |
+| **The SMS Works** | from 3.1p + VAT (to ~4.4p) | UK-native. **Only charges for delivered messages** — refunds undelivered UK SMS, they claim ~8.9% average saving. Credits don't expire, no setup or monthly fee |
+| **Twilio** | **$0.056** (~4.3p) | Their own GB pricing page. Short code $0.0524, but the short code itself is **$1,667/mo** |
+| GoHighLevel (Twilio reseller) | $0.0524 | Corroborating datapoint, effective Aug 2025 |
+
+Number rental (Twilio UK): local $1.15/mo, mobile $2.50/mo, **alphanumeric sender ID free**.
+Inbound $0.0075.
+
+Caveats on these figures: UK prices are quoted **ex-VAT** (20%; reclaimable for VAT-registered
+businesses, so usually a wash, but it distorts headline comparisons). USD↔GBP conversions
+above are approximate and move with FX — which is itself a point, since Twilio, ClickSend
+and Plivo price UK traffic **in USD** and hand you the currency risk, where UK-native
+providers bill in GBP. I could not get hard UK figures out of ClickSend or Vonage (their
+pricing pages render rates client-side); those need a real quote.
+
+**So: US all-in ~$0.008 (~0.6p) versus UK ~2.4–4.4p.** UK-native beats Twilio UK by roughly
+1.5×, which is real but not the order-of-magnitude gap the US market has between wholesale
+and retail.
+
+#### What that does to the sent.dm comparison
+
+Because UK traffic is so much more expensive, their $0.015/contact/month platform fee is
+proportionally *less* punishing here — it's about half the cost of a single UK message,
+versus roughly double a US one. Rerunning both scenarios at ~3p/message:
+
+- **Transactional** — 100k users, 5k OTPs/month: sent.dm ~$1,690 (of which **$1,500 is
+  platform fee on dormant contacts**) vs BYO ~$190. Still **~9× cheaper**.
+- **Marketing** — 5k contacts × 20 messages: sent.dm ~$3,875 vs BYO ~$3,800. **~2%** — the
+  fee is basically noise at that frequency.
+
+The dormant-contact problem is what drives the whole gap, and it survives the move to UK
+pricing intact.
+
+#### And what it does to hosted SMS
+
+It makes it **worse**, not better. At a 2.8p UK COGS, pricing for a 40% margin means ~4.7p
+— when the developer could pay 2.8p going direct. That's ~70% above direct, against ~60%
+in the US. A UK-based hosted SMS product is the least attractive version of this business.
 
 ### sent.dm's model, converted to a per-message fee
 
@@ -403,6 +465,63 @@ exactly postboi's audience.
    lost $60M/yr). A leaked token on a post-paid account means **we** eat the bill.
    Prepaid caps the blast radius structurally rather than relying on detection. Pair it
    with country allowlisting by default, since IRSF targets expensive destinations.
+
+### Onboarding friction — is BYO actually "get a token and go"?
+
+The fair worry about bring-your-own-provider is that a developer doesn't know which
+providers exist, and that SMS setup is heavier than email's paste-an-API-key. **In the UK
+it very nearly is that easy. In the US it genuinely isn't** — and that distinction is
+geographic, not intrinsic.
+
+**UK — close to email-grade:**
+
+- **Alphanumeric sender IDs are free.** Twilio's own GB page lists them at no cost against
+  $2.50/mo for a mobile number. No number to buy.
+- **No mandatory registration.** Ofcom considered mandating A2P sender ID registration and
+  explicitly declined (Nov 2025 U-turn), on the grounds it would impose set-up and ongoing
+  costs on brands. The MEF **SMS SenderID Protection Registry is voluntary** and paid.
+- So the flow is: sign up → API key → choose an 11-character sender ID → send. **One extra
+  decision versus email**, and it's a string.
+
+Real UK caveats, all small:
+
+- 11 characters max, GSM charset, no spaces.
+- **One-way only.** Recipients cannot reply to an alphanumeric sender — most handsets show
+  "can't reply to this shortcode". Fine for OTPs and alerts; two-way needs a virtual mobile
+  number (~$2.50/mo).
+- Sender IDs must be **brand-recognisable**; generic ones get blocked.
+- Some networks and providers still ask you to pre-register the sender ID. Where they do
+  it's **1–14 days**, not weeks.
+- There's a confidential restricted-sender-ID list; hitting it means silent non-delivery.
+
+**US — this is where the friction lives:** 10DLC brand registration ($4 sole proprietor,
+$48+ standard), campaign registration (~$15 plus $1.50–4/mo), number rental ~$1.15/mo, and
+weeks of lead time before the first message sends.
+
+**The "I wouldn't know what providers exist" problem is ours to solve, and we already have
+the machinery.** `registry.ts` drives `bunx postboi init` with each provider's name, its
+credentials URL, and its required fields — that's exactly the discovery problem, already
+solved for email. For SMS we can go further and be *opinionated*, because unlike email the
+right answer depends on where you're sending:
+
+```
+$ bunx postboi init --sms
+? Where are you sending?  › United Kingdom
+? Provider:
+  ❯ PureSMS        2.8p/msg   UK-native · flat rate · no minimum
+    The SMS Works  3.1p/msg   UK-native · only charges for delivered
+    Twilio        ~4.3p/msg   global · the most examples and docs
+? Sender ID (11 chars, what recipients see)  › POSTBOI
+```
+
+That is better UX than either a bare library or a hosted black box: it names the tradeoff
+instead of hiding it. It also means **the registry should carry per-country guidance**, not
+just credentials — a `regions` hint and a one-line "why you'd pick this".
+
+Worth noting the market moves: **Textlocal was fully decommissioned in November 2025** and
+is no longer taking signups. Whatever we recommend needs a freshness check before shipping,
+and the docs page should carry a "verified as of" date rather than pretending prices are
+stable.
 
 **Recommendation: ship Phase 1, do not build Phase 2 until there is demand pull for it.**
 The pricing analysis says the hosted provider is a convenience product with thin margins
