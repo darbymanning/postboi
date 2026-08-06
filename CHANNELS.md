@@ -334,6 +334,83 @@ Adding a channel touches more than the provider file. This list is the actual co
 
 ---
 
+## SMS economics — can we be cheaper than sent.dm?
+
+Short answer: **Phase 1 already is, by a lot, and a hosted Postboi SMS provider never
+will be.** Those are two different findings and both change what's worth building.
+
+### The cost floor
+
+US 10DLC, per outbound segment, all-in (base + carrier surcharge):
+
+| Route | Base | Carrier surcharge | All-in |
+| --- | --- | --- | --- |
+| Telnyx | $0.004 | $0.0035 (AT&T) – $0.0045 (T-Mo/VZ) | **~$0.0075–0.0085** |
+| Plivo | ~$0.0055 | same | ~$0.009–0.010 |
+| Twilio | $0.0079–0.0083 | $0.003–0.005 | **~$0.011–0.013** |
+
+Plus non-per-message costs: number rental ~$1.15/mo, 10DLC brand registration $4 (sole
+prop) to $48+ (standard), campaign registration ~$15 and ~$1.50–4/mo ongoing. Real cost
+lands 1.5–2× the headline rate.
+
+UK and international are materially higher — Twilio lists UK around $0.04/message retail.
+I could not pin a reliable UK *wholesale* figure; treat non-US rates as
+needing a real quote before any pricing decision.
+
+### sent.dm's model, converted to a per-message fee
+
+They charge **$0.015 per contact per month, plus carrier fees**. The platform fee is a
+per-contact subscription, so its effective per-message cost depends entirely on how often
+you message a contact — and **dormant contacts cost the same as active ones**:
+
+| Messages per contact per month | Effective platform fee per message |
+| --- | --- |
+| 1 | $0.015 — roughly 2× the entire wholesale cost of the message |
+| 5 | $0.003 |
+| 20 | $0.00075 |
+| 0 (dormant) | $0.015, for nothing |
+
+Worked both ways:
+
+- **Transactional / OTP** — 100,000 registered users, 5,000 OTPs a month.
+  sent.dm: 100,000 × $0.015 = **$1,500/mo** platform fee, plus ~$40 of traffic.
+  BYO Telnyx through postboi: **~$40/mo total, $0 to us.** ~38× cheaper.
+- **Marketing** — 5,000 engaged contacts, 20 messages each (100,000 messages).
+  sent.dm: $75 platform + ~$800 traffic = ~$875. BYO: ~$800. Only ~9% cheaper.
+
+Their pricing is built for high-frequency sending to a small engaged list. It is
+punishing for transactional sending against a large mostly-dormant user base — which is
+exactly postboi's audience.
+
+### What that means
+
+1. **Phase 1 is the whole competitive answer, and it needs no backend.** Bring-your-own
+   provider means our platform fee is **$0** — not "cheaper", but *not charged at all*.
+   For any transactional use case that beats sent.dm by an order of magnitude, and it
+   ships in a week.
+2. **Hosted SMS cannot win on price.** Our COGS is roughly what a developer pays going
+   direct to Telnyx. Pricing for even a 40% margin lands ~$0.013–0.015/message — *above*
+   what they'd pay themselves. So hosted SMS would sell on **setup time** (skipping 10DLC
+   registration, which is weeks of genuine pain), unified billing alongside email, and
+   delivery profiles. Never on being cheap. If we can't tell that story, don't build it.
+3. **SMS cannot ride the email tier model.** SES costs $0.0001/email; SMS costs ~$0.008 —
+   **~80× higher COGS**. The Starter tier in the app's PLAN.md is £9/mo for 20,000 emails
+   (~$2 COGS, ~72% margin). Twenty thousand *SMS* would be ~$160 of COGS: that tier would
+   lose ~$150/month per customer. Hosted SMS must be metered separately.
+4. **Prepaid credits, not post-paid metering.** SMS pumping / AIT is the reason: OTPs are
+   ~89% of international A2P traffic and the primary attack surface, AIT is estimated at
+   5–40% of international A2P volume and cost businesses ~$1.6bn in 2023 (X reportedly
+   lost $60M/yr). A leaked token on a post-paid account means **we** eat the bill.
+   Prepaid caps the blast radius structurally rather than relying on detection. Pair it
+   with country allowlisting by default, since IRSF targets expensive destinations.
+
+**Recommendation: ship Phase 1, do not build Phase 2 until there is demand pull for it.**
+The pricing analysis says the hosted provider is a convenience product with thin margins
+and a fraud tail, competing against a free option we ship ourselves. That is a much worse
+business than hosted email, and the plan should stop assuming it follows automatically.
+
+---
+
 ## Phase 2 — SMS on the Postboi provider
 
 The long pole, and **almost none of it is code**.
@@ -362,7 +439,9 @@ Not code, and strictly blocking:
   someone else's money in a way a leaked email token is not. Rate limits and anomaly
   detection are launch-blocking here, unlike for email.
 
-_Recommendation: ship Phase 1 standalone, decide Phase 2 on demand._
+_Recommendation: ship Phase 1 standalone, decide Phase 2 on demand._ See the economics
+section above — the pricing case for this phase is weak, and it should not be treated as
+an automatic follow-on from Phase 1 the way hosted email was.
 
 **Effort: 1 week of code, gated behind weeks of compliance.**
 
@@ -573,7 +652,7 @@ notification on either is real signal.
 | --- | --- | --- | --- |
 | 0 | `Transport` split, generic hooks, `aws.ts` | 1–2 days | decision 2 |
 | 1 | SMS, BYO providers | ~1 week | Phase 0, decisions 3 & 4 |
-| 2 | SMS on the Postboi provider | ~1 week code | carrier + 10DLC + STOP handling |
+| 2 | SMS on the Postboi provider | ~1 week code | carrier + 10DLC + STOP handling — **and a business case; see economics** |
 | 3 | Push (Web Push, FCM, APNs) | 1–2 weeks | — |
 | 4 | `notify()` | ~2 days | Phases 1 & 3 |
 | 5 | Slack / Discord / Teams / Telegram | hours each | Phase 0 |
