@@ -39,6 +39,7 @@ describe("package exports", () => {
 			"workers_env.ts", // Cloudflare binding reader, used by env.ts
 			"mail.ts",
 			"captcha.ts", // spam protection, reached via the root export
+			"aws.ts", // SigV4 signing, used by ses.ts (and SNS later)
 			"errors.ts", // normalized errors, re-exported from the root
 			"transport.ts", // channel-agnostic provider base, re-exported from the root
 			"register.ts", // generated-types placeholder, reached via the root export
