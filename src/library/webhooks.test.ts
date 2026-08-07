@@ -261,6 +261,18 @@ describe("receive — postboi", () => {
 		expect(event.bounce).toEqual({ category: "hard", detail: "mailbox unavailable" })
 	})
 
+	it("turns inbound mail around: the sender is the address, the answered send the id", async () => {
+		const { request, secret } = await mock_request({ provider: "postboi", type: "received" })
+		const [event] = await receive(request, { provider: "postboi", secret })
+		expect(event).toMatchObject({
+			type: "received",
+			// Not the recipient — on inbound that would be your own sending address.
+			email: "someone@example.com",
+			message_id: "mock-message-id",
+		})
+		expect(event.body?.text).toBe("Thanks — that works for me.")
+	})
+
 	it("accepts a space/comma-separated secret list — any candidate verifies", async () => {
 		const { request, secret } = await mock_request({ provider: "postboi", type: "opened" })
 		// The real secret buried among decoys, both separators in play — rotation and

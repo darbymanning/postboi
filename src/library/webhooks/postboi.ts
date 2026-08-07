@@ -17,6 +17,10 @@ interface PostboiPayload {
 		subject?: string
 		detail?: string
 		bounce?: { category?: string; detail?: string }
+		/** `email.received` only: the reply's body, and the send it answers. */
+		html?: string
+		text?: string
+		in_reply_to?: string
 		user_agent?: string
 		ip?: string
 		url?: string
@@ -33,6 +37,7 @@ const TYPES: Record<string, WebhookEventType> = {
 	"email.opened": "opened",
 	"email.clicked": "clicked",
 	"email.failed": "failed",
+	"email.received": "received",
 }
 
 const BOUNCE_CATEGORIES = new Set(["hard", "soft", "suppressed"])
@@ -63,13 +68,19 @@ const adapter: WebhookAdapter = {
 			{
 				type,
 				provider: "postboi",
-				message_id: data.message_id,
-				email: data.to,
+				// An inbound reply is about the person who wrote it, and the id worth
+				// carrying is the send they answered — not the inbound message's own.
+				message_id: type === "received" ? data.in_reply_to : data.message_id,
+				email: type === "received" ? data.from : data.to,
 				timestamp: to_date(data.timestamp ?? payload.created_at),
 				subject: data.subject,
 				tags: data.tags,
 				url: data.url,
 				bounce: type === "bounced" ? bounce(data) : undefined,
+				body:
+					type === "received" && (data.html || data.text)
+						? { html: data.html, text: data.text }
+						: undefined,
 				...engagement(data.user_agent, data.ip),
 				raw: payload,
 			},
@@ -101,6 +112,12 @@ export const mock: AdapterModule["mock"] = async ({ type, secret }) => {
 		data.ip = "192.0.2.1"
 	}
 	if (type === "bounced") data.bounce = { category: "hard", detail: "mailbox unavailable" }
+	if (type === "received") {
+		data.from = "someone@example.com"
+		data.to = "brisk-otter-cove@send.postboi.email"
+		data.in_reply_to = "mock-message-id"
+		data.text = "Thanks — that works for me."
+	}
 
 	const body = JSON.stringify({ type: postboi_type, created_at: now, data })
 	const id = "whmsg_mock"
