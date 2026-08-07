@@ -346,15 +346,63 @@ marketing half.**
 
 | Take | Decline |
 | --- | --- |
-| Multi-channel broadcast | Client SDKs (iOS/Android/web/RN/Flutter) |
+| Multi-channel broadcast | **Native** mobile SDKs (Swift/Kotlin/Flutter) |
 | Delivery profiles + channel preferences | Visual journey / automation builders |
 | Scheduled and triggered sends (already exist) | A/B testing, behavioural analytics |
 | Delivery reporting per channel | In-app messaging |
+| **Web Push client helpers** (see below) | |
 
 The declined column is OneSignal's actual moat and a different company: different buyer
 (growth/marketing, not developers), different discipline (campaign UX, not delivery
-correctness), and a permanent multi-platform SDK maintenance burden postboi has never
-carried — it's server-side only today, bar the `Captcha` components.
+correctness).
+
+#### Client SDKs — where the cheap half ends and the cliff starts
+
+The instinct that this is "a bit of work but not loads" is **right for web and wrong for
+native**, and the split is sharp enough to be worth drawing precisely.
+
+**The cheap half — do it, in Phase 3.** postboi already ships client-side framework
+adapters and they are *tiny*: `react.ts` is 55 lines, `vue.ts` 62, `Captcha.svelte` 50,
+`Captcha.astro` 62. A Web Push helper is the same shape — request permission, register a
+service worker, call `pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`,
+POST the subscription to the developer's own endpoint. Plus a service-worker template for
+receiving. Call it **~2–3 days across all four frameworks**, shipping through the npm
+pipeline that already exists. This is close to *necessary* rather than optional, because
+the browser API is fiddly enough that everyone gets it slightly wrong.
+
+**The cliff — native mobile.** The initial write isn't the problem; the permanent costs are:
+
+- **A new release pipeline per platform.** Today the whole thing is one command: tag →
+  GitHub Action → npm via OIDC trusted publishing. Native means adding SPM *and* CocoaPods
+  *and* Maven Central (GPG signing, Sonatype staging, sync delays) *and* pub.dev — each with
+  its own credentials, cadence and failure modes. `scripts/release.sh` currently asserts a
+  single clean path; that assumption dies.
+- **Device testing.** Push registration can't be meaningfully unit-tested. It needs real
+  devices or simulators in CI, per platform.
+- **Annual OS churn.** iOS and Android change notification APIs every year, forever.
+- **A brutal support surface.** "Push doesn't arrive on Xiaomi" is a whole genre of bug
+  report, and answering it is a permanent tax.
+
+**The argument that actually settles it: we don't need native SDKs for mobile push to
+work.** The server side already talks to FCM and APNs. The app registers its token *however
+it likes* — Firebase SDK, Expo, whatever the mobile team already uses — and POSTs it to the
+developer's own backend, which hands it to `push()`. **Our SDK would be a convenience for
+the registration step, not a requirement.** Web Push is different: there the browser API is
+awkward enough that a helper earns its place.
+
+And consider the audience. postboi's adapters are Svelte, React, Vue, Astro — it is a
+**web developer's** library. A web developer's push need is Web Push. A team that *does*
+have a native app already made its push-SDK decision inside the mobile codebase long before
+they picked an email library.
+
+**Recommended order if mobile pull ever appears:**
+
+1. **Web Push helpers** — Phase 3, ~2–3 days, do it regardless
+2. **Expo / React Native** — JavaScript, so the *same npm pipeline*; serves our actual
+   audience. ~3–5 days. This is the right second step, not Swift.
+3. **Native Swift / Kotlin / Flutter** — 2–3 weeks *each* plus permanent maintenance and
+   new release infrastructure. Only with real demand, and understood as starting a second
+   product rather than extending this one.
 
 **Sequencing:** none of this competes with Phases 0–6, and it shouldn't start until the
 channels exist and `send()` has shipped — the audience layer is only interesting once
