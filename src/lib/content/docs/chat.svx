@@ -1,0 +1,102 @@
+---
+title: Chat
+name: Chat
+description: Post to Slack, Discord, Teams or Telegram with chat() — the same shape as mail() and sms().
+category: Channels
+---
+
+```typescript
+import { chat } from "postboi"
+
+await chat({ title: "Deploy", message: "Finished in 42s" })
+```
+
+The thinnest channel postboi has: no addresses to parse, no encoding to worry about, no
+delivery receipts. For Slack, Discord and Teams the destination lives inside the webhook
+URL, so there's usually nothing to pass but the message.
+
+## Setup
+
+Three of the four need only a URL. **Treat it as a secret** — anyone holding it can post to
+your channel.
+
+```bash
+# .env
+POSTBOI_CHAT_PROVIDER=slack
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/…
+```
+
+| Provider | Import | Credential |
+| --- | --- | --- |
+| Slack | `postboi/slack` | `SLACK_WEBHOOK_URL` |
+| Discord | `postboi/discord` | `DISCORD_WEBHOOK_URL` |
+| Microsoft Teams | `postboi/teams` | `TEAMS_WEBHOOK_URL` |
+| Telegram | `postboi/telegram` | `TELEGRAM_BOT_TOKEN` + a `chat_id` |
+
+## Microsoft Teams needs a Workflows URL
+
+⚠️ **Office 365 connectors were disabled in May 2026.** If you have an old
+`…office.com/webhook/…` URL, it no longer delivers — silently.
+
+The replacement is a **Power Automate Workflows** webhook: in Teams, pick a channel →
+**Workflows** → *Post to a channel when a webhook request is received*. Its URL lives on
+`logic.azure.com`. We post an [Adaptive Card](https://adaptivecards.io), which is
+Microsoft's current guidance — Workflows still accepts the legacy MessageCard shape for
+migration, but it drops interactive elements.
+
+## Telegram is a registered identity, not an address
+
+A bot **cannot message someone who hasn't started a chat with it first**, and you address
+people by `chat_id` — a number you capture from an inbound update, not something you can
+know in advance.
+
+```typescript
+import Telegram from "postboi/telegram"
+
+const bot = new Telegram({ bot_token: process.env.TELEGRAM_BOT_TOKEN })
+await bot.send({ to: "987654321", message: "Deploy finished" })
+```
+
+That's the same shape as a push subscription token, so it needs somewhere to be stored.
+Slack, Discord and Teams have no equivalent problem — the URL *is* the destination.
+
+## Titles
+
+`title` renders wherever the platform has somewhere to put one — bold mrkdwn on Slack, bold
+markdown on Discord, a heading text block on Teams:
+
+```typescript
+await chat({ title: "Build failed", message: "3 tests failing on main" })
+```
+
+## Development posts for real
+
+Unlike [SMS](/sms), chat is **not** intercepted in development. Posting to your own Slack
+channel while developing is normally the point: it costs nothing, reaches only your team,
+and you can delete it. The SMS interception exists because a stray text costs money and
+can't be recalled — neither applies here.
+
+With no provider configured at all, messages are logged instead.
+
+## Posting to more than one place
+
+`to` overrides the configured destination per message, so one provider can serve several
+channels:
+
+```typescript
+await chat([
+	{ to: process.env.SLACK_ALERTS, message: "🔴 Down" },
+	{ to: process.env.SLACK_DEPLOYS, message: "Deployed abc123" },
+])
+```
+
+Each gets its own result — one failure never loses the rest.
+
+## Limits worth knowing
+
+- **Discord** caps a message at 2000 characters. We truncate rather than let the whole post
+  be rejected, which matters when you're piping in a stack trace.
+- **Slack** replies with a plain-text reason on failure (`no_service`, `invalid_payload`)
+  rather than JSON, so that's what lands in `error.code`.
+- **Telegram** reports failures with `ok: false` and an **HTTP 200**, so don't check status
+  yourself — the normalized error already accounts for it.
