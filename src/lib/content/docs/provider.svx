@@ -50,8 +50,8 @@ the dashboard, no Cloudflare account, no keys. See [Spam protection](/spam).
 ## Your sending address
 
 Free-tier mail goes out from `you@send.postboi.email`, derived from your signup email.
-It's a real, deliverable address on our reputation-managed sending domain, but it isn't
-an inbox, so set `reply_to` if you want responses:
+It's a real, deliverable address on our reputation-managed sending domain. Set
+`reply_to` when you want responses to go straight to a particular inbox:
 
 ```ts
 await mail({
@@ -63,6 +63,40 @@ await mail({
 ```
 
 You can rename the address (once a day) from the [dashboard](https://postboi.email/dashboard).
+
+## Replies
+
+Your sending address is also a mailbox. Anything sent to it — including a reply to a
+message that never set `reply_to` — lands in **Messages → Received** in the dashboard,
+with the body, the sender, and a link back to the send it answers.
+
+That happens whether or not you configure anything. Two things you can add on top:
+
+- **Forward to your own inbox.** On the dashboard overview, under *Replies*, give an
+  address and click the verification link Cloudflare emails it. From then on replies
+  arrive in your normal inbox as well as the dashboard. (Replying from there goes out
+  from your own address, not your Postboi one.)
+- **Handle them in code.** Subscribe a [webhook](/webhooks) to `email.received` and
+  each reply arrives as a normalized `received` event — the basis for a support inbox,
+  a reply-to-confirm flow, or ticket creation.
+
+Plus-tags route to the same mailbox, so `you+order-1234@send.postboi.email` is a
+per-thread address you can hand out and match on the way back:
+
+```ts
+await mail({
+	to: "someone@example.com",
+	reply_to: "you+order-1234@send.postboi.email",
+	subject: "Your order",
+	body: "<p>Just reply to this email</p>",
+})
+```
+
+Inbound is free on every plan. Mail to an address nobody owns is rejected rather than
+swallowed, and inbound HTML is sanitised before it's stored.
+
+Custom domains are outbound-only for now: pointing your domain's MX at us would take
+over your real mail, so inbound stays on `send.postboi.email`.
 
 ## Sending from your own domain
 
