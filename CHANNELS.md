@@ -964,11 +964,14 @@ option — the session model is a Europe/APAC thing. A rare case where the UK/EU
 **Win 1 — long messages, and this is the big one.** SMS bills per 160-character segment;
 RCS Single bills the whole message as one. So message length is where RCS pulls away:
 
-| Message length | SMS (segments) | RCS Single | Saving |
+| Message length | SMS (segments) | RCS | Saving |
 | --- | --- | --- | --- |
-| 160 chars | 1× | ~1.25× | RCS ~25% *worse* |
-| 320 chars | 2× | ~1.25× | **~38% cheaper** |
-| 480 chars | 3× | ~1.25× | **~58% cheaper** |
+| ≤160 chars | 1× | ~1× (RCS **Basic**) | parity — no win either way |
+| 320 chars | 2× | ~1.25× (RCS **Single**) | **~38% cheaper** |
+| 480 chars | 3× | ~1.25× (RCS **Single**) | **~58% cheaper** |
+
+The crossover is **160 characters** — at or below it you're on RCS Basic at parity, above it
+RCS bills once where SMS starts multiplying.
 
 **Win 2 — delivery-only billing.** "RCS messages are charged only for delivered messages.
 This differs from SMS, which charges for requested messages." That's the same edge The SMS
@@ -997,6 +1000,67 @@ looks higher.
 message in the UK, cheap UK-native SMS still wins on raw price. RCS wins when the message
 is **long**, when the conversation is **two-way**, or when **branding and read receipts**
 are worth something — and it wins on UX unconditionally.
+
+#### Should `sms()` pick the rail automatically?
+
+Tempting, and half of it is a genuinely good idea. But two things constrain it hard.
+
+**Within one provider, this is already done for us.** Twilio "automatically upgrades SMS
+messages to RCS on enabled devices" — you add the RCS Sender to a Messaging Service and it
+routes by device capability with automatic SMS fallback, **no code or API change**. So
+building SMS-vs-RCS selection inside a single provider is reimplementing something the
+provider gives away.
+
+**Where we'd add real value is *cross-provider*, and nobody else will do it.** The UK
+arbitrage isn't SMS-vs-RCS, it's *cheap UK-native SMS vs Twilio RCS* — two different
+vendors, which no vendor will route between:
+
+| Length | PureSMS (2.8p/segment) | Twilio RCS (~4.3p base) | Winner |
+| --- | --- | --- | --- |
+| ≤160 | 2.8p | ~4.3p | **SMS**, by ~35% |
+| 320 | 5.6p | ~5.4p | wash |
+| 480 | 8.4p | ~5.4p | **RCS**, by ~36% |
+
+Note the crossover moves from ~160 characters (within one provider) to **~320 characters**
+(across providers), because RCS's base rate is higher. Any routing rule has to be computed
+from the *configured* providers' actual rates, not from a hardcoded constant.
+
+**The 24-hour conversational idea has a trap in it.** Two, actually:
+
+1. **It isn't a per-send decision.** The billing mode is set on the **agent at registration
+   time** — "you choose the billing model when you register your RCS agent… this setting
+   applies to all traffic from that agent." You can't switch to conversational for one
+   message. It's a provisioning choice, so it belongs in docs and `postboi init`, not in
+   routing logic.
+2. **A session needs the recipient to *reply*.** A conversation is only created when the
+   recipient responds within 24h. Five outbound messages with no reply create **no**
+   session — they bill individually. So "several messages in 24h ⇒ RCS wins" is only true
+   for genuinely two-way traffic, which is support threads, not notification bursts.
+
+**Other reasons to keep it opt-in:**
+
+- **Capability is unknown at send time.** You can't tell whether a number is RCS-reachable
+  until you try, so we can never *promise* the cheaper path — only prefer it.
+- **Double-delivery billing** means an "optimisation" can occasionally cost *more*.
+- **It changes what the recipient sees** — branding, read receipts, a different sender
+  identity. That's a product decision, not a transport detail, and it shouldn't happen
+  silently.
+- It needs RCS onboarding (~$700 + annual + monthly) to be worth anything at all.
+
+**Recommended design:**
+
+```ts
+// explicit and predictable — sends SMS
+await sms({ to, message })
+
+// opt in to rail selection across configured providers
+await sms({ to, message, upgrade: true })
+```
+
+Length-based selection is deterministic and computable at send time, so it's safe to
+automate. Conversational pricing isn't, so document it instead. And whichever rail wins,
+**the result must report which one actually delivered** — silent cost optimisation that
+nobody can audit is how you lose trust the first time a bill looks strange.
 
 _Recommendation: RCS before WhatsApp._ It's a thinner provider, has no window semantics to
 model, and rides Phase 1's Twilio work.
