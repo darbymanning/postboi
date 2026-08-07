@@ -12,6 +12,7 @@
  */
 import { PostboiError, type Channel } from "./errors.js"
 import { find_channel_provider } from "./registry.js"
+import { inbox_sink } from "./channel_inbox.js"
 import { load_config, type PostboiConfig } from "./config.js"
 import { ensure_env_loaded, is_development, read_env } from "./env.js"
 
@@ -61,7 +62,12 @@ export async function resolve_channel_provider<TProvider>(
 				console.warn(spec.dev_fallback_warning)
 			}
 			const Mock = await spec.loaders.mock()
-			return new Mock({ log: true, default: spec.env_defaults() })
+			// Captures land in the dev inbox when one is running, console otherwise.
+			return new Mock({
+				log: true,
+				sink: inbox_sink(spec.channel),
+				default: spec.env_defaults(),
+			})
 		}
 		throw new PostboiError({
 			provider: "postboi",

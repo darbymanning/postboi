@@ -19,7 +19,7 @@ export interface SentPush {
 
 /** Options for the push mock constructor. */
 type Options = PushProviderOptions &
-	MockRecorderOptions & {
+	MockRecorderOptions<SentPush> & {
 		/** When true, every `send` rejects as though the subscription had expired (410). */
 		expired?: boolean
 	}
@@ -48,10 +48,10 @@ export default class MockPush extends PushProvider<SendResponse> {
 	#expired: boolean
 	#recorder: MockRecorder<SentPush>
 
-	constructor({ fail, expired, log, ...options }: Options = {}) {
+	constructor({ fail, expired, log, sink, ...options }: Options = {}) {
 		super({ ...options, default: { to: "mock-token", ...options.default } })
 		this.#expired = expired ?? false
-		this.#recorder = new MockRecorder("push", { fail, log }, log_push)
+		this.#recorder = new MockRecorder("push", { fail, log, sink }, log_push)
 	}
 
 	/** Every notification captured by this instance, in send order. */

@@ -17,7 +17,7 @@ export interface SentChat {
 }
 
 /** Options for the chat mock constructor. */
-type Options = ChatProviderOptions & MockRecorderOptions
+type Options = ChatProviderOptions & MockRecorderOptions<SentChat>
 
 type SendResponse = { id: string; message: SentChat }
 
@@ -40,10 +40,10 @@ export default class MockChat extends ChatProvider<SendResponse> {
 	protected readonly provider = "mock"
 	#recorder: MockRecorder<SentChat>
 
-	constructor({ fail, log, ...options }: Options = {}) {
+	constructor({ fail, log, sink, ...options }: Options = {}) {
 		// A placeholder destination, so the mock is usable with no configuration at all.
 		super({ ...options, default: { to: "mock://chat", ...options.default } })
-		this.#recorder = new MockRecorder("chat", { fail, log }, log_chat)
+		this.#recorder = new MockRecorder("chat", { fail, log, sink }, log_chat)
 	}
 
 	/** Every message captured by this instance, in send order. */
