@@ -622,6 +622,69 @@ pushes in two directions:
   something requiring live wholesale pricing. Worth designing into Phase 4's fallback
   chain: order by cost-class, not just availability.
 
+### Can we escape the floor another way — buy SIMs and send from those?
+
+It's the obvious creative move, and worth taking seriously rather than waving off. The
+naive maths is seductive: a consumer UK SIM with "unlimited texts" is ~£10–15/month, so a
+rack of them behind an API looks like it drives the per-message cost toward zero. That is
+exactly the thought every grey-route operator has had. **It does not work, and as of 2026
+it is a crime.** Three independent walls, any one of which is fatal:
+
+**1. It's now a criminal offence in the UK.** The **Crime and Policing Act 2026** bans the
+possession or supply of a *SIM farm* — defined as a device able to use **five or more
+physical SIMs simultaneously or interchangeably** to make calls or send SMS. From **29
+October 2026** possession without "good reason or lawful authority" is an offence
+(unlimited fine in England & Wales). The good-reason defences are narrow and named:
+live broadcasting, freight GPS, on-train Wi-Fi, telecoms network testing. **"Sending SMS
+to your own customers" is explicitly *not* among them**, and there is **no licence to
+apply for** — the Act deliberately created no authorisation route. So the exact thing we'd
+build is the exact thing the Act criminalises, and we couldn't buy our way legal. The UK
+is the first country in Europe to go this far, but the direction of travel is one-way.
+
+**2. The networks detect and kill it — that's what the ban is enforcing.** MNOs run
+signalling-level detection (Infobip, Enghouse, Vox, Openmind and others sell it to them):
+they profile genuine subscriber behaviour and flag device-based origination by its
+signature — a SIM that *receives* almost nothing and *emits* a high volume of
+A2P-shaped messages, with no matching voice pattern. Detection means the SIM is blocked,
+so you're on a treadmill of buying and burning SIMs. This is the *hardware* version of the
+grey-route problem already documented above: unreliable delivery, no DLRs, eventual
+cut-off. Nothing that sells reliability can stand on it.
+
+**3. The bundles forbid it anyway.** Consumer "unlimited texts" carry fair-use / no-A2P /
+no-automated-sending terms precisely to stop this. Using them for A2P is a contract breach
+before it's anything else, so even the pre-ban version was building on sand.
+
+**Why the floor is unavoidable, stated plainly:** the termination fee is not a middleman's
+markup you can route around — **it is the price of the destination network agreeing to
+deliver your message to its subscriber.** Anything genuinely cheaper is, by construction,
+*not* the network agreeing to deliver — it's you trying to sneak past it, which is the
+grey route / SIM box, which is what §2 and §1 shut down. There is no legitimate below-floor
+lane for guaranteed A2P SMS. Full stop.
+
+**The genuinely creative answer is to stop paying the SMS rail at all.** The money is
+trapped on the SS7/termination rail; the exit is to send over *data* instead, where there
+is no per-message termination fee:
+
+- **RCS** — rides data, verified branding, and text-only RCS is ~the same headline rate as
+  SMS *but* falls back to SMS only for handsets that can't receive it. On a modern UK/EU
+  handset base that's a shrinking tail, so blended cost drops below all-SMS with *better*
+  UX. Carrier-run SMS fallback means we never lose the message.
+- **WhatsApp** — free inside the 24-hour service window, template-priced outside it; for
+  conversational/support flows the effective per-message cost collapses.
+- **Push + email** — effectively free (SES is $0.0001), and reach any user who's installed
+  the app or given an address.
+
+None of these is a way to send *SMS* more cheaply — that door is now bolted and alarmed.
+They're ways to deliver *the same message* without buying SMS at all. Which is the entire
+thesis of the multi-channel pivot, and the reason `send()`'s **cost-ordered fallback**
+(push → RCS → WhatsApp → SMS-as-last-resort) is the single most valuable thing in this
+plan for a UK/EU sender. We don't beat the SMS floor. We route around needing it.
+
+> **Bottom line for this question:** there is no legal, reliable way to be a below-floor UK
+> SMS provider — the SIM route is now a criminal offence with no business exemption, and
+> the floor exists because it *is* the delivery. Don't try to undercut SMS; make SMS the
+> fallback of last resort behind channels that don't ride the termination rail.
+
 ### Onboarding friction — is BYO actually "get a token and go"?
 
 The fair worry about bring-your-own-provider is that a developer doesn't know which
@@ -922,6 +985,7 @@ when a phase starts.
 | undici `allowH2` default | [nodejs/undici](https://github.com/nodejs/undici) `docs/docs/api/Client.md` | Currently `true`. If it ever flips back, Node-side APNs needs a `node:http2` fallback |
 | Workers runtime changes generally | [Workers changelog](https://developers.cloudflare.com/workers/platform/changelog/) | Protocol and API support moves without issue-tracker noise |
 | UK A2P SMS termination rates | [Ofcom A2P SMS termination market](https://www.ofcom.org.uk/phones-and-broadband/mobile-phones/a2p-sms-termination-market) | The MNO commitments expire **31 Dec 2028**. They set the floor under every UK SMS price, ours included |
+| UK SIM farm criminal offence | [Crime and Policing Act 2026 guidance](https://www.gov.uk/government/publications/possession-and-supply-of-sim-farms/crime-and-policing-act-2026-guidance-offences-relating-to-the-possession-and-supply-of-sim-farms-and-legitimate-uses-of-multiple-sim-devices-accessi) | 5+ SIMs = SIM farm; possession an offence from **29 Oct 2026**, no business-SMS exemption. Closes the "buy SIMs" route for good |
 
 Watching the two workerd issues on GitHub is enough — neither has CF engagement yet, so a
 notification on either is real signal.
