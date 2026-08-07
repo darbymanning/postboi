@@ -2,7 +2,7 @@ import { title, escape_html, escape_lines, html_to_text } from "./utils.js"
 import { config_loaded, get_config, merge_hooks } from "./config.js"
 import { check_captcha, merge_captcha, type CaptchaMode, type CaptchaOptions } from "./captcha.js"
 import { ensure_env_loaded } from "./env.js"
-import { PostboiError, SkipSendError, SpamError, type Channel } from "./errors.js"
+import { PostboiError, SpamError, type Channel } from "./errors.js"
 import {
 	Transport,
 	type BatchResult,
