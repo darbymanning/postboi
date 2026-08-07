@@ -71,6 +71,7 @@ export const contentSections: ContentSectionConfig[] = [
 					{ slug: "sms", name: "SMS" },
 					{ slug: "push", name: "Push" },
 					{ slug: "chat", name: "Chat" },
+					{ slug: "whatsapp", name: "WhatsApp" },
 				],
 			},
 			{

@@ -38,8 +38,8 @@ result.delivered // "chat" — sms was never attempted
 
 ## Cheapest first
 
-`channels: "cheapest"` uses the built-in order — **push → chat → email → sms** — narrowed to
-the channels you actually have an address for.
+`channels: "cheapest"` uses the built-in order — **push → chat → email → whatsapp → sms** —
+narrowed to the channels you actually have an address for.
 
 ```typescript
 await send({
@@ -80,11 +80,11 @@ leg broke.
 
 Shared fields map onto each channel's natural shape:
 
-| Field | email | sms | chat |
-| --- | --- | --- | --- |
-| `message` | `text` part | the body | the body |
-| `subject` | the subject | — | the title |
-| `body` | HTML body | — | — |
+| Field | email | sms | chat | push | whatsapp |
+| --- | --- | --- | --- | --- | --- |
+| `message` | `text` part | the body | the body | the body | the text |
+| `subject` | the subject | — | the title | the title | — |
+| `body` | HTML body | — | — | — | — |
 
 So the simplest useful call is one string:
 

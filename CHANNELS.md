@@ -3,9 +3,12 @@
 The plan for taking postboi from an email library to a multi-channel messaging library:
 SMS, push, RCS, WhatsApp and chat, behind one API.
 
-**Status: Phases 0, 1, 3, 4 and 5 shipped.** Phases 2 and 6 are unbuilt. This document is the source
-of truth for the channel work — read it before starting a phase, and update it when a
-decision changes. Reasoning that led to these conclusions lives in this file's git history.
+**Status: Phases 0, 1, 3, 4, 5 and 6 shipped** (Phase 6's WhatsApp half in code, its RCS
+half as documentation — see the phase for why that's the whole job). Phase 2 (hosted SMS)
+remains deliberately unbuilt. The four structural review follow-ups have also landed. This
+document is the source of truth for the channel work — read it before starting a phase, and
+update it when a decision changes. Reasoning that led to these conclusions lives in this
+file's git history.
 
 ---
 
@@ -747,7 +750,30 @@ hasn't started a chat with it — so it has the same storage problem as a push t
 
 ---
 
-## Phase 6 — WhatsApp and RCS (approval-gated)
+## Phase 6 — WhatsApp and RCS (approval-gated) ✅ **done**
+
+**Shipped.** `whatsapp()` with Twilio (`postboi/whatsapp-twilio`) and Meta's Cloud API
+(`postboi/whatsapp-meta`) plus a mock, template-first exactly as sketched below — the
+24-hour window surfaces as `code: "outside_window"` /
+`WhatsappProvider.is_outside_window()`, and `send()`'s fallback chain advances past it by
+construction, as Phase 4 promised. WhatsApp slots between email and SMS in the `"cheapest"`
+order. Development interception mirrors SMS (`dev: { whatsapp: false }` /
+`POSTBOI_WHATSAPP_DEV=send`), for the same money-and-handset reason. The mock simulates
+the window (`outside_window: true` fails free-form, delivers templates).
+
+Two deliberate deviations from the sketch:
+
+- The entry point takes `variables` with **named or numeric keys** — numeric maps to
+  Meta's positional `{{1}}` parameters, named to `parameter_name`. Twilio gets both as
+  `ContentVariables` JSON either way.
+- RCS shipped as **documentation, not code** — see below: within Twilio there is nothing
+  to build, and the honest place for "add an RCS sender to your Messaging Service" is the
+  SMS docs page, which is where it now lives. The `upgrade: true` cross-provider rail
+  selection idea stays unbuilt until real rate data exists to drive it (the pricing table
+  below is why a constant would be wrong).
+
+What still needs a human: brand/template approval on either platform, and real-device
+smoke tests once an approved sender exists — none of it reachable from code.
 
 ### RCS — do this one first
 
@@ -905,24 +931,25 @@ more than one channel to route between.
 
 ---
 
-## Review follow-ups (structure, not bugs)
+## Review follow-ups (structure, not bugs) ✅ **done**
 
 The first full code review confirmed and fixed twelve correctness bugs (see the
-`review.test.ts` regression suite). Three structural findings were deliberately deferred —
-real, corroborated, and none of them load-bearing:
+`review.test.ts` regression suite). Four structural findings were deferred at the time and
+have since **all landed**:
 
-- **One channel-keyed registry** instead of four parallel const arrays with four Meta/Key
-  types and four `find_*` functions. Touches the CLI, config typing and resolvers at once,
-  so it wants its own change.
-- **A shared mock base** for the four channel mocks, which currently duplicate the
-  fail/log/sent/last/clear scaffolding — becomes pressing when the dev inbox grows its
-  `kind`-discriminated message view.
-- **Per-origin VAPID JWT caching** in webpush — the JWT is valid 12 hours and subscriptions
-  cluster on a handful of push-service origins, so one signature could serve thousands of
-  sends. (FCM's token cache got this treatment already; VAPID signing is pure CPU, no
-  network, so the win is smaller.)
-- **`send()`'s four hand-synced channel enumerations** collapsed into one
-  `satisfies Record<Channel, …>` descriptor map, so a fifth channel can't half-register.
+- **One channel-keyed registry** — `CHANNEL_PROVIDERS` maps every `Channel` to its
+  provider list (`satisfies Record<Channel, …>`), and `find_channel_provider()` replaced
+  the per-channel `find` field on `ChannelResolution`. The per-channel arrays and `find_*`
+  functions remain as the public/CLI surface.
+- **A shared mock base** — `MockRecorder` (composition, not inheritance: each mock must
+  extend its channel's provider base, so there's no free slot in the hierarchy). The
+  WhatsApp mock got its implementation for free, which was the point.
+- **Per-origin VAPID JWT caching** in webpush — one ECDSA signature per push-service
+  origin per ~11 hours, refreshed an hour before the 12-hour expiry.
+- **`send()`'s hand-synced channel enumerations** collapsed into one
+  `satisfies Record<Channel, …>` descriptor map. Proven immediately: adding `"whatsapp"`
+  to `Channel` refused to compile until the registry, `send()` and the hooks union all
+  acknowledged the new channel.
 
 ## Upstream things to track
 
