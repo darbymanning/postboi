@@ -3,7 +3,7 @@
  */
 import type { BatchResult } from "../transport.js"
 import type { PushDefaults, PushOptions } from "./types.js"
-import type { PushProvider } from "./provider.js"
+import { PushProvider } from "./provider.js"
 import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
 import { read_env } from "../env.js"
 
@@ -60,3 +60,19 @@ export async function push(
 	if (Array.isArray(options)) return provider.send(options, batch)
 	return provider.send(options)
 }
+
+/**
+ * Did the push service say this target is dead? Expiring subscriptions are the normal
+ * steady state of push, and the right response is to delete your stored copy — not to
+ * retry, and not to alert. Hangs off `push` itself so the send and its routine failure
+ * check are one import.
+ *
+ * @example
+ * ```ts
+ * await push({ to: subscription, message: "hi" }).catch((error) => {
+ * 	if (push.expired(error)) forget_subscription()
+ * 	else throw error
+ * })
+ * ```
+ */
+push.expired = PushProvider.is_expired

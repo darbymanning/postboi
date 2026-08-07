@@ -96,6 +96,9 @@ export abstract class PushProvider<TResponse = unknown> extends Transport<TRespo
 	 * Worth a first-class helper rather than leaving callers to match on status codes:
 	 * subscriptions expire constantly and normally, and the correct response is to delete
 	 * your stored copy — not to retry, and not to alert.
+	 *
+	 * Zero-config callers have this as `push.expired(error)`, no extra import; the static
+	 * exists for code holding a provider instance.
 	 */
 	static is_expired(error: unknown): boolean {
 		return error instanceof PostboiError && (error.status === 404 || error.status === 410)

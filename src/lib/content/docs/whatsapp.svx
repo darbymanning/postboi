@@ -45,20 +45,22 @@ await whatsapp({
 })
 ```
 
-A free-form send outside the window fails with `code: "outside_window"`, and there's a
-first-class check for it:
+A free-form send outside the window fails with `code: "outside_window"`, and the check
+hangs off `whatsapp` itself — no extra import:
 
 ```typescript
-import { WhatsappProvider } from "postboi"
+import { whatsapp } from "postboi"
 
 try {
 	await whatsapp({ to, message })
 } catch (error) {
-	if (WhatsappProvider.is_outside_window(error)) {
-		await whatsapp({ to, template: "re_engage", variables: { name } })
-	}
+	if (!whatsapp.closed(error)) throw error
+	await whatsapp({ to, template: "re_engage", variables: { name } })
 }
 ```
+
+(Holding a provider instance directly? The same check is
+`WhatsappProvider.is_outside_window()`.)
 
 Exactly one of `message` or `template` per send — passing both is rejected rather than
 guessed at, because a template's content is fixed at approval time.

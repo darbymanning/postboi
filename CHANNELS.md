@@ -664,7 +664,7 @@ never fires — so a round-trip test would have proven nothing about whether the
 were right. `encrypt_payload` takes an optional salt and key pair purely so the published
 vector can be reproduced.
 
-`PushProvider.is_expired()` is a first-class check rather than a status code to match by
+`push.expired()` (also `PushProvider.is_expired()`) is a first-class check rather than a status code to match by
 hand, because subscriptions expire constantly and normally, and the correct response is to
 delete your stored copy — not retry, not alert.
 
@@ -755,7 +755,7 @@ hasn't started a chat with it — so it has the same storage problem as a push t
 **Shipped.** `whatsapp()` with Twilio (`postboi/whatsapp-twilio`) and Meta's Cloud API
 (`postboi/whatsapp-meta`) plus a mock, template-first exactly as sketched below — the
 24-hour window surfaces as `code: "outside_window"` /
-`WhatsappProvider.is_outside_window()`, and `send()`'s fallback chain advances past it by
+`whatsapp.closed()` (also `WhatsappProvider.is_outside_window()`), and `send()`'s fallback chain advances past it by
 construction, as Phase 4 promised. WhatsApp slots between email and SMS in the `"cheapest"`
 order. Development interception mirrors SMS (`dev: { whatsapp: false }` /
 `POSTBOI_WHATSAPP_DEV=send`), for the same money-and-handset reason. The mock simulates

@@ -147,6 +147,9 @@ export abstract class WhatsappProvider<TResponse = unknown> extends Transport<
 	 * Did the platform refuse a free-form message because the 24-hour customer service
 	 * window is closed? The routine failure of WhatsApp, and the signal to send a
 	 * template instead — or to let a `send()` fallback chain advance to the next channel.
+	 *
+	 * Zero-config callers have this as `whatsapp.closed(error)`, no extra import; the
+	 * static exists for code holding a provider instance.
 	 */
 	static is_outside_window(error: unknown): boolean {
 		return error instanceof PostboiError && error.code === "outside_window"

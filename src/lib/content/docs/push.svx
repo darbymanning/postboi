@@ -114,27 +114,29 @@ open your app for months. The push service answers **410 Gone** and the right re
 
 ```typescript
 import { push } from "postboi"
-import { PushProvider } from "postboi"
 
 try {
 	await push({ to: subscription, message: "…" })
 } catch (error) {
-	if (PushProvider.is_expired(error)) await forget_subscription(subscription.endpoint)
+	if (push.expired(error)) await forget_subscription(subscription.endpoint)
 	else throw error
 }
 ```
 
+The check hangs off `push` itself, so the send and its routine failure are one import.
 Sending to many at once, the same check applies per result:
 
 ```typescript
 const results = await push(subscriptions.map((to) => ({ to, message: "…" })))
 
 for (const [i, result] of results.entries()) {
-	if (!result.ok && PushProvider.is_expired(result.error)) {
+	if (!result.ok && push.expired(result.error)) {
 		await forget_subscription(subscriptions[i].endpoint)
 	}
 }
 ```
+
+(Holding a provider instance directly? The same check is `PushProvider.is_expired()`.)
 
 ## Payload size
 
