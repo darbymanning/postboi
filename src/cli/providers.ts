@@ -5,15 +5,18 @@ export {
 	SMS_PROVIDERS,
 	CHAT_PROVIDERS,
 	PUSH_PROVIDERS,
+	WHATSAPP_PROVIDERS,
 	find_provider,
 	find_sms_provider,
 	find_chat_provider,
 	find_push_provider,
+	find_whatsapp_provider,
 	type ProviderMeta,
 	type ProviderField,
 	type SmsProviderMeta,
 	type ChatProviderMeta,
 	type PushProviderMeta,
+	type WhatsappProviderMeta,
 } from "../library/registry.js"
 import type { ProviderMeta, SmsProviderMeta } from "../library/registry.js"
 
@@ -70,12 +73,12 @@ export const SMS_DEFAULT_FIELDS: Array<{
  * `init --sms` / `--chat` / `--push` runs in a project with no config file yet.
  */
 export function render_channel_config(
-	channel: "sms" | "chat" | "push",
+	channel: "sms" | "chat" | "push" | "whatsapp",
 	provider: string,
 	defaults: Record<string, string>,
 	options: Record<string, string>
 ): string {
-	const fn = { sms: "sms()", chat: "chat()", push: "push()" }[channel]
+	const fn = { sms: "sms()", chat: "chat()", push: "push()", whatsapp: "whatsapp()" }[channel]
 	return `import { config } from "postboi"
 
 // Project-wide config, picked up automatically by ${fn}. Commit this — keep secrets in env.

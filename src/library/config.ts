@@ -21,10 +21,17 @@
  */
 import type { Defaults, Hooks } from "./index.js"
 import type { CaptchaOptions } from "./captcha.js"
-import type { ChatProviderKey, ProviderKey, PushProviderKey, SmsProviderKey } from "./registry.js"
+import type {
+	ChatProviderKey,
+	ProviderKey,
+	PushProviderKey,
+	SmsProviderKey,
+	WhatsappProviderKey,
+} from "./registry.js"
 import type { SmsDefaults } from "./sms/types.js"
 import type { ChatDefaults } from "./chat/types.js"
 import type { PushDefaults } from "./push/types.js"
+import type { WhatsappDefaults } from "./whatsapp/types.js"
 
 /** Everything you can configure globally via `postboi.config.ts` or {@link configure}. */
 export interface PostboiConfig {
@@ -86,6 +93,18 @@ export interface PostboiConfig {
 		/** Non-secret constructor options. Webhook URLs are secrets — keep them in env. */
 		options?: Record<string, string>
 	}
+	/**
+	 * WhatsApp channel settings for the zero-config `whatsapp()` — Twilio or Meta's Cloud
+	 * API. `POSTBOI_WHATSAPP_*` env vars win over anything here.
+	 */
+	whatsapp?: {
+		/** Provider key (`twilio`, `meta`). */
+		provider?: WhatsappProviderKey | "mock"
+		/** Default sender, recipient, country and template language. */
+		default?: WhatsappDefaults
+		/** Non-secret constructor options. Access tokens are secrets — keep them in env. */
+		options?: Record<string, string>
+	}
 	/** Push channel settings for the zero-config `push()` — Web Push and FCM. */
 	push?: {
 		/** Provider key (`webpush`, `fcm`). */
@@ -112,6 +131,12 @@ export interface PostboiConfig {
 		 * `POSTBOI_SMS_DEV=send`) when you genuinely need to test real delivery.
 		 */
 		sms?: boolean
+		/**
+		 * Capture WhatsApp messages in development instead of sending them. On by default,
+		 * for the same reason as SMS — real money, real handset, no recall. Set false (or
+		 * `POSTBOI_WHATSAPP_DEV=send`) to test real delivery.
+		 */
+		whatsapp?: boolean
 	}
 }
 
@@ -161,6 +186,11 @@ function merge(base: PostboiConfig, override: PostboiConfig): PostboiConfig {
 			...base.push,
 			...defined(override.push ?? {}),
 			default: { ...base.push?.default, ...defined(override.push?.default ?? {}) },
+		},
+		whatsapp: {
+			...base.whatsapp,
+			...defined(override.whatsapp ?? {}),
+			default: { ...base.whatsapp?.default, ...defined(override.whatsapp?.default ?? {}) },
 		},
 	}
 }

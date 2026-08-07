@@ -68,12 +68,15 @@ describe("package exports", () => {
 			"push/provider.ts", // the push base class, reached via each provider
 			"push/crypto.ts", // VAPID + aes128gcm, used by push/webpush.ts
 			"push/send.ts", // the zero-config push(), re-exported from the root
+			"whatsapp/types.ts", // pure types, re-exported from the root
+			"whatsapp/provider.ts", // the WhatsApp base class, reached via each provider
+			"whatsapp/send.ts", // the zero-config whatsapp(), re-exported from the root
 		])
 		const providers = [
 			...readdirSync(`${root}src/library`).filter(
 				(f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !internal.has(f)
 			),
-			...["sms", "chat", "push"].flatMap((dir) =>
+			...["sms", "chat", "push", "whatsapp"].flatMap((dir) =>
 				readdirSync(`${root}src/library/${dir}`)
 					.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
 					.map((f) => `${dir}/${f}`)

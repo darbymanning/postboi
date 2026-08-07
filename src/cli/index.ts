@@ -8,6 +8,7 @@ import {
 	SMS_PROVIDERS,
 	CHAT_PROVIDERS,
 	PUSH_PROVIDERS,
+	WHATSAPP_PROVIDERS,
 	SMS_DEFAULT_FIELDS,
 	render_channel_config,
 	type CliSmsProvider,
@@ -891,23 +892,29 @@ type ChannelProvider = {
 }
 
 /**
- * Chat and push onboarding.
+ * Chat, push and WhatsApp onboarding.
  *
- * Simpler than SMS: neither has destination-dependent pricing, so there's nothing to ask
- * before showing the provider list, and no defaults worth prompting for — a chat webhook
- * URL is the credential, and a push target is per-device rather than global.
+ * Simpler than SMS: none of these have destination-dependent pricing, so there's nothing
+ * to ask before showing the provider list, and few defaults worth prompting for — a chat
+ * webhook URL is the credential, and a push target is per-device rather than global.
  */
 async function channel_init(
 	prompts: Prompts,
 	files: Array<string>,
-	channel: "chat" | "push"
+	channel: "chat" | "push" | "whatsapp"
 ): Promise<void> {
-	// Widened to the shared shape: the two registries are separate const-narrowed tuples,
-	// and only the fields used here are common to both.
+	// Widened to the shared shape: the registries are separate const-narrowed tuples, and
+	// only the fields used here are common to them.
 	const registry: ReadonlyArray<ChannelProvider> =
-		channel === "chat" ? CHAT_PROVIDERS : PUSH_PROVIDERS
+		channel === "chat" ? CHAT_PROVIDERS : channel === "push" ? PUSH_PROVIDERS : WHATSAPP_PROVIDERS
 	const provider = await prompts.select<ChannelProvider>(
-		bold(channel === "chat" ? "Which chat platform?" : "Which push service?"),
+		bold(
+			channel === "chat"
+				? "Which chat platform?"
+				: channel === "push"
+					? "Which push service?"
+					: "WhatsApp via which provider?"
+		),
 		registry.map((p) => ({ label: p.name, value: p, hint: p.note }))
 	)
 
@@ -936,6 +943,22 @@ async function channel_init(
 		)
 		if (chat_id) config_defaults.to = chat_id
 	}
+	if (channel === "whatsapp") {
+		// Twilio addresses the sender by number; Meta's sender is the phone_number_id
+		// already collected above, so `from` would be dead config there.
+		if (provider.key === "twilio") {
+			const from = await prompts.ask(
+				`\nSender number ${dim("(optional — your WhatsApp-enabled number, e.g. +14155238886)")}`,
+				{ required: false }
+			)
+			if (from) config_defaults.from = from
+		}
+		const country = await prompts.ask(
+			`\nDefault country ${dim('(optional — resolves national numbers; an ISO code like "GB")')}`,
+			{ required: false }
+		)
+		if (country) config_defaults.country = country
+	}
 
 	const targets = await choose_env_targets(prompts, files)
 	write_env_values(targets, values)
@@ -950,7 +973,7 @@ async function channel_init(
 		console.log(
 			dim('import { chat } from "postboi"\n\nawait chat({ message: "Deploy finished" })') + "\n"
 		)
-	} else {
+	} else if (channel === "push") {
 		console.log(
 			dim('import { push } from "postboi"\n\nawait push({ to: subscription, message: "…" })') + "\n"
 		)
@@ -958,12 +981,24 @@ async function channel_init(
 		console.log(
 			dim("Subscribe in the browser with `subscribe_push()` from postboi/push-client first.") + "\n"
 		)
+	} else {
+		console.log(
+			dim(
+				'import { whatsapp } from "postboi"\n\nawait whatsapp({ to: "+447788223344", template: "…", variables: { name: "Ada" } })'
+			) + "\n"
+		)
+		// The constraint that shapes everything: free-form only works in-window.
+		console.log(
+			dim(
+				"Free-form `message` only delivers within 24h of the user's last reply — templates deliver anytime.\nIn development messages are logged, not sent — set POSTBOI_WHATSAPP_DEV=send for real delivery."
+			) + "\n"
+		)
 	}
 }
 
 /** Write (or show how to merge) a channel block of `postboi.config`. */
 function write_channel_config(
-	channel: "sms" | "chat" | "push",
+	channel: "sms" | "chat" | "push" | "whatsapp",
 	provider_key: string,
 	defaults: Record<string, string>,
 	options: Record<string, string>
@@ -986,7 +1021,7 @@ function write_channel_config(
 	console.log(`${green("✓")} wrote ${bold(file)}`)
 }
 
-async function init(channel?: "sms" | "chat" | "push"): Promise<void> {
+async function init(channel?: "sms" | "chat" | "push" | "whatsapp"): Promise<void> {
 	const prompts = create_prompts()
 	console.log()
 	console.log(banner())
@@ -997,7 +1032,7 @@ async function init(channel?: "sms" | "chat" | "push"): Promise<void> {
 	try {
 		if (channel === "sms") return await sms_init(prompts, files)
 		if (channel) return await channel_init(prompts, files, channel)
-		const mode = await prompts.select<"cloud" | "byo" | "sms" | "chat" | "push">(
+		const mode = await prompts.select<"cloud" | "byo" | "sms" | "chat" | "push" | "whatsapp">(
 			bold("What do you want to set up?"),
 			[
 				{
@@ -1025,11 +1060,17 @@ async function init(channel?: "sms" | "chat" | "push"): Promise<void> {
 					value: "chat",
 					hint: "Slack, Discord, Teams, Telegram",
 				},
+				{
+					label: "WhatsApp",
+					value: "whatsapp",
+					hint: "Twilio, Meta Cloud API",
+				},
 			]
 		)
 		if (mode === "cloud") await cloud_init(prompts, files)
 		else if (mode === "sms") await sms_init(prompts, files)
-		else if (mode === "chat" || mode === "push") await channel_init(prompts, files, mode)
+		else if (mode === "chat" || mode === "push" || mode === "whatsapp")
+			await channel_init(prompts, files, mode)
 		else await byo_init(prompts, files)
 	} finally {
 		prompts.close()
@@ -1040,7 +1081,9 @@ async function main(): Promise<void> {
 	const command = argv[2]
 	if (command === "-V" || command === "--version") return console.log(version())
 	if (command === "init") {
-		const channel = (["sms", "chat", "push"] as const).find((c) => argv.includes(`--${c}`))
+		const channel = (["sms", "chat", "push", "whatsapp"] as const).find((c) =>
+			argv.includes(`--${c}`)
+		)
 		return init(channel)
 	}
 	if (command === "sync") return sync()
