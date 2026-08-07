@@ -16,6 +16,7 @@ import {
 // provider into the email module graph.
 import type { PreparedSms } from "./sms/types.js"
 import type { PreparedChat } from "./chat/types.js"
+import type { PreparedPush } from "./push/types.js"
 
 // The SMS channel's public types, surfaced from the root alongside the email ones.
 export type {
@@ -35,6 +36,17 @@ export type {
 	PreparedChat,
 	WebhookChatOptions,
 } from "./chat/types.js"
+
+// The push channel's public types.
+export type {
+	PushDefaults,
+	PushOptions,
+	PushProviderOptions,
+	PushTarget,
+	PreparedPush,
+	WebPushOptions,
+	WebPushSubscription,
+} from "./push/types.js"
 
 // Errors are shared across every channel, but the package root stays their public home.
 export {
@@ -354,7 +366,7 @@ export type ApiKeyOptions = CommonProviderOptions & {
  * }
  * ```
  */
-export type Hooks = TransportHooks<PreparedMessage | PreparedSms | PreparedChat>
+export type Hooks = TransportHooks<PreparedMessage | PreparedSms | PreparedChat | PreparedPush>
 
 /**
  * Base class for all providers.
