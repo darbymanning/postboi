@@ -106,6 +106,25 @@ describe("webpush", () => {
 		})
 	})
 
+	it("signs one VAPID JWT per push-service origin, not per send", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond({})))
+		// ECDSA signing only happens in vapid_header — payload encryption is ECDH + AES.
+		const sign_spy = vi.spyOn(crypto.subtle, "sign")
+		const notify = new WebPush(VAPID)
+
+		await notify.send({ to: SUBSCRIPTION, message: "one" })
+		await notify.send({ to: SUBSCRIPTION, message: "two" })
+		expect(sign_spy).toHaveBeenCalledTimes(1)
+
+		const elsewhere = {
+			...SUBSCRIPTION,
+			endpoint: "https://updates.push.services.mozilla.com/wpush/v2/xyz",
+		}
+		await notify.send({ to: elsewhere, message: "three" })
+		expect(sign_spy).toHaveBeenCalledTimes(2)
+		sign_spy.mockRestore()
+	})
+
 	it("rejects an oversized payload before encrypting, naming the real limit", async () => {
 		vi.stubGlobal("fetch", vi.fn())
 		const notify = new WebPush(VAPID)

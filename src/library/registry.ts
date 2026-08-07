@@ -3,6 +3,7 @@
  * (which uses it for prompts and the usage snippet) and the zero-config `mail()` (which
  * uses it to construct the configured provider from environment variables).
  */
+import type { Channel } from "./errors.js"
 
 /** A single piece of configuration a provider needs, and the env var it maps to. */
 export type ProviderField = {
@@ -579,4 +580,21 @@ export type PushProviderKey = (typeof PUSH_PROVIDERS)[number]["key"]
 /** Look up a push provider by its key. */
 export function find_push_provider(key: string): PushProviderMeta | undefined {
 	return PUSH_PROVIDERS.find((p) => p.key === key)
+}
+
+/**
+ * Every channel's provider list under one key. The `satisfies` is the point: adding a
+ * member to {@link Channel} without registering its providers stops compiling here, rather
+ * than surfacing later as a resolver that can't find anything.
+ */
+export const CHANNEL_PROVIDERS = {
+	email: PROVIDERS,
+	sms: SMS_PROVIDERS,
+	chat: CHAT_PROVIDERS,
+	push: PUSH_PROVIDERS,
+} as const satisfies Record<Channel, ReadonlyArray<ProviderMeta>>
+
+/** Look up any channel's provider by its key — what the shared channel resolver uses. */
+export function find_channel_provider(channel: Channel, key: string): ProviderMeta | undefined {
+	return CHANNEL_PROVIDERS[channel].find((p) => p.key === key)
 }

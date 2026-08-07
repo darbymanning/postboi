@@ -10,7 +10,6 @@ import type { BatchResult } from "../transport.js"
 import type { ChatDefaults, ChatOptions } from "./types.js"
 import type { ChatProvider } from "./provider.js"
 import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
-import { find_chat_provider } from "../registry.js"
 import { read_env } from "../env.js"
 
 type ChatConstructor = new (options: Record<string, unknown>) => ChatProvider<unknown>
@@ -38,7 +37,6 @@ const RESOLUTION: ChannelResolution<ChatProvider<unknown>> = {
 	channel: "chat",
 	env_key: "POSTBOI_CHAT_PROVIDER",
 	loaders: LOADERS,
-	find: find_chat_provider,
 	env_defaults: chat_env_defaults as () => Record<string, unknown>,
 	section: (config) => config.chat,
 	init_flag: "--chat",

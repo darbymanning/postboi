@@ -74,11 +74,16 @@ export interface FanOutOptions {
 	push?: Partial<PushOptions>
 }
 
-/** Build the per-channel options from the shared fields plus that channel's overrides. */
-function options_for(channel: Channel, options: FanOutOptions): unknown {
-	const { to, message, subject, body } = options
-	switch (channel) {
-		case "email":
+/**
+ * One entry per channel: how to shape the shared fields into that channel's options, and
+ * which zero-config entry point delivers them. A single map rather than parallel switch
+ * statements, and the `satisfies` is load-bearing — adding a member to {@link Channel}
+ * without teaching `send()` about it stops compiling here instead of silently never
+ * attempting the new channel.
+ */
+const CHANNELS = {
+	email: {
+		options({ to, message, subject, body, email }: FanOutOptions) {
 			return {
 				to: to.email,
 				subject,
@@ -86,46 +91,58 @@ function options_for(channel: Channel, options: FanOutOptions): unknown {
 				// becomes the body rather than sending an empty one.
 				body: body ?? message ?? "",
 				...(message !== undefined && body !== undefined ? { text: message } : {}),
-				...options.email,
+				...email,
 			}
-		case "sms":
-			return { to: to.sms, message: message ?? "", ...options.sms }
-		case "chat":
-			return { to: to.chat, message: message ?? "", title: subject, ...options.chat }
-		case "push":
-			return { to: to.push, title: subject, message: message ?? "", ...options.push }
-		default:
-			return undefined
-	}
-}
+		},
+		async deliver(built: unknown) {
+			const { mail } = await import("./mail.js")
+			return mail(built as SendOptions)
+		},
+	},
+	sms: {
+		options({ to, message, sms }: FanOutOptions) {
+			return { to: to.sms, message: message ?? "", ...sms }
+		},
+		async deliver(built: unknown) {
+			const { sms } = await import("./sms/send.js")
+			return sms(built as SmsOptions)
+		},
+	},
+	chat: {
+		options({ to, message, subject, chat }: FanOutOptions) {
+			return { to: to.chat, message: message ?? "", title: subject, ...chat }
+		},
+		async deliver(built: unknown) {
+			const { chat } = await import("./chat/send.js")
+			return chat(built as ChatOptions)
+		},
+	},
+	push: {
+		options({ to, message, subject, push }: FanOutOptions) {
+			return { to: to.push, title: subject, message: message ?? "", ...push }
+		},
+		async deliver(built: unknown) {
+			const { push } = await import("./push/send.js")
+			return push(built as PushOptions)
+		},
+	},
+} satisfies Record<
+	Channel,
+	{ options(o: FanOutOptions): unknown; deliver(b: unknown): Promise<unknown> }
+>
 
 /** Dispatch one channel through its own zero-config entry point. */
 async function deliver(channel: Channel, options: FanOutOptions): Promise<unknown> {
-	const built = options_for(channel, options)
-	switch (channel) {
-		case "email": {
-			const { mail } = await import("./mail.js")
-			return mail(built as SendOptions)
-		}
-		case "sms": {
-			const { sms } = await import("./sms/send.js")
-			return sms(built as SmsOptions)
-		}
-		case "chat": {
-			const { chat } = await import("./chat/send.js")
-			return chat(built as ChatOptions)
-		}
-		case "push": {
-			const { push } = await import("./push/send.js")
-			return push(built as PushOptions)
-		}
-		default:
-			throw new PostboiError({
-				provider: "postboi",
-				code: "unsupported_channel",
-				message: `The "${channel}" channel isn't available yet.`,
-			})
+	// The type system can't see a JS caller passing a made-up key in `to`.
+	const descriptor = CHANNELS[channel] as (typeof CHANNELS)[keyof typeof CHANNELS] | undefined
+	if (!descriptor) {
+		throw new PostboiError({
+			provider: "postboi",
+			code: "unsupported_channel",
+			message: `The "${channel}" channel isn't available yet.`,
+		})
 	}
+	return descriptor.deliver(descriptor.options(options))
 }
 
 /** Which channels to attempt, in order. */

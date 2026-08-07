@@ -6,6 +6,7 @@ import {
 } from "./provider.js"
 import type { BatchResult, RequestSpec } from "../transport.js"
 import { PostboiError } from "../errors.js"
+import { MockRecorder, type MockRecorderOptions } from "../mock_recorder.js"
 
 /** A normalized snapshot of a chat message captured by the mock. */
 export interface SentChat {
@@ -16,12 +17,7 @@ export interface SentChat {
 }
 
 /** Options for the chat mock constructor. */
-type Options = ChatProviderOptions & {
-	/** When true, every `send` rejects with a simulated {@link PostboiError}. */
-	fail?: boolean
-	/** Print each captured message. Off by default so tests stay quiet. */
-	log?: boolean
-}
+type Options = ChatProviderOptions & MockRecorderOptions
 
 type SendResponse = { id: string; message: SentChat }
 
@@ -42,28 +38,27 @@ type SendResponse = { id: string; message: SentChat }
  */
 export default class MockChat extends ChatProvider<SendResponse> {
 	protected readonly provider = "mock"
-	#fail: boolean
-	#log: boolean
-	#counter = 0
-
-	/** Every message captured by this instance, in send order. */
-	readonly sent: Array<SentChat> = []
+	#recorder: MockRecorder<SentChat>
 
 	constructor({ fail, log, ...options }: Options = {}) {
 		// A placeholder destination, so the mock is usable with no configuration at all.
 		super({ ...options, default: { to: "mock://chat", ...options.default } })
-		this.#fail = fail ?? false
-		this.#log = log ?? false
+		this.#recorder = new MockRecorder("chat", { fail, log }, log_chat)
+	}
+
+	/** Every message captured by this instance, in send order. */
+	get sent(): Array<SentChat> {
+		return this.#recorder.sent
 	}
 
 	/** The most recently captured message, or undefined if nothing has been sent. */
 	get last(): SentChat | undefined {
-		return this.sent.at(-1)
+		return this.#recorder.last
 	}
 
 	/** Forget all captured messages. */
 	clear(): void {
-		this.sent.length = 0
+		this.#recorder.clear()
 	}
 
 	send(options: ChatOptions): Promise<SendResponse>
@@ -80,27 +75,13 @@ export default class MockChat extends ChatProvider<SendResponse> {
 		}
 		return this.with_hooks(
 			() => this.prepare_chat(options),
-			async (message) => {
-				if (this.#fail) {
-					throw new PostboiError({
-						provider: "mock",
-						channel: "chat",
-						message: "Simulated failure from mock chat provider",
-					})
-				}
-				const captured: SentChat = {
+			async (message) =>
+				this.#recorder.capture({
 					to: message.to,
 					message: message.message,
 					title: message.title,
 					username: message.username,
-				}
-				this.sent.push(captured)
-				if (this.#log) {
-					const heading = captured.title ? `${captured.title} — ` : ""
-					console.log(`postboi (mock chat) → ${captured.to}\n\n${heading}${captured.message}`)
-				}
-				return { id: `mock-chat-${++this.#counter}`, message: captured }
-			}
+				})
 		)
 	}
 
@@ -112,4 +93,10 @@ export default class MockChat extends ChatProvider<SendResponse> {
 			message: "The mock chat provider does not make requests",
 		})
 	}
+}
+
+/** Print a captured chat message. */
+function log_chat(captured: SentChat): void {
+	const heading = captured.title ? `${captured.title} — ` : ""
+	console.log(`postboi (mock chat) → ${captured.to}\n\n${heading}${captured.message}`)
 }
