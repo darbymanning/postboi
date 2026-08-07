@@ -16,6 +16,31 @@ channel work — read it before starting a phase, and update it when a decision 
   the product, so `Transport` (Phase 0) is load-bearing rather than tidy-up.
 - **Email stays the anchor.** It's the channel we're best at, the one the closest
   comparable doesn't have at all, and the one that needs no approval process to use.
+- **The fan-out function is `send()`, not `notify()`.** Checked: `send` has **never** been
+  exported from the package root — the public entry point has always been `mail()` — so
+  the name is free and there's no migration hazard. Two things settle it:
+  - **The library's whole vocabulary is already "send".** `SendOptions`,
+    `PreparedMessage`, `prepare_send`, `send_batch`, `ProviderBase.send()`, and the hooks
+    `before.send` / `after.send`. Naming the fan-out `notify()` would mean a `notify()`
+    call firing hooks called `before.send` — two words for one concept, baked into public
+    API forever. Renaming the hooks to match would be breaking, and `before.notify` is
+    worse.
+  - **The call site disambiguates itself** via the shape of `to`, so `send()` sitting
+    beside `mail()` isn't actually ambiguous:
+    ```ts
+    await mail({ to: "ada@example.com", … })                    // one channel
+    await send({ to: { email: "…", sms: "…" }, … })              // fan-out
+    ```
+  Accepted costs: `send` is a common identifier, so some consumers will alias it on
+  import; and it doesn't *announce* multi-channel the way `notify` would. Both are
+  cheaper than a permanent split vocabulary.
+  **Explicitly rejected:** having `send()` sniff the shape of `to` and silently dispatch
+  to one channel or many. Implicit channel detection is exactly the cleverness that bites
+  later — `send()` always takes a channel-keyed `to`.
+  **Small cleanup this surfaced:** `config.ts:29`, `config.ts:39` and `registry.ts:3` all
+  refer to "the zero-config `send()`" in doc comments. That function doesn't exist — they
+  mean `mail()`. Stale since the rename; worth fixing whenever we're next in those files,
+  and doubly worth it before `send()` becomes a real export meaning something else.
 
 ---
 
@@ -34,10 +59,10 @@ await push({ to: subscription, title: "Order shipped", message: "On its way" })
 ```
 
 ```ts
-import { notify } from "postboi"
+import { send } from "postboi"
 
 // fan-out: every channel gets it, per-channel results, no channel can fail the others
-await notify({
+await send({
 	to: { email: "ada@example.com", sms: "+447788223344", push: token },
 	subject: "Your order shipped",
 	message: "Your order shipped",
@@ -45,7 +70,7 @@ await notify({
 })
 
 // fallback chain: first success wins — what people actually want for OTPs
-await notify({ to: { push: token, sms: "+447788223344" }, channels: ["push", "sms"], message: "…" })
+await send({ to: { push: token, sms: "+447788223344" }, channels: ["push", "sms"], message: "…" })
 ```
 
 Every one of these keeps the properties `mail()` already has: zero-config resolution from
@@ -85,7 +110,7 @@ what's worth building.
 That last one is closer than it looks: the Postboi provider **already has `contacts`**
 (`postboi_provider.ts:550`) — one contact per address, with `data` and list memberships.
 Extending a contact to carry `phone`, `whatsapp`, and push tokens turns it into a delivery
-profile, and `notify({ to: contact })` resolves channels from it. That's the natural home
+profile, and `send({ to: contact })` resolves channels from it. That's the natural home
 for identity resolution, and it's Phase 2-shaped (hosted) work rather than library work.
 
 **The honest read:** availability detection and cost routing are hosted-service features
@@ -166,7 +191,7 @@ turns out to have a native batch endpoint worth using.
          mail()                   sms()                   push()
              └───────────────────────┼───────────────────────┘
                                      ▼
-                                 notify()
+                                  send()
 ```
 
 Each channel gets its own resolver mirroring `resolve_provider` (`mail.ts:89`): its own
@@ -191,7 +216,7 @@ These are the ones that change the shape of the work. They need answering, not a
    - (a) Widen to `{ channel: "email" | "sms" | "push"; message: PreparedMessage | PreparedSms | PreparedPush }`.
      Breaking — every existing hook that reads `message.subject` needs a narrow.
    - (b) Keep `before.send` email-only, add `before.sms` / `before.push` alongside.
-     Non-breaking, but three near-identical hook trees and `notify()` has no single
+     Non-breaking, but three near-identical hook trees and `send()` has no single
      interception point.
    - _Recommendation: (a), with `channel` as the discriminant._ Pre-1.0 breaking changes
      are minor bumps per CLAUDE.md, and (b)'s duplication gets worse with every channel.
@@ -588,7 +613,7 @@ pushes in two directions:
 - **It makes BYO more right, not less.** Route quality and price to a given destination is
   exactly the thing a customer should be able to choose, and exactly the thing we'd be
   guessing at on their behalf.
-- **It gives `notify()` a genuinely useful job.** For expensive destinations, prefer push,
+- **It gives `send()` a genuinely useful job.** For expensive destinations, prefer push,
   WhatsApp or email and fall back to SMS only when nothing else can reach the user. That
   is real cost optimisation, and unlike sent.dm's live rate-card routing **we can do it in
   a library**, because the channel ordering is a per-send policy decision rather than
@@ -757,7 +782,7 @@ namespace next to `contacts`. Start with raw tokens; the namespace is Phase 2-sh
 
 ---
 
-## Phase 4 — `notify()`
+## Phase 4 — `send()`
 
 Thin once the channels exist. A fan-out over the per-channel resolvers reusing
 `pooled_map`, returning per-channel results rather than rejecting wholesale — an SMS
@@ -775,9 +800,9 @@ cases where the copy genuinely differs (SMS is 160 chars; email isn't).
 
 **Design for template-only channels up front**, even though WhatsApp lands in Phase 6.
 Some channels cannot accept free-form text at arbitrary times (see the 24-hour window
-there), so `notify()` needs either a per-channel template mapping or a rule that a
+there), so `send()` needs either a per-channel template mapping or a rule that a
 channel refusing free-form content triggers the fallback rather than an error. Retrofitting
-that into a shipped `notify()` is far worse than allowing for it now.
+that into a shipped `send()` is far worse than allowing for it now.
 
 **Effort: ~2 days.**
 
@@ -796,7 +821,7 @@ Cheap, high value-per-line, all straight `Transport` subclasses with no new conc
   problem as push tokens — plan it alongside the subscription store, not alongside SMS.
 
 **Effort: hours each.** These are the ones to ship first after Phase 1, because they cost
-almost nothing and make `notify()` immediately worth having.
+almost nothing and make `send()` immediately worth having.
 
 ---
 
@@ -829,7 +854,7 @@ await whatsapp({
 })
 ```
 
-So `PreparedWhatsApp` is template-shaped, and **`notify()` must handle "this channel can
+So `PreparedWhatsApp` is template-shaped, and **`send()` must handle "this channel can
 only send a template right now"** — either by requiring a template mapping per channel, or
 by treating a window-closed WhatsApp send as a fallback trigger rather than an error. Worth
 settling in Phase 4's design even though WhatsApp lands later.
@@ -878,7 +903,7 @@ model, and rides Phase 1's Twilio work.
 | Leaked token → real money | Phase 2 only. Rate limits are launch-blocking, unlike for email |
 | The library sprawls | Per-channel subdirectories from the start (decision 4) |
 | APNs can't be smoke-tested locally on macOS | workerd#4841 — production is fine. Make the dev inbox cover push properly |
-| `notify()` ships assuming free-form text, then WhatsApp needs templates | Design the template path into Phase 4, build it in Phase 6 |
+| `send()` ships assuming free-form text, then WhatsApp needs templates | Design the template path into Phase 4, build it in Phase 6 |
 | Chasing sent.dm's routing/availability features into a library that can't have them | Those need hosted per-contact state. Extend the existing `contacts` namespace if we want them, don't fake them client-side |
 
 ---
@@ -907,7 +932,7 @@ notification on either is real signal.
 | 1 | SMS, BYO providers | ~1 week | Phase 0, decisions 3 & 4 |
 | 2 | SMS on the Postboi provider | ~1 week code | carrier + 10DLC + STOP handling — **and a business case; see economics** |
 | 3 | Push (Web Push, FCM, APNs) | 1–2 weeks | — |
-| 4 | `notify()` | ~2 days | Phases 1 & 3 |
+| 4 | `send()` | ~2 days | Phases 1 & 3 |
 | 5 | Slack / Discord / Teams / Telegram | hours each | Phase 0 |
 | 6 | RCS, then WhatsApp | ~3 days + ~1 week | brand approval lead time |
 
@@ -916,5 +941,5 @@ ship-it-first slice** — and with email already in place it's a more complete n
 story than the SMS-only comparables on day one.
 
 Phase 5 is deliberately ordered before the flashier Phase 6: Slack and Telegram cost hours
-and make `notify()` immediately useful, while WhatsApp and RCS can't send anything until
+and make `send()` immediately useful, while WhatsApp and RCS can't send anything until
 someone else approves a brand.
