@@ -9,6 +9,8 @@ export * from "./index.js"
 export { mail, cancel } from "./mail.js"
 // The zero-config `sms()` — same shape as `mail()`, on the SMS channel.
 export { sms } from "./sms/send.js"
+// The zero-config `chat()` — Slack, Discord, Teams, Telegram.
+export { chat } from "./chat/send.js"
 
 // The Postboi provider itself lives in its own leaf module — `mail()`'s registry loads it
 // with a dynamic import, and a module that is both statically imported (this root, via

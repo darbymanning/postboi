@@ -9,7 +9,7 @@
  * A delivery channel. Providers declare which one they serve, and it rides along on errors
  * and lifecycle hooks so a caller fanning out across channels can tell what happened where.
  */
-export type Channel = "email" | "sms" | "push"
+export type Channel = "email" | "sms" | "push" | "chat"
 
 /** Normalized error fields a provider extracts from a failed response body. */
 export type ProviderError = { message: string; code?: string | number }

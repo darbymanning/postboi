@@ -58,15 +58,20 @@ describe("package exports", () => {
 			"sms/provider.ts", // the SMS base class, reached via each provider
 			"sms/phone.ts", // E.164 + segment helpers, used by sms/provider.ts
 			"sms/send.ts", // the zero-config sms(), re-exported from the root
+			"chat/types.ts", // pure types, re-exported from the root
+			"chat/provider.ts", // the chat base class, reached via each provider
+			"chat/send.ts", // the zero-config chat(), re-exported from the root
 		])
 		const providers = [
 			...readdirSync(`${root}src/library`).filter(
 				(f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !internal.has(f)
 			),
-			...readdirSync(`${root}src/library/sms`)
-				.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
-				.map((f) => `sms/${f}`)
-				.filter((f) => !channel_internal.has(f)),
+			...["sms", "chat"].flatMap((dir) =>
+				readdirSync(`${root}src/library/${dir}`)
+					.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
+					.map((f) => `${dir}/${f}`)
+					.filter((f) => !channel_internal.has(f))
+			),
 		]
 		const exported = new Set(
 			entries.map(([, t]) => to_source(t.default).replace("src/library/", ""))

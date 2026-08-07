@@ -15,6 +15,7 @@ import {
 // Type-only: the SMS channel's prepared shape widens `Hooks`, without pulling the SMS
 // provider into the email module graph.
 import type { PreparedSms } from "./sms/types.js"
+import type { PreparedChat } from "./chat/types.js"
 
 // The SMS channel's public types, surfaced from the root alongside the email ones.
 export type {
@@ -25,6 +26,15 @@ export type {
 	SmsProviderOptions,
 	SmsApiKeyOptions,
 } from "./sms/types.js"
+
+// The chat channel's public types.
+export type {
+	ChatDefaults,
+	ChatOptions,
+	ChatProviderOptions,
+	PreparedChat,
+	WebhookChatOptions,
+} from "./chat/types.js"
 
 // Errors are shared across every channel, but the package root stays their public home.
 export {
@@ -344,7 +354,7 @@ export type ApiKeyOptions = CommonProviderOptions & {
  * }
  * ```
  */
-export type Hooks = TransportHooks<PreparedMessage | PreparedSms>
+export type Hooks = TransportHooks<PreparedMessage | PreparedSms | PreparedChat>
 
 /**
  * Base class for all providers.

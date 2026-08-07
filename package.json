@@ -142,6 +142,26 @@
       "types": "./dist/sms/mock.d.ts",
       "default": "./dist/sms/mock.js"
     },
+    "./slack": {
+      "types": "./dist/chat/slack.d.ts",
+      "default": "./dist/chat/slack.js"
+    },
+    "./discord": {
+      "types": "./dist/chat/discord.d.ts",
+      "default": "./dist/chat/discord.js"
+    },
+    "./teams": {
+      "types": "./dist/chat/teams.d.ts",
+      "default": "./dist/chat/teams.js"
+    },
+    "./telegram": {
+      "types": "./dist/chat/telegram.d.ts",
+      "default": "./dist/chat/telegram.js"
+    },
+    "./chat-mock": {
+      "types": "./dist/chat/mock.d.ts",
+      "default": "./dist/chat/mock.js"
+    },
     "./webhooks": {
       "types": "./dist/webhooks/index.d.ts",
       "default": "./dist/webhooks/index.js"

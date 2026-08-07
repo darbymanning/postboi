@@ -21,9 +21,10 @@
  */
 import type { Defaults, Hooks } from "./index.js"
 import type { CaptchaOptions } from "./captcha.js"
-import type { ProviderKey, SmsProviderKey } from "./registry.js"
+import type { ChatProviderKey, ProviderKey, SmsProviderKey } from "./registry.js"
 import type { TransportHooks } from "./transport.js"
 import type { SmsDefaults } from "./sms/types.js"
+import type { ChatDefaults } from "./chat/types.js"
 
 /** Everything you can configure globally via `postboi.config.ts` or {@link configure}. */
 export interface PostboiConfig {
@@ -71,6 +72,18 @@ export interface PostboiConfig {
 		 * Non-secret SMS provider constructor options, keyed by the provider's option name.
 		 * Keep secrets in the environment.
 		 */
+		options?: Record<string, string>
+	}
+	/**
+	 * Chat channel settings for the zero-config `chat()` — Slack, Discord, Teams, Telegram.
+	 * `POSTBOI_CHAT_*` env vars win over anything here.
+	 */
+	chat?: {
+		/** Provider key (`slack`, `discord`, `teams`, `telegram`). */
+		provider?: ChatProviderKey | "mock"
+		/** Default destination and display name. */
+		default?: ChatDefaults
+		/** Non-secret constructor options. Webhook URLs are secrets — keep them in env. */
 		options?: Record<string, string>
 	}
 	/** Spam-protection settings applied to every FormData send (honeypot + Turnstile). */
@@ -127,6 +140,11 @@ function merge(base: PostboiConfig, override: PostboiConfig): PostboiConfig {
 			...base.sms,
 			...defined(override.sms ?? {}),
 			default: { ...base.sms?.default, ...defined(override.sms?.default ?? {}) },
+		},
+		chat: {
+			...base.chat,
+			...defined(override.chat ?? {}),
+			default: { ...base.chat?.default, ...defined(override.chat?.default ?? {}) },
 		},
 	}
 }
