@@ -527,3 +527,56 @@ export type ChatProviderKey = (typeof CHAT_PROVIDERS)[number]["key"]
 export function find_chat_provider(key: string): ChatProviderMeta | undefined {
 	return CHAT_PROVIDERS.find((p) => p.key === key)
 }
+
+/** A push provider's metadata. */
+export type PushProviderMeta = ProviderMeta & {
+	/** One line on what you'd use it for. */
+	note: string
+}
+
+/** The push providers `push()` can drive. */
+export const PUSH_PROVIDERS = [
+	{
+		key: "webpush",
+		name: "Web Push",
+		import: "postboi/webpush",
+		class: "WebPush",
+		url: "https://developer.mozilla.org/en-US/docs/Web/API/Push_API",
+		note: "Browsers, via VAPID. No vendor and no per-message cost",
+		fields: [
+			{ env: "VAPID_PUBLIC_KEY", arg: "public_key", label: "VAPID public key" },
+			{ env: "VAPID_PRIVATE_KEY", arg: "private_key", label: "VAPID private key", secret: true },
+			{
+				env: "VAPID_SUBJECT",
+				arg: "subject",
+				label: "Contact (mailto: or https URL)",
+			},
+		],
+	},
+	{
+		key: "fcm",
+		name: "Firebase Cloud Messaging",
+		import: "postboi/fcm",
+		class: "FCM",
+		url: "https://console.firebase.google.com",
+		note: "Android and iOS via Firebase — also the simplest way to reach APNs",
+		fields: [
+			{ env: "FCM_PROJECT_ID", arg: "project_id", label: "Firebase project id" },
+			{ env: "FCM_CLIENT_EMAIL", arg: "client_email", label: "Service account email" },
+			{
+				env: "FCM_PRIVATE_KEY",
+				arg: "private_key",
+				label: "Service account private key",
+				secret: true,
+			},
+		],
+	},
+] as const satisfies ReadonlyArray<PushProviderMeta>
+
+/** A known push provider key, e.g. `"webpush"`. */
+export type PushProviderKey = (typeof PUSH_PROVIDERS)[number]["key"]
+
+/** Look up a push provider by its key. */
+export function find_push_provider(key: string): PushProviderMeta | undefined {
+	return PUSH_PROVIDERS.find((p) => p.key === key)
+}

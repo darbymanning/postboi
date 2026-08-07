@@ -9,6 +9,7 @@
 import type { BodyInput, SendOptions } from "./index.js"
 import type { SmsOptions, Phone } from "./sms/types.js"
 import type { ChatOptions } from "./chat/types.js"
+import type { PushOptions, PushTarget } from "./push/types.js"
 import { PostboiError, type Channel } from "./errors.js"
 
 /**
@@ -26,8 +27,8 @@ export interface Recipients {
 	email?: SendOptions["to"]
 	sms?: Array<Phone> | Phone
 	chat?: string
-	/** Reserved for the push channel. */
-	push?: string
+	/** A Web Push subscription, or an FCM device token. */
+	push?: PushTarget
 }
 
 /** The outcome for one channel. */
@@ -69,6 +70,8 @@ export interface FanOutOptions {
 	sms?: Partial<SmsOptions>
 	/** Per-channel overrides, merged over what the shared fields produce. */
 	chat?: Partial<ChatOptions>
+	/** Per-channel overrides, merged over what the shared fields produce. */
+	push?: Partial<PushOptions>
 }
 
 /** Build the per-channel options from the shared fields plus that channel's overrides. */
@@ -89,6 +92,8 @@ function options_for(channel: Channel, options: FanOutOptions): unknown {
 			return { to: to.sms, message: message ?? "", ...options.sms }
 		case "chat":
 			return { to: to.chat, message: message ?? "", title: subject, ...options.chat }
+		case "push":
+			return { to: to.push, title: subject, message: message ?? "", ...options.push }
 		default:
 			return undefined
 	}
@@ -109,6 +114,10 @@ async function deliver(channel: Channel, options: FanOutOptions): Promise<unknow
 		case "chat": {
 			const { chat } = await import("./chat/send.js")
 			return chat(built as ChatOptions)
+		}
+		case "push": {
+			const { push } = await import("./push/send.js")
+			return push(built as PushOptions)
 		}
 		default:
 			throw new PostboiError({
@@ -165,8 +174,7 @@ export async function send(options: FanOutOptions): Promise<SendResult> {
 		throw new PostboiError({
 			provider: "postboi",
 			code: "no_recipient",
-			message:
-				"No channel to send on — `to` needs at least one of email, sms or chat with an address.",
+			message: "No channel to send on — `to` needs at least one of email, sms, chat or push.",
 		})
 	}
 

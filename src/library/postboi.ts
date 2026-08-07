@@ -11,6 +11,8 @@ export { mail, cancel } from "./mail.js"
 export { sms } from "./sms/send.js"
 // The zero-config `chat()` — Slack, Discord, Teams, Telegram.
 export { chat } from "./chat/send.js"
+// The zero-config `push()` — Web Push and FCM.
+export { push } from "./push/send.js"
 // The multi-channel fan-out. Runs in your process — only transport is ever ours.
 export {
 	send,

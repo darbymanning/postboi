@@ -21,10 +21,11 @@
  */
 import type { Defaults, Hooks } from "./index.js"
 import type { CaptchaOptions } from "./captcha.js"
-import type { ChatProviderKey, ProviderKey, SmsProviderKey } from "./registry.js"
+import type { ChatProviderKey, ProviderKey, PushProviderKey, SmsProviderKey } from "./registry.js"
 import type { TransportHooks } from "./transport.js"
 import type { SmsDefaults } from "./sms/types.js"
 import type { ChatDefaults } from "./chat/types.js"
+import type { PushDefaults } from "./push/types.js"
 
 /** Everything you can configure globally via `postboi.config.ts` or {@link configure}. */
 export interface PostboiConfig {
@@ -86,6 +87,15 @@ export interface PostboiConfig {
 		/** Non-secret constructor options. Webhook URLs are secrets — keep them in env. */
 		options?: Record<string, string>
 	}
+	/** Push channel settings for the zero-config `push()` — Web Push and FCM. */
+	push?: {
+		/** Provider key (`webpush`, `fcm`). */
+		provider?: PushProviderKey | "mock"
+		/** Default icon and TTL. Deliberately no default target — push targets are per-device. */
+		default?: PushDefaults
+		/** Non-secret constructor options. Private keys are secrets — keep them in env. */
+		options?: Record<string, string>
+	}
 	/** Spam-protection settings applied to every FormData send (honeypot + Turnstile). */
 	captcha?: CaptchaOptions
 	/** Development-only behaviour. Ignored outside `NODE_ENV=development`. */
@@ -145,6 +155,11 @@ function merge(base: PostboiConfig, override: PostboiConfig): PostboiConfig {
 			...base.chat,
 			...defined(override.chat ?? {}),
 			default: { ...base.chat?.default, ...defined(override.chat?.default ?? {}) },
+		},
+		push: {
+			...base.push,
+			...defined(override.push ?? {}),
+			default: { ...base.push?.default, ...defined(override.push?.default ?? {}) },
 		},
 	}
 }

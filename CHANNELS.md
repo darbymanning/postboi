@@ -3,7 +3,7 @@
 The plan for taking postboi from an email library to a multi-channel messaging library:
 SMS, push, RCS, WhatsApp and chat, behind one API.
 
-**Status: Phases 0, 1, 4 and 5 shipped.** Phases 2, 3 and 6 are unbuilt. This document is the source
+**Status: Phases 0, 1, 3, 4 and 5 shipped.** Phases 2 and 6 are unbuilt. This document is the source
 of truth for the channel work — read it before starting a phase, and update it when a
 decision changes. Reasoning that led to these conclusions lives in this file's git history.
 
@@ -580,7 +580,7 @@ limits — a leaked SMS token spends real money in a way an email token doesn't.
 
 ---
 
-## Phase 3 — Push, and the web SDK
+## Phase 3 — Push, and the web SDK ✅ **done**
 
 Structurally harder than SMS for one reason: **email addresses and phone numbers arrive with
 the send; push tokens must be registered and stored first.**
@@ -651,7 +651,26 @@ pipeline, serves our actual audience — ~3–5 days), and native Swift/Kotlin/F
 caller** — simplest, and punts the problem. A `push.subscriptions` namespace on the hosted
 provider is the natural home later, alongside `contacts`.
 
-**Effort: 1–2 weeks** (including the web SDK), most of it Web Push encryption.
+**Shipped**: Web Push (VAPID + `aes128gcm`), FCM, a mock, the browser helpers, and `push()`
+wired into `send()`'s cost ordering — where it now sits first, as the genuinely free channel.
+
+**The encryption is verified against the RFC 8291 §5 worked example, byte for byte.** That
+mattered more than any other test in this project: Web Push fails _silently_ when key
+derivation is wrong — the push service accepts the request and the service worker simply
+never fires — so a round-trip test would have proven nothing about whether the constants
+were right. `encrypt_payload` takes an optional salt and key pair purely so the published
+vector can be reproduced.
+
+`PushProvider.is_expired()` is a first-class check rather than a status code to match by
+hand, because subscriptions expire constantly and normally, and the correct response is to
+delete your stored copy — not retry, not alert.
+
+**APNs is not implemented, and doesn't need to be.** Reaching iOS through FCM is one
+credential instead of two and avoids the HTTP/2 question entirely. Direct APNs stays open
+as a follow-up if someone wants to skip Firebase.
+
+**Effort: a day, against the 1–2 week estimate** — the estimate assumed fighting the
+encryption, and the RFC vector meant it was either right or obviously wrong.
 
 ---
 
