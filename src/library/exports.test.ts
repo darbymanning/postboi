@@ -38,6 +38,7 @@ describe("package exports", () => {
 			"env.ts",
 			"workers_env.ts", // Cloudflare binding reader, used by env.ts
 			"mail.ts",
+			"send.ts", // the multi-channel fan-out, re-exported from the root
 			"captcha.ts", // spam protection, reached via the root export
 			"aws.ts", // SigV4 signing, used by ses.ts (and SNS later)
 			"errors.ts", // normalized errors, re-exported from the root
