@@ -1,24 +1,21 @@
 /**
- * The zero-config `push()`, mirroring `mail()`, `sms()` and `chat()`.
+ * The zero-config `push()`, on the shared channel resolution in `channels.ts`.
  */
 import type { BatchResult } from "../transport.js"
 import type { PushDefaults, PushOptions } from "./types.js"
 import type { PushProvider } from "./provider.js"
-import { PostboiError } from "../errors.js"
+import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
 import { find_push_provider } from "../registry.js"
-import { load_config } from "../config.js"
-import { ensure_env_loaded, is_development, read_env } from "../env.js"
+import { read_env } from "../env.js"
 
 type PushConstructor = new (options: Record<string, unknown>) => PushProvider<unknown>
 
-/** Lazy loaders, keyed by `POSTBOI_PUSH_PROVIDER`. */
-const LOADERS: Record<string, () => Promise<PushConstructor>> = {
+/** Lazy loaders keyed by `POSTBOI_PUSH_PROVIDER`. */
+const LOADERS: ChannelResolution<PushProvider<unknown>>["loaders"] = {
 	webpush: () => import("./webpush.js").then((m) => m.default as unknown as PushConstructor),
 	fcm: () => import("./fcm.js").then((m) => m.default as unknown as PushConstructor),
 	mock: () => import("./mock.js").then((m) => m.default as unknown as PushConstructor),
 }
-
-let warned_dev_fallback = false
 
 /** Read the push defaults from the environment. */
 export function push_env_defaults(): PushDefaults {
@@ -30,62 +27,16 @@ export function push_env_defaults(): PushDefaults {
 	return out
 }
 
-/** Construct the push provider named by `POSTBOI_PUSH_PROVIDER`. */
-async function resolve_provider(): Promise<PushProvider<unknown>> {
-	const config = await load_config()
-	await ensure_env_loaded()
-
-	const key = read_env("POSTBOI_PUSH_PROVIDER") ?? config.push?.provider
-
-	if (!key) {
-		if (is_development()) {
-			if (!warned_dev_fallback) {
-				warned_dev_fallback = true
-				console.warn(
-					"postboi: no push provider configured — logging notifications to the console instead of sending."
-				)
-			}
-			const Mock = await import("./mock.js").then((m) => m.default)
-			return new Mock({ log: true, default: push_env_defaults() })
-		}
-		throw new PostboiError({
-			provider: "postboi",
-			channel: "push",
-			code: "no_push_provider",
-			message:
-				'No push provider configured. Set POSTBOI_PUSH_PROVIDER, or import one directly, e.g. `import WebPush from "postboi/webpush"`.',
-		})
-	}
-
-	const load = LOADERS[key]
-	if (!load) {
-		throw new PostboiError({
-			provider: "postboi",
-			channel: "push",
-			code: "unknown_push_provider",
-			message: `Unknown POSTBOI_PUSH_PROVIDER "${key}".`,
-		})
-	}
-
-	const options: Record<string, unknown> = { default: push_env_defaults() }
-	const meta = find_push_provider(key)
-	for (const field of meta?.fields ?? []) {
-		const value = read_env(field.env) ?? config.push?.options?.[field.arg] ?? field.default
-		if (value === undefined) {
-			throw new PostboiError({
-				provider: key,
-				channel: "push",
-				code: "missing_env",
-				message: `Push provider "${key}" needs ${field.env} — set it in the environment.`,
-			})
-		}
-		options[field.arg] = value
-	}
-
-	if (key === "mock") options.log = true
-
-	const Provider = await load()
-	return new Provider(options)
+const RESOLUTION: ChannelResolution<PushProvider<unknown>> = {
+	channel: "push",
+	env_key: "POSTBOI_PUSH_PROVIDER",
+	loaders: LOADERS,
+	find: find_push_provider,
+	env_defaults: push_env_defaults as () => Record<string, unknown>,
+	section: (config) => config.push,
+	init_flag: "--push",
+	dev_fallback_warning:
+		"postboi: no push provider configured — logging notifications to the console instead of sending. Run `bunx postboi init --push` to send for real.",
 }
 
 /**
@@ -107,7 +58,7 @@ export async function push(
 	options: PushOptions | Array<PushOptions>,
 	batch: { concurrency?: number } = {}
 ): Promise<unknown> {
-	const provider = await resolve_provider()
+	const provider = await resolve_channel_provider(RESOLUTION)
 	if (Array.isArray(options)) return provider.send(options, batch)
 	return provider.send(options)
 }

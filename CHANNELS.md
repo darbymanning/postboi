@@ -905,6 +905,25 @@ more than one channel to route between.
 
 ---
 
+## Review follow-ups (structure, not bugs)
+
+The first full code review confirmed and fixed twelve correctness bugs (see the
+`review.test.ts` regression suite). Three structural findings were deliberately deferred —
+real, corroborated, and none of them load-bearing:
+
+- **One channel-keyed registry** instead of four parallel const arrays with four Meta/Key
+  types and four `find_*` functions. Touches the CLI, config typing and resolvers at once,
+  so it wants its own change.
+- **A shared mock base** for the four channel mocks, which currently duplicate the
+  fail/log/sent/last/clear scaffolding — becomes pressing when the dev inbox grows its
+  `kind`-discriminated message view.
+- **Per-origin VAPID JWT caching** in webpush — the JWT is valid 12 hours and subscriptions
+  cluster on a handful of push-service origins, so one signature could serve thousands of
+  sends. (FCM's token cache got this treatment already; VAPID signing is pure CPU, no
+  network, so the win is smaller.)
+- **`send()`'s four hand-synced channel enumerations** collapsed into one
+  `satisfies Record<Channel, …>` descriptor map, so a fifth channel can't half-register.
+
 ## Upstream things to track
 
 None block shipping — this is the "has it got better yet?" list.

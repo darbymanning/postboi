@@ -1,5 +1,5 @@
 import { title, escape_html, escape_lines, html_to_text } from "./utils.js"
-import { config_loaded, get_config, merge_hooks } from "./config.js"
+import { config_loaded, get_config } from "./config.js"
 import { check_captcha, merge_captcha, type CaptchaMode, type CaptchaOptions } from "./captcha.js"
 import { ensure_env_loaded } from "./env.js"
 import { PostboiError, SpamError, type Channel } from "./errors.js"
@@ -9,7 +9,6 @@ import {
 	type Duration,
 	type RecipientVars,
 	type RequestSpec,
-	type TransportHooks,
 	type TransportOptions,
 } from "./transport.js"
 // Type-only: the SMS channel's prepared shape widens `Hooks`, without pulling the SMS
@@ -349,24 +348,80 @@ export type ApiKeyOptions = CommonProviderOptions & {
 }
 
 /**
+ * The channel/message pairing hooks discriminate on. A **discriminated union** rather than
+ * independent `channel` and `message` properties, so that narrowing on `ctx.channel`
+ * genuinely narrows `ctx.message` — `channel === "email"` makes `message` a
+ * {@link PreparedMessage}, and `message.subject` typechecks.
+ */
+export type HookChannelContext =
+	| { channel: "email"; message: PreparedMessage }
+	| { channel: "sms"; message: PreparedSms }
+	| { channel: "chat"; message: PreparedChat }
+	| { channel: "push"; message: PreparedPush }
+
+/** The prepared-message union across every channel. */
+export type PreparedAny = HookChannelContext["message"]
+
+/**
  * Awaitable lifecycle hooks, run around every send on every channel. `before.send` can
  * observe, replace or cancel a message; the rest are best-effort observers (errors they
  * throw are swallowed so logging/telemetry can't break a send).
  *
- * `message` is a union across channels, so **narrow on `ctx.channel` before reading
- * channel-specific fields**:
+ * The context is discriminated on `channel`, so **narrow on it before reading
+ * channel-specific fields** — this compiles:
  *
  * ```ts
  * hooks: {
  * 	before: {
- * 		send: ({ channel, message }) => {
- * 			if (channel === "email") console.log(message.subject)
+ * 		send: (ctx) => {
+ * 			if (ctx.channel === "email") console.log(ctx.message.subject)
+ * 			if (ctx.channel === "sms") console.log(ctx.message.to)
  * 		},
  * 	},
  * }
  * ```
+ *
+ * A `before.send` hook that returns a replacement must return the same channel's shape it
+ * received; returning another channel's is undefined behaviour.
  */
-export type Hooks = TransportHooks<PreparedMessage | PreparedSms | PreparedChat | PreparedPush>
+export type Hooks = {
+	before?: {
+		/**
+		 * Runs after normalization, before the request. Return a modified message to replace
+		 * it (e.g. redirect recipients in staging), or throw to abort — throw
+		 * {@link SkipSendError} for an intentional skip.
+		 */
+		send?: (
+			ctx: { provider: string } & HookChannelContext
+		) => void | PreparedAny | Promise<void | PreparedAny>
+	}
+	after?: {
+		/** Runs after a successful send. */
+		send?: (
+			ctx: { provider: string; response: unknown; duration_ms: number } & HookChannelContext
+		) => void | Promise<void>
+	}
+	on?: {
+		/** Runs on any send failure — e.g. report to Sentry. */
+		error?: (ctx: {
+			provider: string
+			channel: Channel
+			/** Absent when the failure happened before the message finished preparing. */
+			message?: PreparedAny
+			error: PostboiError
+			duration_ms: number
+		}) => void | Promise<void>
+		/** Runs before each retry attempt. */
+		retry?: (ctx: {
+			provider: string
+			channel: Channel
+			attempt: number
+			status?: number
+			reason?: unknown
+			delay_ms: number
+		}) => void | Promise<void>
+	}
+}
 
 /**
  * Base class for all providers.
@@ -428,12 +483,6 @@ export abstract class EmailProvider<TResponse = unknown> extends Transport<
 		this.defaults = { ...s.default, ...options.default }
 		this.#auto_text = options.auto_text ?? s.auto_text ?? true
 		this.#captcha = merge_captcha(s.captcha, options.captcha)
-		// Hooks merge global under instance, which the base can't do for us — it has no view
-		// of the email-shaped config. Global hooks are declared over every channel's message
-		// shape; an email provider only ever hands them a `PreparedMessage`, so narrowing is
-		// safe on the way in. A hook that *returns* another channel's shape is undefined
-		// behaviour — which is exactly what `ctx.channel` exists to prevent.
-		this.set_hooks(merge_hooks(s.hooks as TransportHooks<PreparedMessage>, options.hooks))
 	}
 
 	/**

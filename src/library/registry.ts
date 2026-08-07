@@ -513,10 +513,10 @@ export const CHAT_PROVIDERS = [
 		class: "Telegram",
 		url: "https://core.telegram.org/bots#botfather",
 		note: "Bot API — the recipient must have started a chat with your bot first",
-		fields: [
-			{ env: "TELEGRAM_BOT_TOKEN", arg: "bot_token", label: "Bot token", secret: true },
-			{ env: "POSTBOI_CHAT_TO", arg: "to", label: "Default chat id", default: "" },
-		],
+		// Only the constructor option lives here. The default chat id is a channel default
+		// (chat.default.to / POSTBOI_CHAT_TO), not a constructor option — routing it through
+		// `fields` made the CLI commit it somewhere no provider reads.
+		fields: [{ env: "TELEGRAM_BOT_TOKEN", arg: "bot_token", label: "Bot token", secret: true }],
 	},
 ] as const satisfies ReadonlyArray<ChatProviderMeta>
 

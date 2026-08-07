@@ -50,6 +50,10 @@ export default class Twilio extends SmsProvider<SendResponse> {
 		this.#account_sid = account_sid
 		this.#auth_token = auth_token
 		this.#messaging_service_sid = messaging_service_sid || undefined
+		// A Messaging Service supplies the sender pool, so `from` is genuinely optional —
+		// without this, the base class's no_sender guard rejects the standard
+		// MessagingServiceSid-only setup before build_request's optional-From path can run.
+		if (this.#messaging_service_sid) this.requires_from = false
 	}
 
 	protected build_request(message: PreparedSms): RequestSpec {

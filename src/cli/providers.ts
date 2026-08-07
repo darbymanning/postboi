@@ -87,15 +87,6 @@ ${render_block("default", defaults, "\t\t")}${render_block("options", options, "
 `
 }
 
-/** The SMS-shaped call, kept for the SMS flow's own call site. */
-export function render_sms_config(
-	provider: string,
-	defaults: Record<string, string>,
-	options: Record<string, string>
-): string {
-	return render_channel_config("sms", provider, defaults, options)
-}
-
 /** Render a `{ key: "value" }` block (one entry per line, tab-indented). Empty → "". */
 export function render_block(name: string, entries: Record<string, string>, indent = "\t"): string {
 	const keys = Object.keys(entries)
@@ -115,7 +106,7 @@ export function render_config(
 	const captcha = captcha_key ? render_block("captcha", { key: captcha_key }) : ""
 	return `import { config } from "postboi"
 
-// Project-wide config, picked up automatically by send(). Commit this — keep secrets in env.
+// Project-wide config, picked up automatically by mail(). Commit this — keep secrets in env.
 export default config({
 	provider: ${JSON.stringify(provider)},
 ${render_block("default", defaults)}${render_block("options", options)}${captcha}	hooks: {

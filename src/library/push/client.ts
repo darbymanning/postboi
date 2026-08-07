@@ -8,8 +8,10 @@
  * gesture or it's auto-denied).
  *
  * Framework-agnostic and safe to import anywhere — it touches no browser API until called.
- * Re-exported from `postboi/svelte`, `postboi/react` and `postboi/vue`.
+ * Import from `postboi/push-client` directly (Svelte and everything else), or via the
+ * `postboi/react` / `postboi/vue` adapters which re-export it.
  */
+import { from_base64url } from "./crypto.js"
 
 /** What `subscribe_push` hands back — post this to your server and store it. */
 export interface PushSubscriptionJSON {
@@ -45,12 +47,13 @@ export class PushSubscribeError extends Error {
 	}
 }
 
-/** Convert a base64url VAPID key into the `Uint8Array` `pushManager.subscribe` requires. */
+/**
+ * Convert a base64url VAPID key into the `Uint8Array` `pushManager.subscribe` requires.
+ * Delegates to the same decoder the server-side crypto uses, so the two sides can never
+ * disagree about how a key string decodes.
+ */
 export function vapid_key_to_bytes(key: string): Uint8Array {
-	const base64 = key.replace(/-/g, "+").replace(/_/g, "/")
-	const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=")
-	const binary = atob(padded)
-	return Uint8Array.from(binary, (c) => c.charCodeAt(0))
+	return from_base64url(key)
 }
 
 /** Is Web Push available in this browser at all? */

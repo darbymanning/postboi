@@ -22,7 +22,6 @@
 import type { Defaults, Hooks } from "./index.js"
 import type { CaptchaOptions } from "./captcha.js"
 import type { ChatProviderKey, ProviderKey, PushProviderKey, SmsProviderKey } from "./registry.js"
-import type { TransportHooks } from "./transport.js"
 import type { SmsDefaults } from "./sms/types.js"
 import type { ChatDefaults } from "./chat/types.js"
 import type { PushDefaults } from "./push/types.js"
@@ -125,17 +124,19 @@ function defined<T extends object>(obj: T): Partial<T> {
 
 /**
  * Deep-merge hook groups so instance overrides don't clobber unrelated global hooks.
- * Generic over the prepared-message shape so each channel merges its own hook type.
+ * Structural over the group shape rather than tied to one hooks type, because the global
+ * `Hooks` (discriminated across channels) and each channel's `TransportHooks<TPrepared>`
+ * are different types that merge identically.
  */
-export function merge_hooks<T>(
-	base: TransportHooks<T> = {},
-	override: TransportHooks<T> = {}
-): TransportHooks<T> {
+export function merge_hooks<T extends { before?: object; after?: object; on?: object }>(
+	base?: T,
+	override?: T
+): T {
 	return {
-		before: { ...base.before, ...defined(override.before ?? {}) },
-		after: { ...base.after, ...defined(override.after ?? {}) },
-		on: { ...base.on, ...defined(override.on ?? {}) },
-	}
+		before: { ...base?.before, ...defined(override?.before ?? {}) },
+		after: { ...base?.after, ...defined(override?.after ?? {}) },
+		on: { ...base?.on, ...defined(override?.on ?? {}) },
+	} as T
 }
 
 /** Merge `override` over `base`, deep-merging the `default`, `hooks` and `captcha` objects. */
