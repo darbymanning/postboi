@@ -3,10 +3,9 @@
 The plan for taking postboi from an email library to a multi-channel messaging library:
 SMS, push, RCS, WhatsApp and chat, behind one API.
 
-**Status: Phase 0 shipped, Phase 1 next.** Everything from Phase 1 onward is unbuilt. This
-document is the source of truth for the channel work — read it before starting a phase, and
-update it when a decision changes. Reasoning that led to these conclusions lives in this
-file's git history.
+**Status: Phases 0 and 1 shipped.** Phase 2 onward is unbuilt. This document is the source
+of truth for the channel work — read it before starting a phase, and update it when a
+decision changes. Reasoning that led to these conclusions lives in this file's git history.
 
 ---
 
@@ -438,7 +437,7 @@ release note, not a Phase 0 one**.
 
 ---
 
-## Phase 1 — SMS, bring-your-own provider
+## Phase 1 — SMS, bring-your-own provider ✅ **done**
 
 ### Types
 
@@ -540,7 +539,26 @@ Every new channel touches more than a provider file. This is the actual cost:
 - [ ] Docs page, `contentSections` entry (`src/lib/config/navigation.ts:34`), `llms.txt`
 - [ ] `skills/` — the shipped agent skill describes email only
 
-**Effort: ~1 week.**
+**Shipped**, including the pieces the checklist called out:
+
+- `sms/phone.ts` — E.164 normalisation and GSM segment counting, not a libphonenumber port
+- `sms/provider.ts` — `SmsProvider extends Transport`, same three hooks as email
+- The SMS Works, Twilio and AWS SNS, plus an SMS mock
+- `sms()` with env resolution, and `postboi init --sms` asking destination first
+- Docs at `/sms`, in a new **Channels** nav section
+- 45 tests across normalisation, providers, the resolver and dev interception
+
+**Two deviations from the plan, both deliberate:**
+
+1. **Dev interception is stricter than email's.** The plan said to mirror the dev inbox,
+   which only intercepts when it's _running_. SMS intercepts on `NODE_ENV=development`
+   **always**, because the failure modes aren't comparable — a stray email is embarrassing,
+   a stray text costs money and can't be recalled. `dev: { sms: false }` or
+   `POSTBOI_SMS_DEV=send` is the way out, and both are opt-in so doing nothing is safe.
+2. **The dev-inbox UI tab is not built.** As agreed in open decision 7 — interception is the
+   safety guarantee and shipped; SMS logs to the console until the tab lands.
+
+**Effort: well under the ~1 week estimate.**
 
 ---
 
