@@ -366,13 +366,9 @@ dev-inbox interception.
    _Proposed: add `channel` in Phase 0, while we're already touching the error path._
    **Decide before Phase 0, not after** — this is the only open decision that does block it.
 
-5. **Which UK-native SMS provider do we actually integrate?** Phase 1 says "Twilio +
-   UK-native + SNS", but the UK slot isn't settled. **Caveat: PureSMS was recommended on
-   published price alone — I have not verified their API quality or docs.** The SMS Works
-   costs a little more but bills only for delivered messages, which maps neatly onto our
-   `BatchResult` reporting.
-   _Proposed: verify both APIs at the start of Phase 1 and pick on integration quality, not
-   headline rate — the difference is 0.3p._
+5. ~~**Which UK-native SMS provider?**~~ **Decided: The SMS Works.** See
+   [Appendix B](#appendix-b--uk-sms-provider-evaluation) for the evaluation. The headline
+   price gap turned out to be an illusion, so the choice fell to architecture fit.
 
 6. **Release cadence.** Six phases against a repo where every release snapshots the
    versioned docs (`src/lib/content/v*/`) and `scripts/release.sh` is a single scripted path.
@@ -940,3 +936,68 @@ no legitimate below-floor lane for guaranteed A2P SMS.
 So don't try to undercut SMS. **Make it the fallback of last resort behind channels that
 don't ride the termination rail** — which is exactly what `send()`'s cost-ordered fallback is
 for, and the reason it's the most valuable thing in this plan for a UK/EU sender.
+
+---
+
+## Appendix B — UK SMS provider evaluation
+
+Phase 1 ships Twilio (global, familiar), AWS SNS (near-free once `aws.ts` exists) and one
+UK-native provider. This is how the UK slot was decided.
+
+### The headline price gap is an illusion
+
+| | Headline | Billing | **Effective** |
+| --- | --- | --- | --- |
+| **PureSMS** | **2.8p** + VAT | Charged on submission | **2.8p** |
+| **The SMS Works** | from **3.1p** + VAT | **Refunds undelivered UK SMS** — they state ~8.9% average saving | **~2.82p** |
+
+They are within a rounding error of each other. **Price is therefore not the deciding
+factor**, which invalidates the basis of the earlier "PureSMS on price" recommendation.
+
+### Side by side
+
+| | **The SMS Works** | **PureSMS** |
+| --- | --- | --- |
+| Base URL | `api.thesmsworks.co.uk/v1` | `connect-api.divergent.cloud` |
+| Operator | **Their own platform** | **Divergent Connect** — PureSMS is a white-label brand on top |
+| Auth | Long-lived JWT in `Authorization` | `X-Api-Key` header |
+| Send | `POST /message/send` | `POST /sms/send` |
+| Batch | **`/batch/send`** (same message, 5k), **`/batch/any`** (unique personalised, 5k), `/batch/schedule` | `POST /sms/send/bulk` (array of messages) |
+| Delivery receipts | Webhook POST, optional **basic auth** | Webhook POST, **HMAC-SHA256 signatures** |
+| Errors | **Documented codes, permanent/temporary classification, reason codes** | **Not documented on the developer page** |
+| SDKs | C#, Go, Java, Node, PHP, Python, Ruby | .NET, Node, community PHP |
+| Getting started | **50 free test credits** | Free account, no card |
+| OpenAPI spec | No | No |
+
+### Decision: **The SMS Works**
+
+1. **`/batch/any` is a direct architectural fit.** "Unique personalised messages to up to
+   5,000 recipients" is precisely what `send_data_batch` (`index.ts:774`) does with `{key}`
+   templating — it maps straight onto `build_batch_request` with no impedance. PureSMS's
+   bulk endpoint works but only matches the same-message case cleanly.
+2. **Documented error codes feed two of our three required methods.** `parse_error` is
+   mandatory for every provider, and their **permanent/temporary classification** can drive
+   `#should_retry` properly rather than falling back to bare HTTP status. PureSMS's error
+   documentation is simply absent from its developer page — we'd be reverse-engineering the
+   one method we can't get wrong.
+3. **Delivery-only billing matches our reporting model.** Charging for delivered messages is
+   conceptually the same shape as `BatchResult`, and it makes DLR handling load-bearing
+   rather than decorative.
+4. **No reseller layer.** PureSMS is a brand on Divergent Connect, so the docs are split
+   across two sites and there's a commercial party between us and the platform. If PureSMS
+   changes supplier, our provider breaks for reasons invisible from their site.
+5. **50 free test credits** means the provider can be built and tested immediately, with no
+   commercial commitment.
+
+**The trade-off we're accepting:** PureSMS has **HMAC-SHA256 webhook signatures** where The
+SMS Works offers only optional basic auth. That's genuinely weaker, and it matters because
+`webhooks/crypto.ts` already implements HMAC verification for other providers. Basic auth
+over HTTPS plus the `?token=…` pattern used elsewhere in `webhooks/` is acceptable, but it
+should be called out in the docs rather than glossed.
+
+**Also unverified:** their volume tiers aren't published ("more than that? talk to us"), so
+high-volume rates need a conversation. Not a Phase 1 blocker.
+
+**PureSMS stays on the follow-up list.** It's a genuinely simple API — `X-Api-Key`, flat
+pricing, no tiers — and at ~80 lines it's cheap to add once the `SmsProvider` shape is
+proven.
