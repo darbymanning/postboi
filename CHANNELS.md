@@ -942,24 +942,50 @@ for, and the reason it's the most valuable thing in this plan for a UK/EU sender
 ## Appendix B — UK SMS provider evaluation
 
 Phase 1 ships Twilio (global, familiar), AWS SNS (near-free once `aws.ts` exists) and one
-UK-native provider. This is how the UK slot was decided.
+UK-native provider. This is the sweep behind that UK choice.
 
-### The headline price gap is an illusion
+### The criterion that eliminated most of the field
 
-| | Headline | Billing | **Effective** |
+A library is adopted by people starting at zero. **Any provider requiring a monthly
+subscription or a large minimum is disqualified**, however good its headline rate — a
+developer trying `sms()` for the first time must not hit a £54/month gate.
+
+That single test splits the market cleanly, and it isn't visible from the headline prices
+everyone quotes.
+
+### Pay-as-you-go — genuinely usable from zero
+
+| Provider | Effective UK rate | Commercials | API |
 | --- | --- | --- | --- |
-| **PureSMS** | **2.8p** + VAT | Charged on submission | **2.8p** |
-| **The SMS Works** | from **3.1p** + VAT | **Refunds undelivered UK SMS** — they state ~8.9% average saving | **~2.82p** |
+| **The SMS Works** | **~2.82p** (3.1p less ~8.9% delivery refunds) | PAYG, no minimum, credits never expire, **50 free test credits** | Excellent — see below |
+| **PureSMS** | **2.8p** flat | PAYG, no minimum, no monthly | Good, but white-labelled and error handling undocumented |
+| **ClickSend** | ~3.5–4p (~$0.045) | PAYG, $20 minimum top-up, free inbound | Decent and global, but UK rate is unpublished and it's ~30% pricier |
+| **Twilio** | ~4.3p ($0.056) | PAYG | Already shipping as the global option |
+| **FireText** | 4.0p (1,000 tier) | Credits, no expiry | Documented errors, webhooks, ISO 27001 + ICO registered. Simply too expensive |
+| **TextAnywhere** | 4.9p | Credits **that expire** | Ruled out on price *and* expiry |
 
-They are within a rounding error of each other. **Price is therefore not the deciding
-factor**, which invalidates the basis of the earlier "PureSMS on price" recommendation.
+### Subscription — disqualified regardless of headline rate
 
-### Side by side
+| Provider | Entry | **Effective rate** |
+| --- | --- | --- |
+| **VoodooSMS** | £54/mo → 500 msgs | **10.8p** (£143/2,500 = 5.72p; £468/10,000 = 4.68p) |
+| **Esendex** | £54/mo minimum plan | "from 2.4p", but gated behind the plan |
+
+**The advertised sub-2p UK rates are a mirage.** VoodooSMS is quoted around 1.74–1.8p in
+comparison articles, which sits *below* the 2.00–2.80p MNO termination range in
+[Appendix A](#appendix-a--sms-economics) — that alone should have been a flag. It's a
+bespoke enterprise-volume rate; entry pricing is **~4× The SMS Works**.
+
+Note also that **VoodooSMS and Esendex are both Commify UK Limited** — the same parent and
+the same £54/mo entry structure. Two apparently independent options are one commercial
+decision.
+
+### The two real contenders
 
 | | **The SMS Works** | **PureSMS** |
 | --- | --- | --- |
 | Base URL | `api.thesmsworks.co.uk/v1` | `connect-api.divergent.cloud` |
-| Operator | **Their own platform** | **Divergent Connect** — PureSMS is a white-label brand on top |
+| Operator | **Their own platform** | **Divergent Connect** — PureSMS is a white-label brand |
 | Auth | Long-lived JWT in `Authorization` | `X-Api-Key` header |
 | Send | `POST /message/send` | `POST /sms/send` |
 | Batch | **`/batch/send`** (same message, 5k), **`/batch/any`** (unique personalised, 5k), `/batch/schedule` | `POST /sms/send/bulk` (array of messages) |
@@ -967,37 +993,45 @@ factor**, which invalidates the basis of the earlier "PureSMS on price" recommen
 | Errors | **Documented codes, permanent/temporary classification, reason codes** | **Not documented on the developer page** |
 | SDKs | C#, Go, Java, Node, PHP, Python, Ruby | .NET, Node, community PHP |
 | Getting started | **50 free test credits** | Free account, no card |
-| OpenAPI spec | No | No |
 
 ### Decision: **The SMS Works**
 
+It is both the **cheapest genuinely pay-as-you-go UK option** and the best API. Specifically:
+
 1. **`/batch/any` is a direct architectural fit.** "Unique personalised messages to up to
    5,000 recipients" is precisely what `send_data_batch` (`index.ts:774`) does with `{key}`
-   templating — it maps straight onto `build_batch_request` with no impedance. PureSMS's
-   bulk endpoint works but only matches the same-message case cleanly.
-2. **Documented error codes feed two of our three required methods.** `parse_error` is
-   mandatory for every provider, and their **permanent/temporary classification** can drive
-   `#should_retry` properly rather than falling back to bare HTTP status. PureSMS's error
-   documentation is simply absent from its developer page — we'd be reverse-engineering the
-   one method we can't get wrong.
-3. **Delivery-only billing matches our reporting model.** Charging for delivered messages is
-   conceptually the same shape as `BatchResult`, and it makes DLR handling load-bearing
-   rather than decorative.
-4. **No reseller layer.** PureSMS is a brand on Divergent Connect, so the docs are split
-   across two sites and there's a commercial party between us and the platform. If PureSMS
-   changes supplier, our provider breaks for reasons invisible from their site.
-5. **50 free test credits** means the provider can be built and tested immediately, with no
-   commercial commitment.
+   templating — it maps straight onto `build_batch_request` with no impedance.
+2. **Documented error codes feed two required methods.** `parse_error` is mandatory for
+   every provider, and their **permanent/temporary classification** can drive
+   `#should_retry` properly instead of falling back to bare HTTP status. PureSMS's error
+   documentation is absent — we'd be reverse-engineering the one method we can't get wrong.
+3. **Delivery-only billing matches our reporting model** and makes DLR handling
+   load-bearing rather than decorative.
+4. **No reseller layer.** PureSMS is a brand on Divergent Connect, so docs span two sites
+   and a supplier change would break us invisibly.
+5. **Direct UK carrier connection.** Independent testing groups Esendex, FireText,
+   VoodooSMS and The SMS Works at **5–15s delivery**, against 10–30s for international
+   platforms routing into the UK.
+6. **50 free test credits** — the provider can be built and tested immediately.
 
-**The trade-off we're accepting:** PureSMS has **HMAC-SHA256 webhook signatures** where The
-SMS Works offers only optional basic auth. That's genuinely weaker, and it matters because
-`webhooks/crypto.ts` already implements HMAC verification for other providers. Basic auth
-over HTTPS plus the `?token=…` pattern used elsewhere in `webhooks/` is acceptable, but it
-should be called out in the docs rather than glossed.
+**Trade-off accepted:** PureSMS has **HMAC-SHA256 webhook signatures** where The SMS Works
+offers only optional basic auth. That's genuinely weaker, and it stings because
+`webhooks/crypto.ts` already implements HMAC for other providers. Basic auth over HTTPS
+plus the `?token=…` pattern used elsewhere in `webhooks/` is workable, but say so in the
+docs rather than glossing it.
 
-**Also unverified:** their volume tiers aren't published ("more than that? talk to us"), so
+**Unverified:** their volume tiers aren't published ("more than that? talk to us"), so
 high-volume rates need a conversation. Not a Phase 1 blocker.
 
-**PureSMS stays on the follow-up list.** It's a genuinely simple API — `X-Api-Key`, flat
-pricing, no tiers — and at ~80 lines it's cheap to add once the `SmsProvider` shape is
-proven.
+### Follow-ups worth noting
+
+- **PureSMS** stays on the list — `X-Api-Key`, flat pricing, ~80 lines once the
+  `SmsProvider` shape is proven.
+- **Esendex v2 is multi-channel**: `POST https://api.esendex.co.uk/v2/messages` takes a
+  `channel` parameter for **SMS, WhatsApp and RCS**. One vendor covering three of our
+  channels is genuinely interesting for Phase 6 — the £54/mo minimum is what rules it out
+  of Phase 1, not the technology.
+- **Grey routing is a live concern in this market.** VoodooSMS advertises "100% UK White
+  Routes — Guaranteed", which is a vendor thinking it needs to say so. Worth asking any
+  future provider directly, and worth a line in the docs about why the cheapest quote isn't
+  always the cheapest outcome.
