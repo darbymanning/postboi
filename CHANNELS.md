@@ -258,6 +258,66 @@ but don't optimise for cost; Twilio will never route you to a competitor. Nobody
 cost-aware, auditable, cross-vendor channel selection — and the in-process model is exactly
 what makes it possible to give away.
 
+### Could we become an engagement platform ourselves?
+
+Long-horizon question, worth recording because the answer is "partly, and the useful part is
+closer than it looks — but not the whole thing, and here's why."
+
+**We already have more of it than you'd guess.** The Postboi provider is not just a send
+endpoint; it already ships the audience primitives an engagement platform is built on:
+
+| Already built | Where |
+| --- | --- |
+| `contacts` — one per address, global `data` custom fields, search/filter | `postboi_provider.ts:550` |
+| `lists` + `recipients` — membership, three-state status, double opt-in | `postboi_provider.ts:405`, `:481` |
+| **`lists.broadcast()`** — one message to a whole list, `{key}` templating, auto unsubscribe headers | `postboi_provider.ts:463` |
+| `notifications` — **recurring scheduled digests** (daily/weekly/monthly) and **`subscribe`-triggered** sends | `postboi_provider.ts:616` |
+| `suppressions` — account-wide opt-out enforcement | `postboi_provider.ts:678` |
+| `messages` — status, reschedule, cancel | `postboi_provider.ts:385` |
+
+Audience, segmentation-lite, broadcast, scheduling, trigger-on-signup, opt-out. That's a
+real slice of the category already — it's just **email-only**. The multi-channel work
+turns it into the same thing across every channel almost for free:
+
+1. **Delivery profiles** — extend a contact to carry `phone`, `whatsapp` and push tokens
+   alongside `email` (already proposed in Positioning, above).
+2. **`lists.broadcast()` goes multi-channel** — the single highest-leverage change here.
+   Everything around it (templating, membership, suppression, unsubscribe) already works.
+3. **Per-channel preferences** — "email yes, SMS no". Worth noting this isn't optional
+   ambition: **SMS STOP handling and email unsubscribe are legally required anyway**, so
+   the preference store gets built regardless. It's the natural on-ramp to the rest.
+
+That path is credible, reuses what exists, and stays monetised through hosted email where
+the margin is.
+
+**⚠️ But it collides head-on with the pricing model above, and that needs deciding, not
+drifting.** Our strongest argument against Knock and Courier is *"there is no server in the
+send path, so routing is free."* An engagement platform **is** a server in the path — it's
+stateful, it stores contacts and segments and analytics, and its costs scale with the size
+of the audience rather than the number of sends. That is precisely **why** OneSignal charges
+per MAU and sent.dm per contact. Go far enough down this road and we face the same
+economics, and end up either adopting the per-contact pricing we just committed against, or
+absorbing a cost that grows with customers who may never send anything.
+
+**So the honest recommendation is: take the audience half, decline the marketing half.**
+
+| Take | Decline |
+| --- | --- |
+| Multi-channel broadcast | Client SDKs (iOS/Android/web/RN/Flutter) |
+| Delivery profiles + channel preferences | Visual journey / automation builders |
+| Scheduled and triggered sends (already exist) | A/B testing, behavioural analytics |
+| Delivery reporting per channel | In-app messaging |
+
+The declined column is OneSignal's actual moat and a different company: different buyer
+(growth/marketing, not developers), different discipline (campaign UX, not delivery
+correctness), and a permanent multi-platform SDK maintenance burden postboi has never
+carried — it's server-side only today, bar the `Captcha` components.
+
+**Sequencing:** none of this competes with Phases 0–6, and it shouldn't start until the
+channels exist and `send()` has shipped — the audience layer is only interesting once
+there's more than one channel to route between. Revisit after Phase 4, with the pricing
+question answered first.
+
 ---
 
 ## What already exists, and what has to change
