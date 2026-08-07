@@ -121,6 +121,96 @@ and well. Email + push is territory sent.dm isn't in at all.
 
 ---
 
+## Pricing and the competitive set
+
+Going multi-channel moves us out of the email-provider category and into
+**notification infrastructure**, where the incumbents are Knock, Courier and Novu. That
+changes who we're compared against, and it kills one of our assumed differentiators.
+
+| Player | Charges for | Numbers | Transport |
+| --- | --- | --- | --- |
+| **Knock** | per notification | Free 10k/mo, then **$250/mo** (50k–250k), $0.005/msg overage | BYO providers |
+| **Courier** | per notification | Free 10k/mo, then **from $99/mo** | BYO providers |
+| **Novu** | per **event** — 1 trigger = 1 event *regardless of channel count* | Cloud tiers; **self-host free** | BYO providers |
+| **sent.dm** | per **contact/month** | **$0.015/contact/mo** + carrier fees | Hosted |
+| **postboi** | — | see below | BYO **or** hosted email |
+
+⚠️ **Correction to an assumption made earlier in this doc: "bring your own provider" is
+*not* a differentiator against this category.** Knock, Courier and Novu are all BYO-transport
+already — they orchestrate, you supply the SendGrid/Twilio keys. BYO only differentiates us
+against sent.dm and the raw CPaaS vendors. Against the notification platforms we need a
+different argument, and we have two good ones.
+
+**1. There is no server in the send path, so routing can be free.** Knock and Courier are
+hosted services: your notification goes to their API, they fan out, you pay them per
+notification *on top of* the providers you're already paying. Postboi's BYO path runs
+**in your process** and calls your providers directly — no postboi infrastructure involved,
+therefore **no marginal cost to us, therefore no reason to charge**. That's not undercutting
+them, it's a different cost structure. "Knock wants $250/month to route 50k notifications to
+providers you already pay for" is a strong, true sentence.
+
+It's also a reliability argument, not just a price one: nothing in the notification path
+can go down that isn't already yours.
+
+**2. We can be the transport as well as the orchestrator.** None of Knock/Courier/Novu
+send anything themselves. The hosted Postboi provider does — so "one bill, and your email
+actually sends" is available to us and not to them.
+
+**Worth stealing from Novu:** their per-*event* model (one trigger = one event however many
+channels it fans out to) is plainly the right shape for multi-channel. Knock and Courier
+charging per *notification* means a 3-channel fan-out bills 3×, which actively penalises
+the thing they're selling. If we ever meter orchestration, meter events.
+
+### Recommended model
+
+| Layer | Price | Why |
+| --- | --- | --- |
+| **The library — all channels, BYO, unlimited** | **Free, forever** | Zero marginal cost (no server). The wedge, and unbeatable by anyone carrying hosting costs |
+| **Hosted email** (the Postboi provider) | Existing £9/£29/£99 tiers | SES COGS $0.0001 → **60–75% margin**. This is where the money is and always was |
+| **Hosted SMS/RCS** | **Don't build it** | Three separate analyses in this doc land here: regulated floor, ~25% best-case margin, 800k–2M/mo volume commitment |
+| **Hosted orchestration**, if ever | Per **event**, Novu-style | Never per contact, never per channel |
+
+**Two rules that follow, and should be treated as commitments:**
+
+- **Never charge per contact.** It's the clearest line we have against sent.dm, and it's a
+  genuinely better deal for the transactional apps we attract: *you pay for messages, not
+  for having users*.
+- **Never mark up SMS transport.** We can't win there and trying makes us the expensive
+  option in our own home market.
+
+### What it looks like for a real app
+
+SaaS with **100k registered users**, sending **50k notifications/month** (mostly email +
+push, ~5k SMS OTPs), UK:
+
+| | Platform fee | Notes |
+| --- | --- | --- |
+| sent.dm | **~$1,500/mo** | $0.015 × 100k contacts, *before a single send*. And no email channel at all |
+| Knock | **$250/mo** | 50k notifications, on top of your own provider bills |
+| Courier | **$99/mo+** | Same shape |
+| **postboi (BYO)** | **£0** | Transport paid direct to your providers |
+| **postboi (hosted email)** | **£29/mo** | Email transport *included*, SMS BYO at cost |
+
+### The strategic honesty
+
+**This pricing means the multi-channel work earns no direct revenue.** The library stays
+free; monetisation remains hosted email. So the pivot is a **distribution play** — SMS,
+push, RCS and chat make postboi the obvious default for "tell this user something", and a
+share of those users take hosted email because it's right there and already configured.
+
+That's a legitimate strategy, but it should be stated rather than assumed, because it sets
+the success metric. **The multi-channel phases should be judged on adoption and on hosted-email
+conversion, not on channel revenue** — there won't be any, by design.
+
+The one genuinely novel product claim to build toward: **postboi picks the cheapest rail
+that reaches the user, across your own provider accounts, and tells you what it chose.**
+sent.dm does routing but hides it and taxes your contact list; Knock and Courier orchestrate
+but don't optimise for cost; Twilio will never route you to a competitor. Nobody is doing
+cost-aware, auditable, cross-vendor channel selection — and the in-process model is exactly
+what makes it possible to give away.
+
+---
+
 ## What already exists, and what has to change
 
 `ProviderBase` (`src/library/index.ts:472`) is one class doing two jobs. The split is the
