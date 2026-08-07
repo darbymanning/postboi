@@ -359,6 +359,38 @@ dev-inbox interception.
    practice. **Get a definitive answer from whichever provider we ship before writing it
    into the docs.**
 
+4. **Does `PostboiError` gain a `channel` field?** It carries `provider` today
+   (`index.ts:341`) but nothing says *which channel* failed — and `send()`'s per-channel
+   results are exactly where that matters. It's a public class, so adding a readonly field
+   later is a change we'd rather not make twice.
+   _Proposed: add `channel` in Phase 0, while we're already touching the error path._
+   **Decide before Phase 0, not after** — this is the only open decision that does block it.
+
+5. **Which UK-native SMS provider do we actually integrate?** Phase 1 says "Twilio +
+   UK-native + SNS", but the UK slot isn't settled. **Caveat: PureSMS was recommended on
+   published price alone — I have not verified their API quality or docs.** The SMS Works
+   costs a little more but bills only for delivered messages, which maps neatly onto our
+   `BatchResult` reporting.
+   _Proposed: verify both APIs at the start of Phase 1 and pick on integration quality, not
+   headline rate — the difference is 0.3p._
+
+6. **Release cadence.** Six phases against a repo where every release snapshots the
+   versioned docs (`src/lib/content/v*/`) and `scripts/release.sh` is a single scripted path.
+   _Proposed: ship each phase as its own minor — 0.24 the `Transport` split (no user-visible
+   change, so the hooks break lands quietly and early), 0.25 SMS, and so on. Smaller blast
+   radius and real feedback before `send()` locks the fan-out shape._
+
+7. **Dev inbox scope in Phase 1.** The checklist calls this the biggest non-provider chunk,
+   but it's really two things: **interception** (a dev send must not reach a real handset —
+   safety-critical, non-negotiable) and the **inbox UI tab** (convenience).
+   _Proposed: interception ships with Phase 1; SMS falls back to console logging until the
+   UI tab lands. Roughly halves Phase 1's riskiest piece without weakening the guarantee._
+
+Also worth confirming, though neither needs deciding now: `postboi/kit` stays **email-only**
+(it's FormData/form-action shaped, and there's no coherent SMS form action), and the
+generated `Register` types narrow email `from` addresses only — extending them to SMS sender
+IDs is a later question, not a Phase 1 one.
+
 Rebranding is mechanical and can happen in one pass whenever: README opener, site tagline
 (`src/lib/config/navigation.ts:34`), docs section description, `package.json` keywords
 (currently just `["svelte"]`), the shipped agent skill in `skills/`, and `llms.txt`.
