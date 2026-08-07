@@ -3,9 +3,10 @@
 The plan for taking postboi from an email library to a multi-channel messaging library:
 SMS, push, RCS, WhatsApp and chat, behind one API.
 
-**Status: Phase 0 shipped, Phase 1 next.** Everything from Phase 1 onward is unbuilt. This document is the source of truth for the
-channel work — read it before starting a phase, and update it when a decision changes.
-Reasoning that led to these conclusions lives in this file's git history.
+**Status: Phase 0 shipped, Phase 1 next.** Everything from Phase 1 onward is unbuilt. This
+document is the source of truth for the channel work — read it before starting a phase, and
+update it when a decision changes. Reasoning that led to these conclusions lives in this
+file's git history.
 
 ---
 
@@ -22,10 +23,12 @@ Reasoning that led to these conclusions lives in this file's git history.
   fan-out anything else would mean a `notify()` call firing hooks called `before.send`.
   Rejected: having `send()` sniff `to` and silently dispatch to one channel or many — it
   always takes a channel-keyed `to`.
-- **Hooks go channel-generic in Phase 0.** `hooks.before.send` gains a `channel`
-  discriminant and its `message` widens across channels. This breaks existing hooks that
-  read `message.subject` without narrowing. **Pre-1.0, so it's a minor bump** — and doing it
-  in Phase 0 means migrating one channel instead of six.
+- **Hooks go channel-generic.** Every hook context carries a `channel`, and `message` widens
+  to a union across channels — which breaks existing hooks that read `message.subject`
+  without narrowing. **Pre-1.0, so it's a minor bump.** Split across two releases in
+  practice: Phase 0 added `channel` (additive, shipped), and the union widens in Phase 1
+  when `PreparedSms` exists. So it's still one channel's worth of migration, just announced
+  with SMS rather than before it.
 - **We ship JavaScript client SDKs, not native ones.** Web Push helpers earn their place;
   Swift/Kotlin/Flutter don't. See [Phase 3](#phase-3--push-and-the-web-sdk).
 - **We do not build hosted SMS.** Three independent analyses agree — see
