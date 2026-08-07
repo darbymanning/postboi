@@ -10,6 +10,7 @@ import type { BodyInput, SendOptions } from "./index.js"
 import type { SmsOptions, Phone } from "./sms/types.js"
 import type { ChatOptions } from "./chat/types.js"
 import type { PushOptions, PushTarget } from "./push/types.js"
+import type { WhatsappOptions } from "./whatsapp/types.js"
 import { PostboiError, type Channel } from "./errors.js"
 
 /**
@@ -18,9 +19,11 @@ import { PostboiError, type Channel } from "./errors.js"
  * The spread is total rather than marginal, which is what makes this worth doing: push and
  * chat cost nothing per message, email is fractions of a penny, and an SMS into Western
  * Europe can be 2.8p or more. Preferring push over SMS doesn't save a percentage — it saves
- * the entire cost of the message.
+ * the entire cost of the message. WhatsApp sits between them: cheaper than SMS in most
+ * markets, and a free-form message outside its 24-hour window fails with
+ * `outside_window`, which in a fallback chain just means "advance to SMS".
  */
-const COST_ORDER: ReadonlyArray<Channel> = ["push", "chat", "email", "sms"]
+const COST_ORDER: ReadonlyArray<Channel> = ["push", "chat", "email", "whatsapp", "sms"]
 
 /** Where to reach someone, keyed by channel. Never inferred — you say which is which. */
 export interface Recipients {
@@ -29,6 +32,8 @@ export interface Recipients {
 	chat?: string
 	/** A Web Push subscription, or an FCM device token. */
 	push?: PushTarget
+	/** A phone number reachable on WhatsApp. */
+	whatsapp?: Phone
 }
 
 /** The outcome for one channel. */
@@ -61,7 +66,8 @@ export interface FanOutOptions {
 	body?: BodyInput
 	/**
 	 * Fallback chain instead of fan-out: try channels in this order and **stop at the first
-	 * success**. `"cheapest"` uses the built-in cost order (push → chat → email → sms).
+	 * success**. `"cheapest"` uses the built-in cost order
+	 * (push → chat → email → whatsapp → sms).
 	 */
 	channels?: Array<Channel> | "cheapest"
 	/** Per-channel overrides, merged over what the shared fields produce. */
@@ -72,6 +78,12 @@ export interface FanOutOptions {
 	chat?: Partial<ChatOptions>
 	/** Per-channel overrides, merged over what the shared fields produce. */
 	push?: Partial<PushOptions>
+	/**
+	 * Per-channel overrides, merged over what the shared fields produce. The place to put
+	 * `template`/`variables` so WhatsApp stays deliverable outside its 24-hour window
+	 * while the other channels carry the plain `message`.
+	 */
+	whatsapp?: Partial<WhatsappOptions>
 }
 
 /**
@@ -124,6 +136,23 @@ const CHANNELS = {
 		async deliver(built: unknown) {
 			const { push } = await import("./push/send.js")
 			return push(built as PushOptions)
+		},
+	},
+	whatsapp: {
+		options({ to, message, whatsapp }: FanOutOptions) {
+			// The override spread means a caller-supplied `template` sits beside the shared
+			// `message` — prepare would reject that pair, so the template wins and the
+			// free-form text stays with the channels that can always carry it.
+			const overrides = whatsapp ?? {}
+			return {
+				to: to.whatsapp,
+				...(overrides.template ? {} : { message: message ?? "" }),
+				...overrides,
+			}
+		},
+		async deliver(built: unknown) {
+			const { whatsapp } = await import("./whatsapp/send.js")
+			return whatsapp(built as WhatsappOptions)
 		},
 	},
 } satisfies Record<
@@ -191,7 +220,8 @@ export async function send(options: FanOutOptions): Promise<SendResult> {
 		throw new PostboiError({
 			provider: "postboi",
 			code: "no_recipient",
-			message: "No channel to send on — `to` needs at least one of email, sms, chat or push.",
+			message:
+				"No channel to send on — `to` needs at least one of email, sms, chat, push or whatsapp.",
 		})
 	}
 

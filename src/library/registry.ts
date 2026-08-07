@@ -583,6 +583,67 @@ export function find_push_provider(key: string): PushProviderMeta | undefined {
 }
 
 /**
+ * A WhatsApp provider's metadata. The `note` carries the thing the picker most needs to
+ * say: which of the two onboarding paths (Twilio sender vs Meta Business verification)
+ * this provider commits you to.
+ */
+export type WhatsappProviderMeta = ProviderMeta & {
+	/** One line on why you'd pick this one. */
+	note: string
+}
+
+/** The WhatsApp providers `whatsapp()` can drive. */
+export const WHATSAPP_PROVIDERS = [
+	{
+		key: "twilio",
+		name: "Twilio",
+		import: "postboi/whatsapp-twilio",
+		class: "TwilioWhatsapp",
+		url: "https://console.twilio.com",
+		note: "Same credentials as Twilio SMS; templates are Content SIDs (HX…)",
+		fields: [
+			{ env: "TWILIO_ACCOUNT_SID", arg: "account_sid", label: "Account SID", secret: true },
+			{ env: "TWILIO_AUTH_TOKEN", arg: "auth_token", label: "Auth token", secret: true },
+			{
+				env: "TWILIO_MESSAGING_SERVICE_SID",
+				arg: "messaging_service_sid",
+				label: "Messaging Service SID (optional; supplies the WhatsApp sender)",
+				default: "",
+			},
+		],
+	},
+	{
+		key: "meta",
+		name: "Meta Cloud API",
+		import: "postboi/whatsapp-meta",
+		class: "Meta",
+		url: "https://developers.facebook.com/apps",
+		note: "Direct — no platform fee on top of Meta's, but needs Business verification",
+		fields: [
+			{
+				env: "WHATSAPP_ACCESS_TOKEN",
+				arg: "access_token",
+				label: "System User access token",
+				secret: true,
+			},
+			{
+				env: "WHATSAPP_PHONE_NUMBER_ID",
+				arg: "phone_number_id",
+				label: "Phone number id (from the app dashboard, not the number itself)",
+			},
+		],
+	},
+] as const satisfies ReadonlyArray<WhatsappProviderMeta>
+
+/** A known WhatsApp provider key, e.g. `"meta"`. */
+export type WhatsappProviderKey = (typeof WHATSAPP_PROVIDERS)[number]["key"]
+
+/** Look up a WhatsApp provider by its key. */
+export function find_whatsapp_provider(key: string): WhatsappProviderMeta | undefined {
+	return WHATSAPP_PROVIDERS.find((p) => p.key === key)
+}
+
+/**
  * Every channel's provider list under one key. The `satisfies` is the point: adding a
  * member to {@link Channel} without registering its providers stops compiling here, rather
  * than surfacing later as a resolver that can't find anything.
@@ -592,6 +653,7 @@ export const CHANNEL_PROVIDERS = {
 	sms: SMS_PROVIDERS,
 	chat: CHAT_PROVIDERS,
 	push: PUSH_PROVIDERS,
+	whatsapp: WHATSAPP_PROVIDERS,
 } as const satisfies Record<Channel, ReadonlyArray<ProviderMeta>>
 
 /** Look up any channel's provider by its key — what the shared channel resolver uses. */

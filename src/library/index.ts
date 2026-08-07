@@ -16,6 +16,7 @@ import {
 import type { PreparedSms } from "./sms/types.js"
 import type { PreparedChat } from "./chat/types.js"
 import type { PreparedPush } from "./push/types.js"
+import type { PreparedWhatsapp } from "./whatsapp/types.js"
 
 // The SMS channel's public types, surfaced from the root alongside the email ones.
 export type {
@@ -46,6 +47,14 @@ export type {
 	WebPushOptions,
 	WebPushSubscription,
 } from "./push/types.js"
+
+// The WhatsApp channel's public types.
+export type {
+	PreparedWhatsapp,
+	WhatsappDefaults,
+	WhatsappOptions,
+	WhatsappProviderOptions,
+} from "./whatsapp/types.js"
 
 // Errors are shared across every channel, but the package root stays their public home.
 export {
@@ -358,6 +367,7 @@ export type HookChannelContext =
 	| { channel: "sms"; message: PreparedSms }
 	| { channel: "chat"; message: PreparedChat }
 	| { channel: "push"; message: PreparedPush }
+	| { channel: "whatsapp"; message: PreparedWhatsapp }
 
 /** The prepared-message union across every channel. */
 export type PreparedAny = HookChannelContext["message"]
