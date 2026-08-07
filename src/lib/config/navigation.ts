@@ -69,6 +69,7 @@ export const contentSections: ContentSectionConfig[] = [
 				items: [
 					{ slug: "send", name: "Multi-channel send()" },
 					{ slug: "sms", name: "SMS" },
+					{ slug: "push", name: "Push" },
 					{ slug: "chat", name: "Chat" },
 				],
 			},

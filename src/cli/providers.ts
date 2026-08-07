@@ -3,11 +3,17 @@
 export {
 	PROVIDERS,
 	SMS_PROVIDERS,
+	CHAT_PROVIDERS,
+	PUSH_PROVIDERS,
 	find_provider,
 	find_sms_provider,
+	find_chat_provider,
+	find_push_provider,
 	type ProviderMeta,
 	type ProviderField,
 	type SmsProviderMeta,
+	type ChatProviderMeta,
+	type PushProviderMeta,
 } from "../library/registry.js"
 import type { ProviderMeta, SmsProviderMeta } from "../library/registry.js"
 
@@ -60,23 +66,34 @@ export const SMS_DEFAULT_FIELDS: Array<{
 ]
 
 /**
- * Build a `postboi.config.ts` carrying only the SMS channel — used when `init --sms` runs
- * in a project that has no config file yet.
+ * Build a `postboi.config.ts` carrying a single non-email channel — used when
+ * `init --sms` / `--chat` / `--push` runs in a project with no config file yet.
  */
+export function render_channel_config(
+	channel: "sms" | "chat" | "push",
+	provider: string,
+	defaults: Record<string, string>,
+	options: Record<string, string>
+): string {
+	const fn = { sms: "sms()", chat: "chat()", push: "push()" }[channel]
+	return `import { config } from "postboi"
+
+// Project-wide config, picked up automatically by ${fn}. Commit this — keep secrets in env.
+export default config({
+	${channel}: {
+		provider: ${JSON.stringify(provider)},
+${render_block("default", defaults, "\t\t")}${render_block("options", options, "\t\t")}	},
+})
+`
+}
+
+/** The SMS-shaped call, kept for the SMS flow's own call site. */
 export function render_sms_config(
 	provider: string,
 	defaults: Record<string, string>,
 	options: Record<string, string>
 ): string {
-	return `import { config } from "postboi"
-
-// Project-wide config, picked up automatically by sms(). Commit this — keep secrets in env.
-export default config({
-	sms: {
-		provider: ${JSON.stringify(provider)},
-${render_block("default", defaults, "\t\t")}${render_block("options", options, "\t\t")}	},
-})
-`
+	return render_channel_config("sms", provider, defaults, options)
 }
 
 /** Render a `{ key: "value" }` block (one entry per line, tab-indented). Empty → "". */
