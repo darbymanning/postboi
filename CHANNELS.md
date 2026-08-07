@@ -133,6 +133,7 @@ changes who we're compared against, and it kills one of our assumed differentiat
 | **Courier** | per notification | Free 10k/mo, then **from $99/mo** | BYO providers |
 | **Novu** | per **event** — 1 trigger = 1 event *regardless of channel count* | Cloud tiers; **self-host free** | BYO providers |
 | **sent.dm** | per **contact/month** | **$0.015/contact/mo** + carrier fees | Hosted |
+| **OneSignal** | per **MAU / subscriber** | Free: **unlimited mobile push**, 10k web subs, 10k emails/mo. Growth: $19/mo **+ $0.012/MAU** mobile push, $0.004/web sub, email $2/1k | Hosted |
 | **postboi** | — | see below | BYO **or** hosted email |
 
 ⚠️ **Correction to an assumption made earlier in this doc: "bring your own provider" is
@@ -160,6 +161,54 @@ actually sends" is available to us and not to them.
 channels it fans out to) is plainly the right shape for multi-channel. Knock and Courier
 charging per *notification* means a 3-channel fan-out bills 3×, which actively penalises
 the thing they're selling. If we ever meter orchestration, meter events.
+
+### OneSignal, and why push transport is genuinely free
+
+OneSignal is the elephant in the push market and needs treating honestly, because **their
+free tier is unlimited mobile push, forever**. We cannot beat that on price and shouldn't
+pretend to.
+
+But the reason it's free is the important bit: **push transport costs nothing per message
+to anyone.** FCM is free from Google, APNs is free from Apple, Web Push is free from the
+browser vendors. There is no termination fee, no carrier, no per-message rail cost
+anywhere in push. OneSignal isn't giving away something expensive — they're giving away
+something free and charging for the product around it (SDKs, segmentation, journeys,
+analytics, in-app messaging).
+
+Which means **postboi BYO push is free at any scale, permanently, with no cliff** — and
+OneSignal's is not:
+
+| App size | OneSignal Growth | postboi (BYO) |
+| --- | --- | --- |
+| 5k MAU | $0 (free tier) | £0 |
+| 100k MAU | $19 + 100k × $0.012 = **~$1,219/mo** | **£0** |
+| 1M MAU | ~**$12,000/mo** | **£0** |
+
+**Be honest about what they give you that we won't:** client SDKs for iOS/Android/web,
+subscriber and segment management, journeys and automation, A/B testing, delivery
+analytics, in-app messaging. That's a marketing-engagement *product*. We'd ship transport
+plus routing, and nothing else.
+
+So the split is real and worth stating rather than fudging: **OneSignal is an engagement
+platform that does push; postboi is transactional notification transport.** "Re-engage
+lapsed users with a campaign" is theirs. "Tell this user their order shipped, on whatever
+reaches them" is ours. Different jobs, and we should say so in the docs rather than
+claim a win we haven't got.
+
+**Two things this sharpens:**
+
+1. **It's a third company taxing the user list.** sent.dm per contact, OneSignal per MAU —
+   both charge for *having* users. "You pay for messages, not for having users" is now a
+   position against the category, not a jab at one competitor.
+2. **It confirms the cost-ordered fallback is the real product.** The spread isn't
+   marginal, it's total: push is **£0**, hosted email ~**£0.0003**, UK SMS **2.8p**.
+   Routing a message to push instead of SMS doesn't save a percentage — it saves the
+   entire cost. That's the number that makes `send()`'s cost ordering worth building.
+
+(Aside worth noting: OneSignal's email is **$2/1,000 = $0.002/email**. Our hosted email
+tiers work out at ~$0.0003–0.00045. We're **4–7× cheaper on email than OneSignal** — a
+useful comparison to have ready, since anyone consolidating onto them for push will be
+quoted that rate for email too.)
 
 ### Recommended model
 
