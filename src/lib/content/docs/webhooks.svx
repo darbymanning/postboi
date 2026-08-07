@@ -64,7 +64,7 @@ Every provider's payload normalizes to a `WebhookEvent`:
 ```typescript
 interface WebhookEvent {
 	type: 'sent' | 'delivered' | 'delayed' | 'bounced' | 'complained'
-	    | 'opened' | 'clicked' | 'unsubscribed' | 'failed'
+	    | 'opened' | 'clicked' | 'unsubscribed' | 'failed' | 'received'
 	provider: string      // "resend", "postmark", …
 	message_id?: string   // matches the id send() returned, where the provider allows
 	email?: string        // the recipient this event is about
@@ -75,9 +75,32 @@ interface WebhookEvent {
 	bounce?: { category: 'hard' | 'soft' | 'suppressed' | 'unknown'; detail?: string }
 	client?: EmailClient  // opened/clicked, see below
 	ip?: string
+	body?: { html?: string; text?: string }  // received events: the message
 	raw: unknown          // the untouched provider payload
 }
 ```
+
+## Mail coming back
+
+`received` is the one event that isn't about a send: someone wrote to your
+[sending address](/provider#replies). It reads the other way round from the rest —
+`email` is the person who wrote to you, and `message_id` is the send they were replying
+to, when we can tell:
+
+```typescript
+export const POST = webhook(async (event) => {
+	if (event.type === 'received') {
+		await open_ticket({
+			from: event.email,
+			subject: event.subject,
+			body: event.body?.text ?? event.body?.html,
+			about: event.message_id, // the send being answered, if any
+		})
+	}
+})
+```
+
+Postboi-provider only — providers without inbound mail never emit it.
 
 ## Who opened it, and on what
 

@@ -32,6 +32,15 @@ curl https://api.postboi.email/v1/contacts/ada@example.com/lists \
 	-H "Authorization: Bearer $POSTBOI_TOKEN"
 ```
 
+`/v1/inbound` is the other direction — mail that arrived at your
+[sending address](/provider#replies), newest first, with `/v1/inbound/{id}` for one
+message and its body:
+
+```bash
+curl https://api.postboi.email/v1/inbound \
+	-H "Authorization: Bearer $POSTBOI_TOKEN"
+```
+
 Errors always come back as `{ "message": "…", "code": "…" }` with a matching HTTP
 status, so error handling is one shape everywhere.
 
