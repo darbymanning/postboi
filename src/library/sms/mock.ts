@@ -24,7 +24,7 @@ export interface SentSms {
 }
 
 /** Options for the SMS mock constructor. */
-type Options = SmsProviderOptions & MockRecorderOptions
+type Options = SmsProviderOptions & MockRecorderOptions<SentSms>
 
 type SendResponse = { id: string; message: SentSms }
 
@@ -51,9 +51,9 @@ export default class MockSms extends SmsProvider<SendResponse> {
 	protected override readonly supports_scheduling = true
 	#recorder: MockRecorder<SentSms>
 
-	constructor({ fail, log, ...options }: Options = {}) {
+	constructor({ fail, log, sink, ...options }: Options = {}) {
 		super(options)
-		this.#recorder = new MockRecorder("sms", { fail, log }, log_sms)
+		this.#recorder = new MockRecorder("sms", { fail, log, sink }, log_sms)
 	}
 
 	/** Every text captured by this instance, in send order. */

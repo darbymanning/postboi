@@ -13,17 +13,24 @@
 import { PostboiError, type Channel } from "./errors.js"
 
 /** Options every mock accepts on top of its channel's provider options. */
-export type MockRecorderOptions = {
+export type MockRecorderOptions<TCaptured = unknown> = {
 	/** When true, every `send` rejects with a simulated {@link PostboiError}. */
 	fail?: boolean
 	/** Print each captured message. Off by default so tests stay quiet. */
 	log?: boolean
+	/**
+	 * Hand each capture somewhere it can be read — the local dev inbox, in practice
+	 * (see `inbox_sink`). Resolving true means it was taken and the console print is
+	 * skipped in favour of the inbox; false or a throw falls back to printing.
+	 */
+	sink?: (captured: TCaptured) => Promise<boolean> | boolean
 }
 
 export class MockRecorder<TCaptured> {
 	readonly #channel: Channel
 	readonly #fail: boolean
 	readonly #log: boolean
+	readonly #sink?: (captured: TCaptured) => Promise<boolean> | boolean
 	readonly #print: (captured: TCaptured) => void
 	#counter = 0
 
@@ -32,12 +39,13 @@ export class MockRecorder<TCaptured> {
 
 	constructor(
 		channel: Channel,
-		options: MockRecorderOptions,
+		options: MockRecorderOptions<TCaptured>,
 		print: (captured: TCaptured) => void
 	) {
 		this.#channel = channel
 		this.#fail = options.fail ?? false
 		this.#log = options.log ?? false
+		this.#sink = options.sink
 		this.#print = print
 	}
 
@@ -52,8 +60,8 @@ export class MockRecorder<TCaptured> {
 	}
 
 	/**
-	 * Record one send: simulate the configured failure, capture, print when logging, and
-	 * return the `{ id, message }` response every mock resolves with.
+	 * Record one send: simulate the configured failure, capture, hand to the sink or
+	 * print, and return the `{ id, message }` response every mock resolves with.
 	 */
 	capture(captured: TCaptured): { id: string; message: TCaptured } {
 		if (this.#fail) {
@@ -64,7 +72,17 @@ export class MockRecorder<TCaptured> {
 			})
 		}
 		this.sent.push(captured)
-		if (this.#log) this.#print(captured)
+		if (this.#sink) {
+			// Fire and forget: the send already resolved with the capture, and whether the
+			// inbox took it only decides where a developer reads it. Refused (or unreachable)
+			// falls back to the console so the message is never silently nowhere.
+			const print = () => this.#log && this.#print(captured)
+			void Promise.resolve()
+				.then(() => this.#sink!(captured))
+				.then((taken) => void (taken || print()), print)
+		} else if (this.#log) {
+			this.#print(captured)
+		}
 		return { id: `mock-${this.#channel}-${++this.#counter}`, message: captured }
 	}
 }

@@ -8,6 +8,7 @@ import type { BatchResult } from "../transport.js"
 import type { SmsOptions, SmsDefaults } from "./types.js"
 import type { SmsProvider } from "./provider.js"
 import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
+import { inbox_sink } from "../channel_inbox.js"
 import { load_config } from "../config.js"
 import { is_development, read_env } from "../env.js"
 
@@ -72,7 +73,8 @@ async function resolve_provider(): Promise<SmsProvider<unknown>> {
 			)
 		}
 		const Mock = await LOADERS.mock()
-		return new Mock({ log: true, default: sms_env_defaults() })
+		// Captured texts land in the dev inbox when one is running, console otherwise.
+		return new Mock({ log: true, sink: inbox_sink("sms"), default: sms_env_defaults() })
 	}
 	return resolve_channel_provider(RESOLUTION)
 }

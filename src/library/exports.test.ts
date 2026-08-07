@@ -41,6 +41,7 @@ describe("package exports", () => {
 			"channels.ts", // shared zero-config resolution, used by each channel send.ts
 			"send.ts", // the multi-channel fan-out, re-exported from the root
 			"mock_recorder.ts", // shared mock capture machinery, used by each channel mock
+			"channel_inbox.ts", // channel captures → dev inbox bridge, used by the dev interceptions
 			"captcha.ts", // spam protection, reached via the root export
 			"aws.ts", // SigV4 signing, used by ses.ts (and SNS later)
 			"errors.ts", // normalized errors, re-exported from the root

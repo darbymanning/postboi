@@ -20,7 +20,7 @@ export interface SentWhatsapp {
 
 /** Options for the WhatsApp mock constructor. */
 type Options = WhatsappProviderOptions &
-	MockRecorderOptions & {
+	MockRecorderOptions<SentWhatsapp> & {
 		/**
 		 * When true, every free-form `message` send rejects as though the 24-hour customer
 		 * service window were closed — the routine WhatsApp failure, simulatable because
@@ -51,10 +51,10 @@ export default class MockWhatsapp extends WhatsappProvider<SendResponse> {
 	#outside_window: boolean
 	#recorder: MockRecorder<SentWhatsapp>
 
-	constructor({ fail, log, outside_window, ...options }: Options = {}) {
+	constructor({ fail, log, sink, outside_window, ...options }: Options = {}) {
 		super(options)
 		this.#outside_window = outside_window ?? false
-		this.#recorder = new MockRecorder("whatsapp", { fail, log }, log_whatsapp)
+		this.#recorder = new MockRecorder("whatsapp", { fail, log, sink }, log_whatsapp)
 	}
 
 	/** Every message captured by this instance, in send order. */
