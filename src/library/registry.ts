@@ -1,6 +1,6 @@
 /**
  * Canonical provider registry — the single source of truth shared by the `postboi` CLI
- * (which uses it for prompts and the usage snippet) and the zero-config `send()` (which
+ * (which uses it for prompts and the usage snippet) and the zero-config `mail()` (which
  * uses it to construct the configured provider from environment variables).
  */
 
@@ -29,7 +29,7 @@ export type ProviderMeta = {
 	fields: Array<ProviderField>
 }
 
-/** The providers that can be configured by `postboi init` / driven by `send()`. */
+/** The providers that can be configured by `postboi init` / driven by `mail()`. */
 export const PROVIDERS = [
 	{
 		key: "resend",

@@ -20,7 +20,7 @@ type ProviderConstructor = new (options: Record<string, unknown>) => ProviderBas
 
 /**
  * Lazy loaders for every configurable provider, keyed by `POSTBOI_PROVIDER`. Using explicit
- * dynamic imports keeps each provider in its own chunk — `send()` only loads the one in use.
+ * dynamic imports keeps each provider in its own chunk — `mail()` only loads the one in use.
  */
 const LOADERS: Record<string, () => Promise<ProviderConstructor>> = {
 	resend: () => import("./resend.js").then((m) => m.default as unknown as ProviderConstructor),

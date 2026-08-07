@@ -1,6 +1,6 @@
 /**
- * Project-wide configuration. Set it once and every send — `send()`, `postboi/kit`, or any
- * provider instance — picks it up, so the 99% case is just calling `send()`.
+ * Project-wide configuration. Set it once and every send — `mail()`, `postboi/kit`, or any
+ * provider instance — picks it up, so the 99% case is just calling `mail()`.
  *
  * Drop a `postboi.config.ts` at your project root:
  *
@@ -16,7 +16,7 @@
  * })
  * ```
  *
- * It's auto-loaded on the first `send()` (Node/Bun). In runtimes without filesystem access
+ * It's auto-loaded on the first `mail()` (Node/Bun). In runtimes without filesystem access
  * (edge/Workers), call {@link configure} explicitly at startup instead.
  */
 import type { Defaults, Hooks } from "./index.js"
@@ -26,9 +26,9 @@ import type { ProviderKey } from "./registry.js"
 /** Everything you can configure globally via `postboi.config.ts` or {@link configure}. */
 export interface PostboiConfig {
 	/**
-	 * Provider key (`resend`, `mailgun`, …) for the zero-config `send()`. `POSTBOI_PROVIDER` wins.
+	 * Provider key (`resend`, `mailgun`, …) for the zero-config `mail()`. `POSTBOI_PROVIDER` wins.
 	 * `"postboi"` is the Postboi provider (usually unnecessary to set — a `POSTBOI_TOKEN` in the
-	 * environment already routes `send()` there). `"mock"` is a credential-free no-op that
+	 * environment already routes `mail()` there). `"mock"` is a credential-free no-op that
 	 * records instead of sending, handy as a safe local default you override with
 	 * `POSTBOI_PROVIDER` in production.
 	 */
@@ -36,7 +36,7 @@ export interface PostboiConfig {
 	/** Default fields applied to every send. Merged under `POSTBOI_*` env vars, which win. */
 	default?: Defaults
 	/**
-	 * Non-secret provider constructor options for the zero-config `send()`, keyed by the
+	 * Non-secret provider constructor options for the zero-config `mail()`, keyed by the
 	 * provider's option name (e.g. `{ domain: "mg.example.com", region: "us-east-1" }`). Lets
 	 * you commit non-secret config and keep only the API key in the environment. The matching
 	 * provider env var (e.g. `MAILGUN_DOMAIN`) still wins. Keep secrets out of here — in env.
@@ -156,7 +156,7 @@ export function reset_config(): void {
 
 /**
  * Ensure the config file has been read (once), then return the effective config. Called on
- * the `send()` path. Best-effort — any failure falls back to whatever was set via
+ * the `mail()` path. Best-effort — any failure falls back to whatever was set via
  * {@link configure}. Reads the bundled copy where a bundler inlined one (see
  * {@link set_bundled_config}), otherwise the file on disk, which needs Node/Bun.
  */
