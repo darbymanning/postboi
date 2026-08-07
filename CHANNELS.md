@@ -1,48 +1,36 @@
 # Postboi — Multi-channel Plan
 
-Turning postboi from an email library into a messaging library: SMS first, then push
-notifications, then a single import that fans out across channels.
+The plan for taking postboi from an email library to a multi-channel messaging library:
+SMS, push, RCS, WhatsApp and chat, behind one API.
 
-Status: **planning**. Nothing here is built. This doc is the source of truth for the
+**Status: planning.** Nothing here is built. This document is the source of truth for the
 channel work — read it before starting a phase, and update it when a decision changes.
+Reasoning that led to these conclusions lives in this file's git history.
 
 ---
 
 ## Decided
 
-- **This is a pivot, not a side feature.** Postboi becomes a multi-channel messaging
-  library that happens to have started with email — not an email library with extras.
-  That settles the positioning question and reorders the work: the channel abstraction is
-  the product, so `Transport` (Phase 0) is load-bearing rather than tidy-up.
-- **Email stays the anchor.** It's the channel we're best at, the one the closest
-  comparable doesn't have at all, and the one that needs no approval process to use.
-- **The fan-out function is `send()`, not `notify()`.** Checked: `send` has **never** been
-  exported from the package root — the public entry point has always been `mail()` — so
-  the name is free and there's no migration hazard. Two things settle it:
-  - **The library's whole vocabulary is already "send".** `SendOptions`,
-    `PreparedMessage`, `prepare_send`, `send_batch`, `ProviderBase.send()`, and the hooks
-    `before.send` / `after.send`. Naming the fan-out `notify()` would mean a `notify()`
-    call firing hooks called `before.send` — two words for one concept, baked into public
-    API forever. Renaming the hooks to match would be breaking, and `before.notify` is
-    worse.
-  - **The call site disambiguates itself** via the shape of `to`, so `send()` sitting
-    beside `mail()` isn't actually ambiguous:
-    ```ts
-    await mail({ to: "ada@example.com", … })                    // one channel
-    await send({ to: { email: "…", sms: "…" }, … })              // fan-out
-    ```
-  Accepted costs: `send` is a common identifier, so some consumers will alias it on
-  import; and it doesn't *announce* multi-channel the way `notify` would. Both are
-  cheaper than a permanent split vocabulary.
-  **Explicitly rejected:** having `send()` sniff the shape of `to` and silently dispatch
-  to one channel or many. Implicit channel detection is exactly the cleverness that bites
-  later — `send()` always takes a channel-keyed `to`.
-  **Cleanup this surfaced — already done.** Twelve doc comments across `config.ts`,
-  `registry.ts`, `mail.ts`, `ses.ts` and `smtp.ts` described the zero-config entry point as
-  `send()`, a function that has never existed. Fixed on `main` in `e855d64` ahead of this
-  work, precisely so `send()` is unclaimed when it arrives. The versioned docs under
-  `src/lib/content/v*/` were left alone (snapshots should keep saying what was true at that
-  release), as were references that genuinely mean `provider.send()`.
+- **This is a pivot, not a side feature.** Postboi becomes a multi-channel messaging library
+  that happens to have started with email. The channel abstraction *is* the product, which
+  makes the Phase 0 `Transport` split load-bearing rather than tidy-up.
+- **Email stays the anchor.** It's the channel we're best at, the one our closest comparable
+  doesn't have at all, and the only one needing no approval process.
+- **The fan-out function is `send()`, not `notify()`.** `send` has never been exported from
+  the package root, so the name is free. The library's whole vocabulary is already
+  send-shaped (`SendOptions`, `prepare_send`, `send_batch`, `before.send`), and naming the
+  fan-out anything else would mean a `notify()` call firing hooks called `before.send`.
+  Rejected: having `send()` sniff `to` and silently dispatch to one channel or many — it
+  always takes a channel-keyed `to`.
+- **Hooks go channel-generic in Phase 0.** `hooks.before.send` gains a `channel`
+  discriminant and its `message` widens across channels. This breaks existing hooks that
+  read `message.subject` without narrowing. **Pre-1.0, so it's a minor bump** — and doing it
+  in Phase 0 means migrating one channel instead of six.
+- **We ship JavaScript client SDKs, not native ones.** Web Push helpers earn their place;
+  Swift/Kotlin/Flutter don't. See [Phase 3](#phase-3--push-and-the-web-sdk).
+- **We do not build hosted SMS.** Three independent analyses agree — see
+  [Appendix A](#appendix-a--sms-economics).
+- **We never charge per contact, and never mark up SMS transport.**
 
 ---
 
@@ -71,391 +59,249 @@ await send({
 	body: "<p>Your order shipped</p>",
 })
 
-// fallback chain: first success wins — what people actually want for OTPs
-await send({ to: { push: token, sms: "+447788223344" }, channels: ["push", "sms"], message: "…" })
+// fallback chain: first success wins, ordered by cost
+await send({
+	to: { push: token, sms: "+447788223344" },
+	channels: ["push", "sms"],
+	message: "Your code is 4291",
+})
 ```
 
-Every one of these keeps the properties `mail()` already has: zero-config resolution from
-the environment, dev-inbox interception, lifecycle hooks, opt-in retries, normalized
-errors.
+Client-side, for Web Push subscription — matching the existing `Captcha` adapter pattern:
+
+```ts
+import { subscribe_push } from "postboi/react" // and /svelte, /vue, /astro
+
+const subscription = await subscribe_push({ key: VAPID_PUBLIC_KEY })
+await fetch("/api/register-push", { method: "POST", body: JSON.stringify(subscription) })
+```
+
+Every one of these keeps what `mail()` already has: zero-config resolution from the
+environment, dev-inbox interception, lifecycle hooks, opt-in retries, normalized errors.
 
 ---
 
-## Positioning
+## Where postboi fits
 
-The closest comparable is **[sent.dm](https://www.sent.dm/)** — "one API for SMS,
-WhatsApp and RCS", with channel-availability detection, automatic fallback and
-cost-optimised routing. Worth being precise about where we differ, because it decides
-what's worth building.
+Postboi is **two products that share one API**, and being explicit about this resolves what
+would otherwise be a contradiction in our positioning.
 
-**Where postboi is genuinely different:**
+**Layer 1 — the library.** Runs in your process. Resolves providers from your environment
+and calls them directly with your own credentials. No postboi infrastructure is involved at
+any point. Free, unlimited, every channel.
 
-- **Email is first-class. sent.dm has none.** SMS + WhatsApp + RCS is a messaging product;
-  email + SMS + push + chat in one call is a *notifications* product. That's the wedge —
-  most apps need "tell this user something" across both worlds, and today that means two
-  vendors.
-- **Bring-your-own providers.** sent.dm is hosted-only at $0.015/contact/month plus carrier
-  fees. Postboi runs in your process against your own Twilio/Resend/SES keys, with no
-  per-contact tax and no lock-in. The hosted Postboi provider is an option, not the
-  product.
-- **It's a library, not a service.** Hooks, the dev inbox, zero-config env resolution,
-  and it runs on Workers. None of that is available from a black-box API.
+**Layer 2 — the hosted Postboi provider.** Email transport with real margin, plus the
+audience layer (contacts, lists, broadcast). Entirely opt-in, and from the library's point
+of view it is *just another provider* — the same interface as Resend or SES.
 
-**Where they're ahead, and what it would take to match:**
+The claim that matters, and it holds for both layers:
 
-- **Channel availability detection** ("can this contact receive WhatsApp?") needs a
-  hosted backend with per-contact state. Library-side, we can't know.
-- **Cost-optimised routing** needs live per-destination rate cards. Same constraint.
-- **Delivery profiles / identity resolution** — their contact object stores channel
-  preferences, availability, and last-contacted channel.
+> **The fan-out always happens in your process. Only transport is optionally ours.**
 
-That last one is closer than it looks: the Postboi provider **already has `contacts`**
-(`postboi_provider.ts:550`) — one contact per address, with `data` and list memberships.
-Extending a contact to carry `phone`, `whatsapp`, and push tokens turns it into a delivery
-profile, and `send({ to: contact })` resolves channels from it. That's the natural home
-for identity resolution, and it's Phase 2-shaped (hosted) work rather than library work.
+When you call `send()`, the channel selection, ordering, fallback and per-channel result
+handling all execute in your runtime. Whether the email leg then goes to SES, Resend or the
+Postboi API is a separate, independent choice. Contrast Knock and Courier, where the fan-out
+itself runs on their servers and is metered.
 
-**The honest read:** availability detection and cost routing are hosted-service features
-we should not try to fake in a library. Fan-out and fallback (Phase 4) we can do locally
-and well. Email + push is territory sent.dm isn't in at all.
+That's why routing can be free: **it costs us nothing, because we aren't running it.**
 
 ---
 
-## Pricing and the competitive set
+## The competitive set
 
-Going multi-channel moves us out of the email-provider category and into
-**notification infrastructure**, where the incumbents are Knock, Courier and Novu. That
-changes who we're compared against, and it kills one of our assumed differentiators.
+Multi-channel moves us out of the email-provider comparison and into notification
+infrastructure. Three distinct categories, each teaching something different.
 
-| Player | Charges for | Numbers | Transport |
+### Orchestrators — Knock, Courier, Novu
+
+| | Charges for | Numbers | Transport |
 | --- | --- | --- | --- |
-| **Knock** | per notification | Free 10k/mo, then **$250/mo** (50k–250k), $0.005/msg overage | BYO providers |
-| **Courier** | per notification | Free 10k/mo, then **from $99/mo** | BYO providers |
-| **Novu** | per **event** — 1 trigger = 1 event *regardless of channel count* | Cloud tiers; **self-host free** | BYO providers |
-| **sent.dm** | per **contact/month** | **$0.015/contact/mo** + carrier fees | Hosted |
-| **OneSignal** | per **MAU / subscriber** | Free: **unlimited mobile push**, 10k web subs, 10k emails/mo. Growth: $19/mo **+ $0.012/MAU** mobile push, $0.004/web sub, email $2/1k | Hosted |
-| **postboi** | — | see below | BYO **or** hosted email |
+| **Knock** | per notification | Free 10k/mo, then **$250/mo** (50k–250k), $0.005/msg overage | BYO |
+| **Courier** | per notification | Free 10k/mo, then **from $99/mo** | BYO |
+| **Novu** | per **event** — 1 trigger = 1 event regardless of channel count | Cloud tiers; **self-host free** | BYO |
 
-⚠️ **Correction to an assumption made earlier in this doc: "bring your own provider" is
-*not* a differentiator against this category.** Knock, Courier and Novu are all BYO-transport
-already — they orchestrate, you supply the SendGrid/Twilio keys. BYO only differentiates us
-against sent.dm and the raw CPaaS vendors. Against the notification platforms we need a
-different argument, and we have two good ones.
+**Bring-your-own-provider is *not* a differentiator here** — all three are BYO already. They
+orchestrate; you supply the keys. What differentiates us is that their orchestration is a
+hosted service you pay for per notification, on top of the providers you're already paying.
+Ours runs in your process and is free.
 
-**1. There is no server in the send path, so routing can be free.** Knock and Courier are
-hosted services: your notification goes to their API, they fan out, you pay them per
-notification *on top of* the providers you're already paying. Postboi's BYO path runs
-**in your process** and calls your providers directly — no postboi infrastructure involved,
-therefore **no marginal cost to us, therefore no reason to charge**. That's not undercutting
-them, it's a different cost structure. "Knock wants $250/month to route 50k notifications to
-providers you already pay for" is a strong, true sentence.
+**Worth stealing from Novu:** per-*event* billing is the right shape for multi-channel.
+Knock and Courier billing per *notification* means a three-channel fan-out costs 3×, which
+actively penalises the thing they sell. If we ever meter orchestration, meter events.
 
-It's also a reliability argument, not just a price one: nothing in the notification path
-can go down that isn't already yours.
+### Audience-taxers — sent.dm, OneSignal
 
-**2. We can be the transport as well as the orchestrator.** None of Knock/Courier/Novu
-send anything themselves. The hosted Postboi provider does — so "one bill, and your email
-actually sends" is available to us and not to them.
+| | Charges for | Numbers |
+| --- | --- | --- |
+| **sent.dm** | per **contact/month** | **$0.015/contact/mo** + carrier fees. SMS/WhatsApp/RCS, **no email** |
+| **OneSignal** | per **MAU/subscriber** | Free: unlimited mobile push, 10k web subs, 10k emails/mo. Growth: $19/mo **+ $0.012/MAU** push, email $2/1k |
 
-**Worth stealing from Novu:** their per-*event* model (one trigger = one event however many
-channels it fans out to) is plainly the right shape for multi-channel. Knock and Courier
-charging per *notification* means a 3-channel fan-out bills 3×, which actively penalises
-the thing they're selling. If we ever meter orchestration, meter events.
+Both charge for *having* users rather than for reaching them. That's the clearest line we
+have: **you pay for messages, not for having users.**
 
-### OneSignal, and why push transport is genuinely free
+It is also, per our own infrastructure costing, **not a cost pass-through but value
+pricing** — storing a million contacts on D1 is free (see [Pricing](#pricing)).
 
-OneSignal is the elephant in the push market and needs treating honestly, because **their
-free tier is unlimited mobile push, forever**. We cannot beat that on price and shouldn't
-pretend to.
+**sent.dm** does channel-availability detection and cost-optimised routing, which need
+hosted per-contact state and live rate cards. We can't and shouldn't fake those. But their
+per-contact fee is punishing for transactional senders with large dormant user bases —
+exactly postboi's audience — and they have no email channel at all.
 
-But the reason it's free is the important bit: **push transport costs nothing per message
-to anyone.** FCM is free from Google, APNs is free from Apple, Web Push is free from the
-browser vendors. There is no termination fee, no carrier, no per-message rail cost
-anywhere in push. OneSignal isn't giving away something expensive — they're giving away
-something free and charging for the product around it (SDKs, segmentation, journeys,
-analytics, in-app messaging).
+**OneSignal** gives away unlimited mobile push forever, and we can't beat free. But the
+reason it's free is instructive: **push transport costs nothing per message to anyone.** FCM,
+APNs and Web Push are all free, with no carrier or termination fee anywhere. OneSignal isn't
+giving away something expensive; they're giving away something free and charging for the
+product around it — SDKs, segmentation, journeys, analytics, in-app messaging.
 
-Which means **postboi BYO push is free at any scale, permanently, with no cliff** — and
-OneSignal's is not:
+Which means BYO push through postboi is free at **any** scale, with no cliff:
 
 | App size | OneSignal Growth | postboi (BYO) |
 | --- | --- | --- |
-| 5k MAU | $0 (free tier) | £0 |
-| 100k MAU | $19 + 100k × $0.012 = **~$1,219/mo** | **£0** |
+| 5k MAU | $0 | £0 |
+| 100k MAU | ~**$1,219/mo** | **£0** |
 | 1M MAU | ~**$12,000/mo** | **£0** |
 
-**Be honest about what they give you that we won't:** client SDKs for iOS/Android/web,
-subscriber and segment management, journeys and automation, A/B testing, delivery
-analytics, in-app messaging. That's a marketing-engagement *product*. We'd ship transport
-plus routing, and nothing else.
+Be honest about what they give that we won't: client SDKs across every platform,
+segmentation, journeys, A/B testing, analytics, in-app messaging. **OneSignal is an
+engagement platform that does push; postboi is transactional notification transport.**
+Different jobs — the docs should say so rather than claim a win we haven't got.
 
-So the split is real and worth stating rather than fudging: **OneSignal is an engagement
-platform that does push; postboi is transactional notification transport.** "Re-engage
-lapsed users with a campaign" is theirs. "Tell this user their order shipped, on whatever
-reaches them" is ours. Different jobs, and we should say so in the docs rather than
-claim a win we haven't got.
+(Tactical note: OneSignal's email is **$2/1,000 = $0.002/email**. Our hosted tiers work out
+at ~$0.0003–0.00045 — **4–7× cheaper**. Anyone consolidating onto them for push gets quoted
+that rate for email too.)
 
-**Two things this sharpens:**
+### Raw rails — Twilio, Resend, SES, et al.
 
-1. **It's a third company taxing the user list.** sent.dm per contact, OneSignal per MAU —
-   both charge for *having* users. "You pay for messages, not for having users" is now a
-   position against the category, not a jab at one competitor.
-2. **It confirms the cost-ordered fallback is the real product.** The spread isn't
-   marginal, it's total: push is **£0**, hosted email ~**£0.0003**, UK SMS **2.8p**.
-   Routing a message to push instead of SMS doesn't save a percentage — it saves the
-   entire cost. That's the number that makes `send()`'s cost ordering worth building.
+Not competitors so much as what Layer 1 drives. Our pitch against using them directly is
+one API instead of six, cost-ordered fallback, and a dev inbox.
 
-(Aside worth noting: OneSignal's email is **$2/1,000 = $0.002/email**. Our hosted email
-tiers work out at ~$0.0003–0.00045. We're **4–7× cheaper on email than OneSignal** — a
-useful comparison to have ready, since anyone consolidating onto them for push will be
-quoted that rate for email too.)
+---
 
-### Recommended model
+## Pricing
+
+### The model
 
 | Layer | Price | Why |
 | --- | --- | --- |
-| **The library — all channels, BYO, unlimited** | **Free, forever** | Zero marginal cost (no server). The wedge, and unbeatable by anyone carrying hosting costs |
-| **Hosted email** (the Postboi provider) | Existing £9/£29/£99 tiers | SES COGS $0.0001 → **60–75% margin**. This is where the money is and always was |
-| **Hosted SMS/RCS** | **Don't build it** | Three separate analyses in this doc land here: regulated floor, ~25% best-case margin, 800k–2M/mo volume commitment |
+| **The library — all channels, BYO, unlimited** | **Free, forever** | Zero marginal cost: it runs in the customer's process. The wedge, unbeatable by anyone carrying hosting costs |
+| **Hosted email** (Postboi provider) | Existing £9/£29/£99 tiers | SES COGS $0.0001 → **60–75% margin**. Where the money is and always was |
+| **Audience layer** (contacts, profiles, broadcast) | Bundled into email tiers | Costs ~nothing on Workers — see below |
+| **Hosted SMS/RCS** | **Don't build it** | [Appendix A](#appendix-a--sms-economics) |
 | **Hosted orchestration**, if ever | Per **event**, Novu-style | Never per contact, never per channel |
 
-**Two rules that follow, and should be treated as commitments:**
+### What infrastructure actually costs us
 
-- **Never charge per contact.** It's the clearest line we have against sent.dm, and it's a
-  genuinely better deal for the transactional apps we attract: *you pay for messages, not
-  for having users*.
-- **Never mark up SMS transport.** We can't win there and trying makes us the expensive
-  option in our own home market.
+Cloudflare rates: Workers Paid $5/mo, 10M requests included then $0.30/million. D1: **5 GB
+storage included** then $0.75/GB-month, **25 billion rows read/month**, **50 million rows
+written/month**.
+
+**Storing contacts is effectively free.** A contact row is a few hundred bytes:
+
+| Contacts | Storage | D1 cost |
+| --- | --- | --- |
+| 100k | ~30 MB | **$0** |
+| 1M | ~300 MB | **$0** |
+| 10M | ~3 GB | **$0** |
+
+Storage doesn't start billing until roughly **15 million** contacts. A 100k-recipient
+broadcast is ~100k reads + ~300k writes + 100k requests ≈ **$0.33** of infrastructure,
+against ~£29 of revenue at the current tier — and the read allowance covers ~250,000 such
+broadcasts a month.
+
+**Two things do cost, and neither is "having contacts":**
+
+1. **Retained history — storage × time.** Contacts are small; messages aren't. ~1M
+   messages/month at ~20 KB is ~20 GB, or **~$15/month for every month retained**, growing
+   linearly forever. This is why OneSignal sells data retention as a paid tier. **Retention
+   policy is an early decision, not a detail.**
+2. **Per-contact recurring compute.** A journey with 500k users ticked hourly is ~360M
+   writes/month ≈ **$360/month for one journey**. Behavioural segments mean repeatedly
+   scanning event tables. *That* is what forces per-MAU pricing.
+
+Usefully, that boundary lands exactly on what we've chosen to build versus decline.
 
 ### What it looks like for a real app
 
-SaaS with **100k registered users**, sending **50k notifications/month** (mostly email +
-push, ~5k SMS OTPs), UK:
+SaaS, **100k registered users**, **50k notifications/month** (mostly email + push, ~5k SMS
+OTPs), UK:
 
 | | Platform fee | Notes |
 | --- | --- | --- |
-| sent.dm | **~$1,500/mo** | $0.015 × 100k contacts, *before a single send*. And no email channel at all |
-| Knock | **$250/mo** | 50k notifications, on top of your own provider bills |
+| sent.dm | **~$1,500/mo** | Before a single send. No email channel |
+| Knock | **$250/mo** | On top of your own provider bills |
 | Courier | **$99/mo+** | Same shape |
+| OneSignal | **~$1,219/mo** | Push MAU alone |
 | **postboi (BYO)** | **£0** | Transport paid direct to your providers |
-| **postboi (hosted email)** | **£29/mo** | Email transport *included*, SMS BYO at cost |
+| **postboi (hosted email)** | **£29/mo** | Email transport included, SMS BYO at cost |
 
 ### The strategic honesty
 
 **This pricing means the multi-channel work earns no direct revenue.** The library stays
-free; monetisation remains hosted email. So the pivot is a **distribution play** — SMS,
-push, RCS and chat make postboi the obvious default for "tell this user something", and a
-share of those users take hosted email because it's right there and already configured.
+free; monetisation remains hosted email. The pivot is a **distribution play** — SMS, push,
+RCS and chat make postboi the obvious default for "tell this user something", and a share of
+those users take hosted email because it's already configured.
 
-That's a legitimate strategy, but it should be stated rather than assumed, because it sets
-the success metric. **The multi-channel phases should be judged on adoption and on hosted-email
-conversion, not on channel revenue** — there won't be any, by design.
+That's legitimate but it sets the success metric: **judge these phases on adoption and
+hosted-email conversion, not channel revenue.** There won't be any, by design.
 
-The one genuinely novel product claim to build toward: **postboi picks the cheapest rail
-that reaches the user, across your own provider accounts, and tells you what it chose.**
-sent.dm does routing but hides it and taxes your contact list; Knock and Courier orchestrate
-but don't optimise for cost; Twilio will never route you to a competitor. Nobody is doing
-cost-aware, auditable, cross-vendor channel selection — and the in-process model is exactly
-what makes it possible to give away.
+The product claim to build toward: **postboi picks the cheapest rail that reaches the user,
+across your own provider accounts, and tells you what it chose.** sent.dm routes but hides
+it and taxes your contact list; Knock and Courier orchestrate but ignore cost; Twilio will
+never route you to a competitor. Nobody does cost-aware, auditable, cross-vendor selection —
+and the in-process model is exactly what lets us give it away.
 
-### Could we become an engagement platform ourselves?
+The spread that justifies it is total, not marginal:
 
-Long-horizon question, worth recording because the answer is "partly, and the useful part is
-closer than it looks — but not the whole thing, and here's why."
+> push **£0** → hosted email **~£0.0003** → RCS/WhatsApp → UK SMS **2.8p**
 
-**We already have more of it than you'd guess.** The Postboi provider is not just a send
-endpoint; it already ships the audience primitives an engagement platform is built on:
-
-| Already built | Where |
-| --- | --- |
-| `contacts` — one per address, global `data` custom fields, search/filter | `postboi_provider.ts:550` |
-| `lists` + `recipients` — membership, three-state status, double opt-in | `postboi_provider.ts:405`, `:481` |
-| **`lists.broadcast()`** — one message to a whole list, `{key}` templating, auto unsubscribe headers | `postboi_provider.ts:463` |
-| `notifications` — **recurring scheduled digests** (daily/weekly/monthly) and **`subscribe`-triggered** sends | `postboi_provider.ts:616` |
-| `suppressions` — account-wide opt-out enforcement | `postboi_provider.ts:678` |
-| `messages` — status, reschedule, cancel | `postboi_provider.ts:385` |
-
-Audience, segmentation-lite, broadcast, scheduling, trigger-on-signup, opt-out. That's a
-real slice of the category already — it's just **email-only**. The multi-channel work
-turns it into the same thing across every channel almost for free:
-
-1. **Delivery profiles** — extend a contact to carry `phone`, `whatsapp` and push tokens
-   alongside `email` (already proposed in Positioning, above).
-2. **`lists.broadcast()` goes multi-channel** — the single highest-leverage change here.
-   Everything around it (templating, membership, suppression, unsubscribe) already works.
-3. **Per-channel preferences** — "email yes, SMS no". Worth noting this isn't optional
-   ambition: **SMS STOP handling and email unsubscribe are legally required anyway**, so
-   the preference store gets built regardless. It's the natural on-ramp to the rest.
-
-That path is credible, reuses what exists, and stays monetised through hosted email where
-the margin is.
-
-#### What it actually costs us to hold an audience — the real numbers
-
-An earlier draft of this section claimed an engagement platform's "costs scale with the size
-of the audience", and used that to explain OneSignal's per-MAU pricing. **On Cloudflare that
-is mostly wrong, and it's worth being precise, because the true cost boundary turns out to
-be more useful than the false one.**
-
-Current Cloudflare rates: Workers Paid $5/mo with 10M requests included then $0.30/million;
-**D1 storage 5 GB included then $0.75/GB-month**, **25 billion rows read/month included**
-then $0.001/million, **50 million rows written/month included** then $1.00/million.
-
-**Storing contacts is effectively free:**
-
-| Contacts | Approx. storage (~300 B/row) | D1 cost |
-| --- | --- | --- |
-| 100k | ~30 MB | **$0** (inside the 5 GB allowance) |
-| 1M | ~300 MB | **$0** |
-| 10M | ~3 GB | **$0** |
-
-A dormant contact costs storage and nothing else, and storage doesn't start billing until
-roughly **15 million** of them. So sent.dm's $0.015/contact/month and OneSignal's
-$0.012/MAU are **not cost pass-through — they're value pricing.** Good to know, and a fair
-thing to say out loud in our docs.
-
-**Broadcasting is also nearly free:**
-
-A 100k-recipient broadcast ≈ 100k row reads + ~300k writes (message + delivery events) +
-100k Worker requests ≈ **~$0.33 of infrastructure** — against ~£29 of revenue at the current
-email tier for that volume. The 25-billion-read allowance covers ~250,000 such broadcasts a
-month before a penny of overage.
-
-**So where does it genuinely start to cost?** Two places, and neither is "having contacts":
-
-1. **Retained history — storage × time.** Contacts are small; *messages* aren't. Storing
-   rendered HTML bodies and per-message events accumulates: ~1M messages/month at ~20 KB
-   each is ~20 GB, or ~**$15/month for every month you keep**, growing linearly forever.
-   This is exactly why OneSignal sells "1-year data retention" as a paid tier. **Retention
-   policy is a real decision to make early**, not a detail.
-2. **Anything that recomputes *per contact* on a schedule.** A journey with 500k users in
-   flight, ticked hourly, is on the order of **360M writes/month ≈ $360/month — for one
-   journey**. Behavioural segments ("opened in the last 30 days") mean repeatedly scanning
-   event tables. *That* is genuine per-MAU cost, and it's what actually forces per-MAU
-   pricing.
-
-**The useful conclusion: the cost boundary lands exactly on the take/decline split below.**
-Contacts, delivery profiles, preferences, lists and broadcast are all in the ~free column on
-Workers — so they can be bundled into the existing email tiers and **the "never charge per
-contact" commitment survives intact.** Journeys, behavioural segmentation and analytics
-retention are the parts that would force per-MAU pricing. The line isn't arbitrary; it's
-where the infrastructure bill starts.
-
-**So the recommendation stands, now for a better reason: take the audience half, decline the
-marketing half.**
-
-| Take | Decline |
-| --- | --- |
-| Multi-channel broadcast | **Native** mobile SDKs (Swift/Kotlin/Flutter) |
-| Delivery profiles + channel preferences | Visual journey / automation builders |
-| Scheduled and triggered sends (already exist) | A/B testing, behavioural analytics |
-| Delivery reporting per channel | In-app messaging |
-| **Web Push client helpers** (see below) | |
-
-The declined column is OneSignal's actual moat and a different company: different buyer
-(growth/marketing, not developers), different discipline (campaign UX, not delivery
-correctness).
-
-#### Client SDKs — where the cheap half ends and the cliff starts
-
-The instinct that this is "a bit of work but not loads" is **right for web and wrong for
-native**, and the split is sharp enough to be worth drawing precisely.
-
-**The cheap half — do it, in Phase 3.** postboi already ships client-side framework
-adapters and they are *tiny*: `react.ts` is 55 lines, `vue.ts` 62, `Captcha.svelte` 50,
-`Captcha.astro` 62. A Web Push helper is the same shape — request permission, register a
-service worker, call `pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`,
-POST the subscription to the developer's own endpoint. Plus a service-worker template for
-receiving. Call it **~2–3 days across all four frameworks**, shipping through the npm
-pipeline that already exists. This is close to *necessary* rather than optional, because
-the browser API is fiddly enough that everyone gets it slightly wrong.
-
-**The cliff — native mobile.** The initial write isn't the problem; the permanent costs are:
-
-- **A new release pipeline per platform.** Today the whole thing is one command: tag →
-  GitHub Action → npm via OIDC trusted publishing. Native means adding SPM *and* CocoaPods
-  *and* Maven Central (GPG signing, Sonatype staging, sync delays) *and* pub.dev — each with
-  its own credentials, cadence and failure modes. `scripts/release.sh` currently asserts a
-  single clean path; that assumption dies.
-- **Device testing.** Push registration can't be meaningfully unit-tested. It needs real
-  devices or simulators in CI, per platform.
-- **Annual OS churn.** iOS and Android change notification APIs every year, forever.
-- **A brutal support surface.** "Push doesn't arrive on Xiaomi" is a whole genre of bug
-  report, and answering it is a permanent tax.
-
-**The argument that actually settles it: we don't need native SDKs for mobile push to
-work.** The server side already talks to FCM and APNs. The app registers its token *however
-it likes* — Firebase SDK, Expo, whatever the mobile team already uses — and POSTs it to the
-developer's own backend, which hands it to `push()`. **Our SDK would be a convenience for
-the registration step, not a requirement.** Web Push is different: there the browser API is
-awkward enough that a helper earns its place.
-
-And consider the audience. postboi's adapters are Svelte, React, Vue, Astro — it is a
-**web developer's** library. A web developer's push need is Web Push. A team that *does*
-have a native app already made its push-SDK decision inside the mobile codebase long before
-they picked an email library.
-
-**Recommended order if mobile pull ever appears:**
-
-1. **Web Push helpers** — Phase 3, ~2–3 days, do it regardless
-2. **Expo / React Native** — JavaScript, so the *same npm pipeline*; serves our actual
-   audience. ~3–5 days. This is the right second step, not Swift.
-3. **Native Swift / Kotlin / Flutter** — 2–3 weeks *each* plus permanent maintenance and
-   new release infrastructure. Only with real demand, and understood as starting a second
-   product rather than extending this one.
-
-**Sequencing:** none of this competes with Phases 0–6, and it shouldn't start until the
-channels exist and `send()` has shipped — the audience layer is only interesting once
-there's more than one channel to route between. Revisit after Phase 4, with the pricing
-question answered first.
+Routing to push instead of SMS doesn't save a percentage. It saves the entire cost.
 
 ---
 
-## What already exists, and what has to change
+## What has to change
 
-`ProviderBase` (`src/library/index.ts:472`) is one class doing two jobs. The split is the
-whole enabling move for this plan, so it's worth being precise about where the seam is.
+`ProviderBase` (`src/library/index.ts:472`) is one class doing two jobs. Splitting it is the
+enabling move for everything else.
 
-### Channel-agnostic today — reusable as-is (~400 lines)
+### Channel-agnostic — reusable as-is (~400 lines)
 
-| Member                                       | Where                  |
-| -------------------------------------------- | ---------------------- |
-| `request()` — timeout, retry, backoff, `on.retry` | `index.ts:841`     |
-| `#should_retry` / `#backoff` / `#sleep`      | `index.ts:893`         |
-| `read_json`                                  | `index.ts:984`         |
-| `error_for`                                  | `index.ts:586`         |
+| Member | Where |
+| --- | --- |
+| `request()` — timeout, retry, backoff, `on.retry` | `index.ts:841` |
+| `#should_retry` / `#backoff` / `#sleep` | `index.ts:893` |
+| `read_json` | `index.ts:984` |
+| `error_for` | `index.ts:586` |
 | `with_hooks` / `before_send` / `#emit_error` / `#observe` | `index.ts:612` |
-| `normalize_error` / `is_error`               | `index.ts:693`         |
-| `send_batch` (+ `pooled_map` in `utils.ts`)  | `index.ts:709`         |
-| `fill_template` / `translate_placeholders`   | `index.ts:727`         |
-| `resolve_scheduled_at`                       | `index.ts:1007`        |
-| `file_to_base64`                             | `index.ts:908`         |
-| `PostboiError` / `SkipSendError`             | `index.ts:339`         |
+| `normalize_error` / `is_error` | `index.ts:693` |
+| `send_batch` (+ `pooled_map` in `utils.ts`) | `index.ts:709` |
+| `fill_template` / `translate_placeholders` | `index.ts:727` |
+| `resolve_scheduled_at` | `index.ts:1007` |
+| `file_to_base64` | `index.ts:908` |
+| `PostboiError` / `SkipSendError` | `index.ts:339` |
 
 ### Email-specific — stays behind (~400 lines)
 
-| Member                                              | Where           |
-| --------------------------------------------------- | --------------- |
+| Member | Where |
+| --- | --- |
 | `prepare_send` — to/from/cc/bcc/subject/html/text/unsubscribe | `index.ts:1184` |
-| `parse_form_data` — the HTML table renderer         | `index.ts:1042` |
-| `to_form_data`                                      | `index.ts:1026` |
-| `enforce_captcha`                                   | `index.ts:1162` |
+| `parse_form_data` — the HTML table renderer | `index.ts:1042` |
+| `to_form_data` | `index.ts:1026` |
+| `enforce_captcha` | `index.ts:1162` |
 | `parse_email_address` / `parse_addresses` / `stringify_address(es)` / `email_name(_list)` | `index.ts:930` |
-| `parse_attachment(s)`                               | `index.ts:914`  |
+| `parse_attachment(s)` | `index.ts:914` |
 | `send_data_batch` — `{key}` personalisation per recipient | `index.ts:774` |
-| `cancel`                                            | `index.ts:562`  |
+| `cancel` | `index.ts:562` |
 
-`send_data_batch` is listed as email-specific only because its plumbing (`parse_addresses`,
-`prepare_send`) is; the *idea* generalises fine and can be lifted later if an SMS provider
-turns out to have a native batch endpoint worth using.
+`send_data_batch` is email-specific only because its plumbing is; the idea generalises and
+can be lifted if an SMS provider turns out to have a batch endpoint worth using.
 
 ### Coupling audit — what does *not* need touching
 
-- `kit.ts`, `form.ts`, `vite.ts`, `mail.remote.ts` never reference `ProviderBase` or
-  `PreparedMessage`. They're form/HTTP-layer code and are unaffected by the split.
-- Every existing provider file (`resend.ts`, `ses.ts`, …) extends `ProviderBase` and
-  implements three hooks. If `ProviderBase` stays exported as an alias of the new
-  `EmailProvider`, **zero provider files change**.
+- `kit.ts`, `form.ts`, `vite.ts` and `mail.remote.ts` never reference `ProviderBase` or
+  `PreparedMessage`. Unaffected.
+- Every provider file extends `ProviderBase` and implements three hooks. Keep
+  `ProviderBase` exported as an alias of the new `EmailProvider` and **zero provider files
+  change**.
 - `webhooks/` is entirely separate and unaffected.
 
 ---
@@ -477,67 +323,45 @@ turns out to have a native batch endpoint worth using.
     │  FormData·captcha│    │  E.164 normalise │    │  token targeting │
     └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
              │                       │                       │
-   resend·ses·postmark·…    twilio·vonage·sns·…     webpush·fcm·apns
+   resend·ses·postmark·…    twilio·puresms·sns·…    webpush·fcm·apns
              │                       │                       │
              ▼                       ▼                       ▼
          mail()                   sms()                   push()
              └───────────────────────┼───────────────────────┘
                                      ▼
-                                  send()
+                                  send()          ← runs in your process
 ```
 
-Each channel gets its own resolver mirroring `resolve_provider` (`mail.ts:89`): its own
-`LOADERS` map, its own env var (`POSTBOI_SMS_PROVIDER`, `POSTBOI_PUSH_PROVIDER`), its own
-defaults, and the same dev-inbox interception.
+Each channel gets a resolver mirroring `resolve_provider` (`mail.ts:89`): its own `LOADERS`
+map, env var (`POSTBOI_SMS_PROVIDER`, `POSTBOI_PUSH_PROVIDER`), defaults, and the same
+dev-inbox interception.
 
 ---
 
-## Decisions to make before Phase 1
+## Open decisions
 
-These are the ones that change the shape of the work. They need answering, not assuming.
+1. **Bare numeric `to` for SMS.** `to: 447788223344` reads beautifully but a JS number loses
+   the leading `+` and any leading `0` — `07788 223344` arrives as `7788223344`, and nothing
+   downstream can tell a UK number from a US one.
+   _Proposed: accept it, normalise against a default country (`POSTBOI_SMS_COUNTRY` /
+   `default.country`), and throw `PostboiError { code: "ambiguous_number" }` naming both
+   fixes when none is set. Strings pass through untouched. Never guess a country._
 
-1. **BYO-provider first, or the Postboi API first?**
-   _Recommendation: BYO first._ It ships in a week with no compliance surface. Putting SMS
-   on the Postboi provider means carrier contracts and 10DLC registration (see Phase 2) —
-   weeks of not-code. Doing BYO first also proves the abstraction before we build a
-   backend against it.
+2. **Package layout.** Phase 1 alone adds 4–6 files to a directory already past 50, and
+   `exports.test.ts:32` asserts every non-internal `.ts` there has a `package.json` exports
+   entry.
+   _Proposed: `src/library/sms/*` and `src/library/push/*`, updating `to_source`
+   (`exports.test.ts:11`) for the nesting. Email files stay put._
 
-2. **Does `hooks.before.send` become channel-generic?**
-   It's typed `{ provider: string; message: PreparedMessage }` today (`index.ts:413`) and
-   is documented public API. Options:
-   - (a) Widen to `{ channel: "email" | "sms" | "push"; message: PreparedMessage | PreparedSms | PreparedPush }`.
-     Breaking — every existing hook that reads `message.subject` needs a narrow.
-   - (b) Keep `before.send` email-only, add `before.sms` / `before.push` alongside.
-     Non-breaking, but three near-identical hook trees and `send()` has no single
-     interception point.
-   - _Recommendation: (a), with `channel` as the discriminant._ Pre-1.0 breaking changes
-     are minor bumps per CLAUDE.md, and (b)'s duplication gets worse with every channel.
-     Do it in Phase 0, before there's a second channel to migrate.
+3. **UK sender ID pre-registration.** Sources conflict: Ofcom declined to mandate
+   registration and the MEF registry is voluntary, but at least one provider's compliance
+   guide lists the UK as pre-registration required. Probably regulator versus carrier
+   practice. **Get a definitive answer from whichever provider we ship before writing it
+   into the docs.**
 
-3. **Does `to: 447788223344` (a bare number) stay in the type?**
-   It reads beautifully and it's what prompted this work, but a JS number silently loses
-   the leading `+` and any leading `0` — `07788 223344` arrives as `7788223344`, and
-   nothing downstream can tell a UK number from a US one.
-   _Recommendation: accept it, normalise it, and fail loudly when we can't._ Strings pass
-   through untouched. Bare numbers resolve against a default country
-   (`POSTBOI_SMS_COUNTRY` / `default.country` in `postboi.config.ts`), and throw
-   `PostboiError { code: "ambiguous_number" }` with a message naming both fixes when no
-   default is set. Never guess a country.
-
-4. **Package layout: flat `src/library/` or per-channel subdirectories?**
-   Phase 1 alone adds 4–6 files to a directory that's already 50+. `exports.test.ts:32`
-   asserts every non-internal `.ts` there has a `package.json` exports entry, so this is a
-   real invariant, not just tidiness.
-   _Recommendation: `src/library/sms/*` and `src/library/push/*`_, and update `to_source`
-   (`exports.test.ts:11`) to handle the nesting. Email files stay put — moving them churns
-   every import for no benefit.
-
-5. ~~**Is postboi still "an email library"?**~~ **Decided: no** — see Decided, above.
-   What that leaves is mechanical, and worth doing in one pass rather than drifting:
-   README opener, the site tagline ("Send email from anywhere with zero configuration",
-   `src/lib/config/navigation.ts:34`), the `docs` section description, `package.json`
-   `keywords` (currently just `["svelte"]`), the shipped agent skill in `skills/`, and
-   `llms.txt`. The domain and package name stay — `postboi` was never literally "mail".
+Rebranding is mechanical and can happen in one pass whenever: README opener, site tagline
+(`src/lib/config/navigation.ts:34`), docs section description, `package.json` keywords
+(currently just `["svelte"]`), the shipped agent skill in `skills/`, and `llms.txt`.
 
 ---
 
@@ -545,19 +369,19 @@ These are the ones that change the shape of the work. They need answering, not a
 
 **No user-visible change. Everything below is cheaper once this lands.**
 
-1. Extract the channel-agnostic members listed above into `abstract class Transport` in a
-   new `src/library/transport.ts`.
+1. Extract the channel-agnostic members into `abstract class Transport` in
+   `src/library/transport.ts`.
 2. `EmailProvider extends Transport` keeps the email-specific half.
-3. `export { EmailProvider as ProviderBase }` from `index.ts` — existing providers and any
-   third-party subclass keep working untouched.
-4. Generalise `Hooks` per decision 2, adding `channel` to every hook context.
+3. `export { EmailProvider as ProviderBase }` — existing providers and third-party
+   subclasses keep working untouched.
+4. Generalise `Hooks` with a `channel` discriminant (decided above).
 5. Move the SigV4 signer out of `ses.ts:146` into `src/library/aws.ts`, parameterised by
-   service name — SES hardcodes `"ses"` at `ses.ts:181`, and AWS SNS (Phase 1) needs the
-   same signer with `"sns"`.
+   service — SES hardcodes `"ses"` at `ses.ts:181`, and AWS SNS needs the same signer with
+   `"sns"`.
 
-**Tests:** the existing suite is the regression net — `provider.test.ts`, `providers.test.ts`,
-`batch.test.ts`, `hooks.test.ts` all exercise the base class through real providers. If
-they pass unchanged (bar the hook-context shape), the split is clean.
+**Tests:** the existing suite is the regression net. `provider.test.ts`, `providers.test.ts`,
+`batch.test.ts` and `hooks.test.ts` all exercise the base class through real providers. If
+they pass unchanged bar the hook-context shape, the split is clean.
 
 **Effort: 1–2 days.**
 
@@ -568,8 +392,7 @@ they pass unchanged (bar the hook-context shape), the split is clean.
 ### Types
 
 ```ts
-/** A phone number: E.164 string, a bare number (normalised against the default country),
- *  or an object with a label for the dev inbox. */
+/** E.164 string, a bare number (normalised against the default country), or a labelled object. */
 export type Phone = string | number | { number: string; name?: string }
 
 export interface SmsOptions {
@@ -591,427 +414,53 @@ export interface PreparedSms {
 }
 ```
 
-`SmsProvider extends Transport` with the same three-hook contract as email
-(`build_request` / `parse_response` / `parse_error`), plus `prepare_sms` doing E.164
-normalisation, default merging and length/segment validation.
+`SmsProvider extends Transport` with the same three-hook contract as email, plus
+`prepare_sms` doing E.164 normalisation, default merging and segment validation.
 
-### Providers (each ~80 lines, same shape as `resend.ts`)
+### Providers
+
+Each ~80 lines, same shape as `resend.ts`.
 
 | Provider | Endpoint | Auth | Notes |
 | --- | --- | --- | --- |
-| Twilio | `POST https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json` | Basic (SID:token) | form-encoded, not JSON. `To`/`From`/`Body`. Scheduling via `ScheduleType=fixed` + `SendAt` (ISO 8601), requires `MessagingServiceSid`. |
-| Vonage | `POST https://api.nexmo.com/v1/messages` | Bearer JWT (RS256) | JSON: `{ to, from, channel: "sms", message_type: "text", text }`. The JWT signer is new work — the legacy `POST https://rest.nexmo.com/sms/json` takes `api_key`/`api_secret` in the body and needs no signer. **Start with the legacy endpoint**; Messages API is a later upgrade. |
-| AWS SNS | `POST https://sns.{region}.amazonaws.com/` (`Action=Publish`) | SigV4 | Free once `aws.ts` exists (Phase 0 step 5). No per-message sender ID in most regions. |
-| MessageBird / Bird | `POST https://rest.messagebird.com/messages` | `Authorization: AccessKey {key}` | JSON, simplest of the lot. |
-| Plivo | `POST https://api.plivo.com/v1/Account/{auth_id}/Message/` | Basic | JSON. |
-| Telnyx | `POST https://api.telnyx.com/v2/messages` | Bearer | JSON. Cheapest per-segment of the group. |
+| **Twilio** | `POST https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json` | Basic (SID:token) | Form-encoded, not JSON. Scheduling via `ScheduleType=fixed` + `SendAt`, requires `MessagingServiceSid` |
+| **PureSMS** | REST + API key | API key | **UK-native, 2.8p flat**, no tiers or minimum, free sender ID |
+| **AWS SNS** | `POST https://sns.{region}.amazonaws.com/` (`Action=Publish`) | SigV4 | Nearly free once `aws.ts` exists |
+| The SMS Works | REST + API key/JWT | key/JWT | UK-native, charges only for **delivered** — fits our `BatchResult` reporting |
+| Vonage | `POST https://rest.nexmo.com/sms/json` (legacy) | key/secret in body | Their Messages API needs an RS256 JWT; start legacy |
+| MessageBird / Plivo / Telnyx | REST | key | Copy-paste once the shape is proven |
 
-Plus at least one **UK-native** provider, since UK traffic is 4–7× US and the UK-native
-route is ~1.5× cheaper than Twilio there (see economics). Both candidates are plain REST
-with GBP billing and free sender IDs:
-
-| Provider | Endpoint shape | Why |
-| --- | --- | --- |
-| PureSMS | REST + API key | Cheapest verified UK flat rate (2.8p), no tiers or minimum |
-| The SMS Works | REST + API key/JWT | Charges only for **delivered** messages — a genuinely better default, and a nice fit for our `BatchResult` reporting |
-
-_Ship Twilio + one UK-native + AWS SNS in Phase 1._ Twilio because it's the one everyone
-has heard of and every example uses; a UK-native because it's materially cheaper in our
-home market; SNS because it's nearly free once `aws.ts` exists (Phase 0 step 5). Vonage and
-the rest are copy-paste once the shape is proven and can land as follow-ups.
+_Ship Twilio + PureSMS + SNS._ Twilio because everyone's heard of it; a UK-native because
+UK traffic is 4–7× US and UK-native is ~1.5× cheaper than Twilio there; SNS because it's
+nearly free once Phase 0 step 5 lands.
 
 ### Zero-config `sms()`
 
 Mirrors `send_mail` (`mail.ts:182`):
 
-- Its own `LOADERS` map keyed off `POSTBOI_SMS_PROVIDER`, falling back to
-  `config.sms?.provider`.
+- Own `LOADERS` map keyed off `POSTBOI_SMS_PROVIDER`, falling back to `config.sms?.provider`
 - `sms_env_defaults()` alongside `env_defaults` (`env.ts:99`), reading `POSTBOI_SMS_FROM`
-  and `POSTBOI_SMS_COUNTRY`.
+  and `POSTBOI_SMS_COUNTRY`
 - **Dev-inbox interception preserved.** `resolve_dev_inbox` (`mail.ts:70`) outranking a
   credentialled provider matters *more* for SMS than email — a stray dev send costs real
-  money and reaches a real handset with no undo. Same rule: intercept in development
-  unless `dev: { inbox: false }` or `POSTBOI_INBOX=off`.
-- Same missing-credential behaviour: log-and-continue in development, throw in production.
-
-### Cross-cutting checklist (every phase, every new module)
-
-Adding a channel touches more than the provider file. This list is the actual cost:
-
-- [ ] `package.json` `exports` entry per new module — enforced by `exports.test.ts:32`
-- [ ] `registry.ts:33` — `PROVIDERS` gains a `channel: "email" | "sms" | "push"` field.
-      It's `as const satisfies ReadonlyArray<ProviderMeta>` and drives both the CLI prompts
-      *and* `resolve_provider`, so it can't drift. `find_provider` needs a channel argument
-      or per-channel lookups.
-- [ ] CLI: `bunx postboi init` gains a channel step; `DEFAULT_FIELDS`
-      (`src/cli/providers.ts:19`) is email-shaped and needs an SMS set; `render_config`
-      (`src/cli/providers.ts:41`) writes an `sms:` block. For SMS the CLI should also ask
-      for a **sender ID** and prompt by destination country — unlike email, the right
-      provider depends on where you're sending (see onboarding friction).
-- [ ] `registry.ts` entries for SMS want more than credentials: a `regions` hint, an
-      indicative price, and a one-line "why you'd pick this", so `init` can recommend
-      rather than just list. Prices go stale — carry a verified-on date and don't put
-      them in code where they'll rot silently.
-- [ ] `config.ts:27` — `PostboiConfig` gains `sms?: { provider, default, … }` and
-      `push?: { … }`. `merge()` (`config.ts:84`) needs the new keys deep-merged.
-- [ ] Dev inbox: `SentMessage` (`mock.ts:16`) and `InboxMessage` (`inbox.ts:25`) are
-      email-shaped. Add a `kind` discriminant, extend `Inbox.deliver` (`inbox.ts:55`), and
-      give the inbox UI a second tab. This is the single biggest non-provider chunk of
-      Phase 1 — budget for it properly.
-- [ ] Mock provider: an SMS equivalent so tests and the log-in-dev fallback work.
-- [ ] Docs: new `.svx` page in `src/lib/content/docs/`, entry in `contentSections`
-      (`src/lib/config/navigation.ts:34`), and the section description updated.
-- [ ] `llms.txt` / `llms-full.txt` regeneration.
-- [ ] `skills/` — the shipped agent skill describes email only.
-
-**Effort: ~1 week** (3 providers, resolver, mock, dev-inbox tab, CLI, docs).
-
----
-
-## SMS economics — can we be cheaper than sent.dm?
-
-Short answer: **Phase 1 already is, by a lot, and a hosted Postboi SMS provider never
-will be.** Those are two different findings and both change what's worth building.
-
-### The cost floor
-
-US 10DLC, per outbound segment, all-in (base + carrier surcharge):
-
-| Route | Base | Carrier surcharge | All-in |
-| --- | --- | --- | --- |
-| Telnyx | $0.004 | $0.0035 (AT&T) – $0.0045 (T-Mo/VZ) | **~$0.0075–0.0085** |
-| Plivo | ~$0.0055 | same | ~$0.009–0.010 |
-| Twilio | $0.0079–0.0083 | $0.003–0.005 | **~$0.011–0.013** |
-
-Plus non-per-message costs: number rental ~$1.15/mo, 10DLC brand registration $4 (sole
-prop) to $48+ (standard), campaign registration ~$15 and ~$1.50–4/mo ongoing. Real cost
-lands 1.5–2× the headline rate.
-
-### The UK cost floor — and it's a different market
-
-**UK SMS costs roughly 4–7× US SMS.** This is the single most important number in this
-document for a UK-based business, and it inverts several conclusions.
-
-Outbound, per message segment:
-
-| Provider | Price | Notes |
-| --- | --- | --- |
-| **PureSMS** | **2.8p** + VAT | UK-native. Flat rate, no tiers, no minimum, no monthly, free sender ID |
-| **Esendex** | from 2.4p | UK-native, but plans start at £54/mo — effective rate depends on volume |
-| **The SMS Works** | from 3.1p + VAT (to ~4.4p) | UK-native. **Only charges for delivered messages** — refunds undelivered UK SMS, they claim ~8.9% average saving. Credits don't expire, no setup or monthly fee |
-| **Twilio** | **$0.056** (~4.3p) | Their own GB pricing page. Short code $0.0524, but the short code itself is **$1,667/mo** |
-| GoHighLevel (Twilio reseller) | $0.0524 | Corroborating datapoint, effective Aug 2025 |
-
-Number rental (Twilio UK): local $1.15/mo, mobile $2.50/mo, **alphanumeric sender ID free**.
-Inbound $0.0075.
-
-Caveats on these figures: UK prices are quoted **ex-VAT** (20%; reclaimable for VAT-registered
-businesses, so usually a wash, but it distorts headline comparisons). USD↔GBP conversions
-above are approximate and move with FX — which is itself a point, since Twilio, ClickSend
-and Plivo price UK traffic **in USD** and hand you the currency risk, where UK-native
-providers bill in GBP. I could not get hard UK figures out of ClickSend or Vonage (their
-pricing pages render rates client-side); those need a real quote.
-
-**So: US all-in ~$0.008 (~0.6p) versus UK ~2.4–4.4p.** UK-native beats Twilio UK by roughly
-1.5×, which is real but not the order-of-magnitude gap the US market has between wholesale
-and retail.
-
-#### What that does to the sent.dm comparison
-
-Because UK traffic is so much more expensive, their $0.015/contact/month platform fee is
-proportionally *less* punishing here — it's about half the cost of a single UK message,
-versus roughly double a US one. Rerunning both scenarios at ~3p/message:
-
-- **Transactional** — 100k users, 5k OTPs/month: sent.dm ~$1,690 (of which **$1,500 is
-  platform fee on dormant contacts**) vs BYO ~$190. Still **~9× cheaper**.
-- **Marketing** — 5k contacts × 20 messages: sent.dm ~$3,875 vs BYO ~$3,800. **~2%** — the
-  fee is basically noise at that frequency.
-
-The dormant-contact problem is what drives the whole gap, and it survives the move to UK
-pricing intact.
-
-#### And what it does to hosted SMS
-
-It makes it **worse**, not better. At a 2.8p UK COGS, pricing for a 40% margin means ~4.7p
-— when the developer could pay 2.8p going direct. That's ~70% above direct, against ~60%
-in the US. A UK-based hosted SMS product is the least attractive version of this business.
-
-### sent.dm's model, converted to a per-message fee
-
-They charge **$0.015 per contact per month, plus carrier fees**. The platform fee is a
-per-contact subscription, so its effective per-message cost depends entirely on how often
-you message a contact — and **dormant contacts cost the same as active ones**:
-
-| Messages per contact per month | Effective platform fee per message |
-| --- | --- |
-| 1 | $0.015 — roughly 2× the entire wholesale cost of the message |
-| 5 | $0.003 |
-| 20 | $0.00075 |
-| 0 (dormant) | $0.015, for nothing |
-
-Worked both ways:
-
-- **Transactional / OTP** — 100,000 registered users, 5,000 OTPs a month.
-  sent.dm: 100,000 × $0.015 = **$1,500/mo** platform fee, plus ~$40 of traffic.
-  BYO Telnyx through postboi: **~$40/mo total, $0 to us.** ~38× cheaper.
-- **Marketing** — 5,000 engaged contacts, 20 messages each (100,000 messages).
-  sent.dm: $75 platform + ~$800 traffic = ~$875. BYO: ~$800. Only ~9% cheaper.
-
-Their pricing is built for high-frequency sending to a small engaged list. It is
-punishing for transactional sending against a large mostly-dormant user base — which is
-exactly postboi's audience.
-
-### What that means
-
-1. **Phase 1 is the whole competitive answer, and it needs no backend.** Bring-your-own
-   provider means our platform fee is **$0** — not "cheaper", but *not charged at all*.
-   For any transactional use case that beats sent.dm by an order of magnitude, and it
-   ships in a week.
-2. **Hosted SMS cannot win on price.** Our COGS is roughly what a developer pays going
-   direct to Telnyx. Pricing for even a 40% margin lands ~$0.013–0.015/message — *above*
-   what they'd pay themselves. So hosted SMS would sell on **setup time** (skipping 10DLC
-   registration, which is weeks of genuine pain), unified billing alongside email, and
-   delivery profiles. Never on being cheap. If we can't tell that story, don't build it.
-3. **SMS cannot ride the email tier model.** SES costs $0.0001/email; SMS costs ~$0.008 —
-   **~80× higher COGS**. The Starter tier in the app's PLAN.md is £9/mo for 20,000 emails
-   (~$2 COGS, ~72% margin). Twenty thousand *SMS* would be ~$160 of COGS: that tier would
-   lose ~$150/month per customer. Hosted SMS must be metered separately.
-4. **Prepaid credits, not post-paid metering.** SMS pumping / AIT is the reason: OTPs are
-   ~89% of international A2P traffic and the primary attack surface, AIT is estimated at
-   5–40% of international A2P volume and cost businesses ~$1.6bn in 2023 (X reportedly
-   lost $60M/yr). A leaked token on a post-paid account means **we** eat the bill.
-   Prepaid caps the blast radius structurally rather than relying on detection. Pair it
-   with country allowlisting by default, since IRSF targets expensive destinations.
-
-### If we became the SMS provider ourselves, what could we get per message?
-
-**UK answer: ~2.0–2.2p at absolute best, ~2.4–2.6p realistically — against 2.8p a
-developer pays PureSMS today with no commitment.** There is a hard regulated-ish floor and
-it is most of the retail price.
-
-#### The floor is the MNO termination fee, and it's now fixed until 2028
-
-UK mobile networks charge a **termination fee** to deliver each A2P message. That is paid
-to the terminating operator, so no amount of scale competes it away — it is not aggregator
-margin.
-
-- Wholesale A2P termination rose **15–75% since 2021** (some cases ~70%), which triggered
-  an Ofcom market review.
-- Ofcom's **March 2025 consultation proposed a cap of 1.96p per SMS** — their own
-  cost-based view of a fair rate.
-- Ofcom then **accepted voluntary commitments instead of formal regulation** (statement
-  Oct/Nov 2025), from **BT/EE, Sky, Virgin Media O2 and VodafoneThree** — over **90% of
-  A2P SMS sold to aggregators**. They run **1 Jan 2026 → 31 Dec 2028** and cap the maximum
-  standard price, limit rises to once per 12 months, and require 60 days' notice (up from
-  30) plus pre-notification to Ofcom.
-- **The agreed maximum prices are redacted.** Market evidence puts the range at roughly
-  **2.00p–2.80p** across operators.
-
-So the floor is ~2.0–2.8p, and **PureSMS at 2.8p and Esendex from 2.4p are already selling
-at or very near termination cost.** There is almost nothing between their retail price and
-what the networks charge them.
-
-#### The three routes down, and where each lands
-
-| Route | Realistic cost/msg | What it costs to get there |
-| --- | --- | --- |
-| Resell a CPaaS (what Phase 1 users already do) | 2.8p–4.3p | Nothing. And no better than our own customers get |
-| Wholesale aggregator with volume commitment | ~2.2–2.6p | Minimum monthly commitments — infrastructure platforms quote **2M SMS/month**, or ~**800k/month** for "micro aggregator" status |
-| Direct MNO SMPP connections | ~2.0–2.8p (the termination rate itself) | Four separate commercial relationships (BT/EE, VMO2, VodafoneThree, Sky), SMPP infrastructure, credit-worthy counterparty status, and enough volume for them to take the meeting |
-
-#### Why that doesn't make a business
-
-Best case is **~0.6–0.8p of gross margin per message** (2.0–2.2p cost against 2.8p that a
-developer can already get themselves), so **~25% gross at the very best** — before
-compliance, fraud, and 24/7 operations.
-
-The volume commitment is the killer. At the ~800k/month micro-aggregator floor we'd be
-committing to roughly **£22k/month of traffic before having a single customer**, to earn
-~£5.6k/month of gross profit if we filled it completely.
-
-Set against email, where SES costs $0.0001 and the app's tiers sell at ~$0.0004–0.0005 for
-**60–75% margins, with no minimum commitment and no carrier infrastructure**, this is a
-categorically worse business.
-
-#### Two things that could change the answer
-
-- **The US is a much better market for this than the UK.** US wholesale is ~$0.008 all-in
-  against ~$0.012 Twilio retail — a genuine ~1.5× spread to capture, because US termination
-  surcharges ($0.0035–0.0045) are a far smaller share of the retail price than UK
-  termination is. If hosted SMS is ever worth doing, it's a US play. We are, ironically,
-  based in the wrong country for it.
-- **The commitments expire 31 December 2028.** Rates could move after that, in either
-  direction. Worth a diary note rather than a plan.
-
-**Bottom line: UK SMS is commodity pass-through with a regulated floor. The margin lives in
-the platform above the transport, not in the transport.** If we ever ship hosted SMS, price
-it as convenience bundled alongside email — never as a margin business — and be honest in
-the docs that BYO is cheaper.
-
-### Can we use a cheap US provider to message UK/EU numbers?
-
-**No. SMS is priced by destination, not origin** — "the price of sending an SMS message is
-based on the country in which the message recipient is located". Twilio's GB page
-($0.056) *is* what a US Twilio account pays to message a UK number. The fee being paid is
-the UK network's termination charge, so account location, company HQ and sending number
-country are all irrelevant to it. There is no arbitrage here.
-
-The three things that look like they'd get around it are each worse:
-
-1. **Sending from a US long code to UK/EU numbers.** Cross-border long code sending is
-   restricted by providers (Twilio documents e.g. Australian numbers being unable to
-   long-code to the US), short codes are domestic-only, deliverability suffers, and the
-   recipient sees a `+1` number that reads as spam and can't usefully be replied to.
-2. **Alphanumeric sender IDs — this one is decisive, and it runs backwards.**
-   Alphanumeric senders are **not supported in the US or Canada at all**; those markets
-   require 10DLC, toll-free or short codes. Alphanumeric is exactly the free, no-number
-   option that makes UK/EU sending good. So a US-centric provider setup is **worse
-   equipped for UK sending, not cheaper**.
-3. **Grey routes** — the actual "cheap international route" on offer in this market. They
-   bypass commercial A2P agreements by disguising A2P traffic as P2P to dodge termination
-   fees, and they cost MNOs ~$7.7bn a year (~$37bn cumulative 2020–24). Operators now run
-   SMS firewalls doing real-time traffic classification and spoofed-sender detection, so
-   the practical result is unreliable delivery, missing or fabricated DLRs, rewritten
-   sender IDs, and eventual cut-off. **Not viable for anything that sells reliability.**
-
-#### EU is worse than the UK, not better
-
-Western Europe is the most expensive SMS region in the world. Netherlands, Belgium and
-Germany can exceed **$0.09 per single-segment message**; Switzerland, France, Germany and
-the Netherlands top the table. The drivers are the same as the UK's — high carrier
-termination, fragmented markets, two or three dominant carriers per country. For contrast,
-the US, Canada, India and Brazil often sit under $0.02.
-
-Note the EU's intra-EU price cap (6c + VAT per SMS) is **consumer-only** — business/A2P
-traffic is explicitly excluded, so it doesn't help us.
-
-EU also adds per-country sender ID **pre-registration**: France requires it, Spain and
-Australia were added in 2026, and the list is longer. Unregistered traffic into those
-markets gets content-filtered rather than cleanly rejected, which is worse — it fails
-quietly.
-
-⚠️ **Unresolved:** sources disagree on whether the **UK** belongs on that mandatory
-pre-registration list. Ofcom declined to mandate registration and the MEF registry is
-voluntary (see onboarding friction below), but at least one provider's compliance guide
-lists the UK as pre-registration required. These are probably describing different layers
-— regulator versus individual carrier/aggregator practice — but **get a definitive answer
-from whichever provider we ship before writing it into the docs.**
-
-#### What this actually changes
-
-The cost problem is structural and geographic, and no routing trick touches it. That
-pushes in two directions:
-
-- **It makes BYO more right, not less.** Route quality and price to a given destination is
-  exactly the thing a customer should be able to choose, and exactly the thing we'd be
-  guessing at on their behalf.
-- **It gives `send()` a genuinely useful job.** For expensive destinations, prefer push,
-  WhatsApp or email and fall back to SMS only when nothing else can reach the user. That
-  is real cost optimisation, and unlike sent.dm's live rate-card routing **we can do it in
-  a library**, because the channel ordering is a per-send policy decision rather than
-  something requiring live wholesale pricing. Worth designing into Phase 4's fallback
-  chain: order by cost-class, not just availability.
-
-### Can we escape the floor another way — buy SIMs and send from those?
-
-It's the obvious creative move, and worth taking seriously rather than waving off. The
-naive maths is seductive: a consumer UK SIM with "unlimited texts" is ~£10–15/month, so a
-rack of them behind an API looks like it drives the per-message cost toward zero. That is
-exactly the thought every grey-route operator has had. **It does not work, and as of 2026
-it is a crime.** Three independent walls, any one of which is fatal:
-
-**1. It's now a criminal offence in the UK.** The **Crime and Policing Act 2026** bans the
-possession or supply of a *SIM farm* — defined as a device able to use **five or more
-physical SIMs simultaneously or interchangeably** to make calls or send SMS. From **29
-October 2026** possession without "good reason or lawful authority" is an offence
-(unlimited fine in England & Wales). The good-reason defences are narrow and named:
-live broadcasting, freight GPS, on-train Wi-Fi, telecoms network testing. **"Sending SMS
-to your own customers" is explicitly *not* among them**, and there is **no licence to
-apply for** — the Act deliberately created no authorisation route. So the exact thing we'd
-build is the exact thing the Act criminalises, and we couldn't buy our way legal. The UK
-is the first country in Europe to go this far, but the direction of travel is one-way.
-
-**2. The networks detect and kill it — that's what the ban is enforcing.** MNOs run
-signalling-level detection (Infobip, Enghouse, Vox, Openmind and others sell it to them):
-they profile genuine subscriber behaviour and flag device-based origination by its
-signature — a SIM that *receives* almost nothing and *emits* a high volume of
-A2P-shaped messages, with no matching voice pattern. Detection means the SIM is blocked,
-so you're on a treadmill of buying and burning SIMs. This is the *hardware* version of the
-grey-route problem already documented above: unreliable delivery, no DLRs, eventual
-cut-off. Nothing that sells reliability can stand on it.
-
-**3. The bundles forbid it anyway.** Consumer "unlimited texts" carry fair-use / no-A2P /
-no-automated-sending terms precisely to stop this. Using them for A2P is a contract breach
-before it's anything else, so even the pre-ban version was building on sand.
-
-**Why the floor is unavoidable, stated plainly:** the termination fee is not a middleman's
-markup you can route around — **it is the price of the destination network agreeing to
-deliver your message to its subscriber.** Anything genuinely cheaper is, by construction,
-*not* the network agreeing to deliver — it's you trying to sneak past it, which is the
-grey route / SIM box, which is what §2 and §1 shut down. There is no legitimate below-floor
-lane for guaranteed A2P SMS. Full stop.
-
-**The genuinely creative answer is to stop paying the SMS rail at all** — or at least to
-stop paying it *per 160 characters*:
-
-- **RCS** — verified branding, and roughly at **parity** with SMS for short messages.
-  ⚠️ It does **not** escape carrier fees (see the RCS pricing section below — an earlier
-  draft of this doc wrongly claimed it did). Its wins are structural rather than
-  headline-rate: single-billing for long messages, session pricing for two-way, and
-  delivery-only billing. Carrier-run SMS fallback means we never lose the message.
-- **WhatsApp** — free inside the 24-hour service window, template-priced outside it; for
-  conversational/support flows the effective per-message cost collapses.
-- **Push + email** — the only genuinely termination-free channels here. Effectively free
-  (SES is $0.0001), and reach any user who's installed the app or given an address.
-
-None of these is a way to send *SMS* more cheaply — that door is now bolted and alarmed.
-They're ways to deliver *the same message* without buying SMS at all. Which is the entire
-thesis of the multi-channel pivot, and the reason `send()`'s **cost-ordered fallback**
-(push → RCS → WhatsApp → SMS-as-last-resort) is the single most valuable thing in this
-plan for a UK/EU sender. We don't beat the SMS floor. We route around needing it.
-
-> **Bottom line for this question:** there is no legal, reliable way to be a below-floor UK
-> SMS provider — the SIM route is now a criminal offence with no business exemption, and
-> the floor exists because it *is* the delivery. Don't try to undercut SMS; make SMS the
-> fallback of last resort behind channels that don't ride the termination rail.
-
-### Onboarding friction — is BYO actually "get a token and go"?
-
-The fair worry about bring-your-own-provider is that a developer doesn't know which
-providers exist, and that SMS setup is heavier than email's paste-an-API-key. **In the UK
-it very nearly is that easy. In the US it genuinely isn't** — and that distinction is
-geographic, not intrinsic.
-
-**UK — close to email-grade:**
-
-- **Alphanumeric sender IDs are free.** Twilio's own GB page lists them at no cost against
-  $2.50/mo for a mobile number. No number to buy.
-- **No mandatory registration.** Ofcom considered mandating A2P sender ID registration and
-  explicitly declined (Nov 2025 U-turn), on the grounds it would impose set-up and ongoing
-  costs on brands. The MEF **SMS SenderID Protection Registry is voluntary** and paid.
-- So the flow is: sign up → API key → choose an 11-character sender ID → send. **One extra
-  decision versus email**, and it's a string.
-
-Real UK caveats, all small:
-
-- 11 characters max, GSM charset, no spaces.
-- **One-way only.** Recipients cannot reply to an alphanumeric sender — most handsets show
-  "can't reply to this shortcode". Fine for OTPs and alerts; two-way needs a virtual mobile
-  number (~$2.50/mo).
-- Sender IDs must be **brand-recognisable**; generic ones get blocked.
-- Some networks and providers still ask you to pre-register the sender ID. Where they do
-  it's **1–14 days**, not weeks.
-- There's a confidential restricted-sender-ID list; hitting it means silent non-delivery.
-
-**US — this is where the friction lives:** 10DLC brand registration ($4 sole proprietor,
-$48+ standard), campaign registration (~$15 plus $1.50–4/mo), number rental ~$1.15/mo, and
-weeks of lead time before the first message sends.
-
-**The "I wouldn't know what providers exist" problem is ours to solve, and we already have
-the machinery.** `registry.ts` drives `bunx postboi init` with each provider's name, its
-credentials URL, and its required fields — that's exactly the discovery problem, already
-solved for email. For SMS we can go further and be *opinionated*, because unlike email the
-right answer depends on where you're sending:
+  money and reaches a real handset with no undo
+- Same missing-credential behaviour: log in development, throw in production
+
+### Onboarding
+
+In the UK this is close to email-grade: alphanumeric sender IDs are **free** (Twilio lists
+them at £0 against $2.50/mo for a mobile number), and **registration is not mandated** —
+Ofcom explicitly declined in Nov 2025; the MEF registry is voluntary. Sign up → API key →
+pick an 11-character sender ID → send.
+
+Caveats, all small: 11 chars GSM-only; **one-way** (nobody can reply to an alphanumeric
+sender — fine for OTPs, needs a virtual number for conversational); must be
+brand-recognisable; some networks want 1–14 days of pre-registration. The weeks-long pain is
+US 10DLC, which isn't our market.
+
+**Discovery is our problem to solve, and the machinery exists.** `registry.ts` already drives
+`postboi init` with names, credential URLs and fields. For SMS it should be *opinionated*,
+because unlike email the right answer depends on destination:
 
 ```
 $ bunx postboi init --sms
@@ -1023,141 +472,139 @@ $ bunx postboi init --sms
 ? Sender ID (11 chars, what recipients see)  › POSTBOI
 ```
 
-That is better UX than either a bare library or a hosted black box: it names the tradeoff
-instead of hiding it. It also means **the registry should carry per-country guidance**, not
-just credentials — a `regions` hint and a one-line "why you'd pick this".
+### Cross-cutting checklist
 
-Worth noting the market moves: **Textlocal was fully decommissioned in November 2025** and
-is no longer taking signups. Whatever we recommend needs a freshness check before shipping,
-and the docs page should carry a "verified as of" date rather than pretending prices are
-stable.
+Every new channel touches more than a provider file. This is the actual cost:
 
-**Recommendation: ship Phase 1, do not build Phase 2 until there is demand pull for it.**
-The pricing analysis says the hosted provider is a convenience product with thin margins
-and a fraud tail, competing against a free option we ship ourselves. That is a much worse
-business than hosted email, and the plan should stop assuming it follows automatically.
+- [ ] `package.json` `exports` entry per module — enforced by `exports.test.ts:32`
+- [ ] `registry.ts:33` — `PROVIDERS` gains `channel`, plus a `regions` hint and indicative
+      price so `init` can recommend. Prices rot: carry a verified-on date
+- [ ] CLI: channel step, SMS `DEFAULT_FIELDS` (`src/cli/providers.ts:19`), sender ID prompt,
+      `render_config` (`:41`) writing an `sms:` block
+- [ ] `config.ts:27` — `PostboiConfig` gains `sms?` / `push?`; `merge()` (`:84`) deep-merges them
+- [ ] **Dev inbox** — `SentMessage` (`mock.ts:16`) and `InboxMessage` (`inbox.ts:25`) are
+      email-shaped. Add a `kind` discriminant, extend `Inbox.deliver` (`inbox.ts:55`), give
+      the UI a second tab. **The biggest non-provider chunk of Phase 1**
+- [ ] Mock provider per channel, for tests and the dev fallback
+- [ ] Docs page, `contentSections` entry (`src/lib/config/navigation.ts:34`), `llms.txt`
+- [ ] `skills/` — the shipped agent skill describes email only
+
+**Effort: ~1 week.**
 
 ---
 
 ## Phase 2 — SMS on the Postboi provider
 
-The long pole, and **almost none of it is code**.
+**Recommended: don't.** See [Appendix A](#appendix-a--sms-economics). Kept here for
+completeness, and because the shape would be:
 
-Code (~1 week in `postboi-app`):
+Code (~1 week in `postboi-app`): `/v1/sms` + `/v1/sms/batch` routes; a `channel` column on
+the existing messages table (reusing dashboard views and the LiveFeed DO for free); delivery
+receipt ingestion mirroring the SNS bounce path; an `sms` namespace on the provider, with
+`lazy_namespace` (`mail.ts:249`) extending to it.
 
-- `/v1/sms` and `/v1/sms/batch` routes alongside `src/routes/v1/send`
-- D1 migration: an `sms_messages` table, or a `channel` column on the existing messages
-  table (the latter reuses the dashboard's message views and the LiveFeed DO for free)
-- Delivery-receipt webhook ingestion, mirroring the SNS bounce/complaint path
-- Dashboard UI, quota metering, per-destination pricing
-- `postboi_provider.ts` gains an `sms` namespace, and `mail.ts`'s `lazy_namespace`
-  (`mail.ts:249`) extends to it
+Not code, and strictly blocking: a carrier contract; **10DLC / sender ID registration**;
+**STOP/HELP handling, legally mandatory**; per-destination pricing and billing; and fraud
+limits — a leaked SMS token spends real money in a way an email token doesn't.
 
-Not code, and strictly blocking:
-
-- An upstream carrier account and contract
-- **10DLC / toll-free registration** (US) or per-country sender ID registration. Weeks of
-  lead time, not days. Some countries require pre-registered sender IDs; some ban
-  alphanumeric senders outright.
-- **STOP / HELP keyword handling — legally mandatory**, not a feature. Needs an inbound
-  webhook, a per-account suppression store, and enforcement on every send.
-- Per-destination cost and billing (SMS pricing varies ~50× by country; flat-rate tiers
-  don't survive contact with international traffic)
-- **Fraud limits.** A leaked API token that can send SMS is a direct route to spending
-  someone else's money in a way a leaked email token is not. Rate limits and anomaly
-  detection are launch-blocking here, unlike for email.
-
-_Recommendation: ship Phase 1 standalone, decide Phase 2 on demand._ See the economics
-section above — the pricing case for this phase is weak, and it should not be treated as
-an automatic follow-on from Phase 1 the way hosted email was.
-
-**Effort: 1 week of code, gated behind weeks of compliance.**
+**Effort: 1 week of code behind weeks of compliance, for a business case that doesn't hold.**
 
 ---
 
-## Phase 3 — Push
+## Phase 3 — Push, and the web SDK
 
-Structurally harder than SMS for one reason: **email addresses and phone numbers arrive
-with the send; push tokens have to be registered and stored first.** That means a
-subscription store and an API around it — surface area neither other channel needs.
+Structurally harder than SMS for one reason: **email addresses and phone numbers arrive with
+the send; push tokens must be registered and stored first.**
 
 ### Web Push
 
-- VAPID (RFC 8292) for auth, RFC 8291 `aes128gcm` payload encryption.
-- Doable with WebCrypto only, no dependency: ECDH P-256 shared secret, HKDF, AES-128-GCM.
-  Runs in Workers. `pushforge` is a good reference implementation for the exact byte
-  layout. Payload cap is 3993 octets of plaintext.
-- Needs a client-side helper wrapping `serviceWorker.pushManager.subscribe()`, which fits
-  the existing `postboi/svelte` + `postboi/react` + `postboi/vue` + `postboi/astro` pattern.
-- Endpoint is per-subscription (whatever the browser handed back) — no fixed base URL.
+- VAPID (RFC 8292) auth, RFC 8291 `aes128gcm` payload encryption
+- WebCrypto only, no dependency: ECDH P-256 shared secret, HKDF, AES-128-GCM. Runs on
+  Workers. `pushforge` is a good reference for the byte layout. Payload cap 3993 octets
+- Endpoint is per-subscription, so there's no fixed base URL
 
 ### FCM (Android)
 
 - `POST https://fcm.googleapis.com/v1/projects/{project_id}/messages:send`
-- Auth is an OAuth2 access token, minted by signing a service-account JWT (RS256) and
-  exchanging it at `https://oauth2.googleapis.com/token`. Needs a token cache — the
-  exchange is far too slow to do per-send.
+- Auth is an OAuth2 access token from a service-account JWT (RS256) exchanged at
+  `https://oauth2.googleapis.com/token`. **Needs a token cache** — the exchange is far too
+  slow per-send
 
 ### APNs (iOS)
 
-- `POST https://api.push.apple.com/3/device/{token}`. APNs is HTTP/2-only and drops the
-  connection outright on HTTP/1.1.
-- **This is not the blocker it first looks like.** APNs needs plain unary
-  request/response over HTTP/2, not bidirectional streaming, and both target runtimes
-  negotiate that via ALPN already:
-  - **Workers:** outbound `fetch()` speaks HTTP/2 to origins that require it, and APNs
-    works in deployed Workers today. `@fivesheepco/cloudflare-apns2` is a zero-dependency
-    Workers-native client and a good reference for the request shape.
-  - **Node:** undici's `allowH2` now defaults to `true` ("Enables HTTP/2 support when the
-    server assigns it a higher priority through ALPN negotiation"), so global `fetch`
-    should negotiate h2 with APNs. **Verify empirically on the target Node version
-    before relying on it** — the default flipped from `false` at some point and the
-    global dispatcher's inheritance of it is worth one throwaway script. Fallback if it
-    doesn't hold: `node:http2` behind a runtime check, or proxy through FCM.
-- **Known gap: local development.** `wrangler dev` / workerd on macOS fails APNs requests
-  while production succeeds — [workerd#4841](https://github.com/cloudflare/workerd/issues/4841),
-  open since Aug 2025, no Cloudflare response. Doesn't block shipping, but it means the
-  dev-inbox interception has to cover push properly, because a developer can't smoke-test
-  APNs locally on a Mac.
-- Token auth: ES256 JWT signed with the `.p8` key, refreshed hourly. WebCrypto does ES256,
-  so no dependency on either runtime.
+- `POST https://api.push.apple.com/3/device/{token}`. HTTP/2 only; drops HTTP/1.1
+- **Not the blocker it looks like.** APNs needs unary HTTP/2, not bidirectional streaming.
+  Deployed Workers reach APNs today via `fetch()`; on Node, undici's `allowH2` now defaults
+  to `true`. *Verify empirically on the target Node version* — the default flipped at some
+  point. Fallback: `node:http2` behind a runtime check, or proxy via FCM
+- **Known gap:** `wrangler dev` on macOS fails APNs while production succeeds
+  ([workerd#4841](https://github.com/cloudflare/workerd/issues/4841), open since Aug 2025).
+  Doesn't block shipping, but the dev inbox must cover push properly since a Mac can't
+  smoke-test it
+- Token auth: ES256 JWT from the `.p8` key, refreshed hourly. WebCrypto does ES256
+- *Not our issue:* [workerd#6455](https://github.com/cloudflare/workerd/issues/6455) asks
+  for HTTP/2 **bidirectional streaming** (gRPC) — a different capability
 
-**Not our issue:** [workerd#6455](https://github.com/cloudflare/workerd/issues/6455) asks
-for HTTP/2 *bidirectional streaming* (gRPC) in Workers. That's a different capability —
-unary HTTP/2 already works, which is all APNs needs. Only relevant if postboi ever wants
-a gRPC transport.
+### The web SDK
+
+postboi already ships client adapters and they are tiny — `react.ts` 55 lines, `vue.ts` 62,
+`Captcha.svelte` 50, `Captcha.astro` 62. A Web Push helper is the same shape: request
+permission, register a service worker, `pushManager.subscribe({ userVisibleOnly: true,
+applicationServerKey })`, hand back the subscription. Plus a service-worker template for
+receiving.
+
+**~2–3 days across all four frameworks**, shipping on the npm pipeline that already exists.
+Closer to necessary than optional — the browser API is fiddly enough that everyone gets it
+slightly wrong.
+
+**Native mobile SDKs are declined, and the reason is not effort but permanence:**
+
+- A **new release pipeline per platform**. Today it's one command — tag → GitHub Action →
+  npm via OIDC trusted publishing (`scripts/release.sh`). Native means SPM *and* CocoaPods
+  *and* Maven Central (GPG signing, Sonatype staging) *and* pub.dev, each with its own
+  credentials and failure modes
+- **Device testing** — push registration can't be meaningfully unit-tested
+- **Annual OS churn** — iOS and Android change notification APIs every year, forever
+- **A brutal support surface** — "push doesn't arrive on Xiaomi" is a whole genre
+
+**And they aren't required for mobile push to work.** The server already talks to FCM and
+APNs; the app registers its token with whatever the mobile team already uses and POSTs it to
+the developer's own backend. Our SDK would be convenience for registration, not a
+requirement. Web Push is different — there the browser API earns a helper.
+
+Order if mobile pull ever appears: **Expo / React Native next** (JavaScript, same npm
+pipeline, serves our actual audience — ~3–5 days), and native Swift/Kotlin/Flutter last at
+2–3 weeks *each* plus permanent maintenance, understood as starting a second product.
 
 ### The subscription store
 
-`push()` needs somewhere to resolve "user 123" → tokens. Options: caller passes raw tokens
-(simplest, punts the problem), or the Postboi provider grows a `push.subscriptions`
-namespace next to `contacts`. Start with raw tokens; the namespace is Phase 2-shaped work.
+`push()` needs to resolve "user 123" → tokens. Start with **raw tokens passed by the
+caller** — simplest, and punts the problem. A `push.subscriptions` namespace on the hosted
+provider is the natural home later, alongside `contacts`.
 
-**Effort: 1–2 weeks**, most of it Web Push encryption and the subscription store.
+**Effort: 1–2 weeks** (including the web SDK), most of it Web Push encryption.
 
 ---
 
 ## Phase 4 — `send()`
 
-Thin once the channels exist. A fan-out over the per-channel resolvers reusing
-`pooled_map`, returning per-channel results rather than rejecting wholesale — an SMS
-failure must not lose the email. Two modes:
+Thin once the channels exist: a fan-out over the per-channel resolvers reusing `pooled_map`,
+returning per-channel results rather than rejecting wholesale — an SMS failure must not lose
+the email. Two modes:
 
-- **fan-out** (default): every channel in `to` gets it, results keyed by channel
-- **fallback chain** (`channels: [...]`): first success wins, for OTPs and alerts.
-  **Order by cost-class, not just availability** — SMS to Western Europe can be 100×
-  the cost of a push notification carrying the same words, so "push, then WhatsApp, then
-  SMS" is a real optimisation rather than a preference. This is the one piece of
-  cost-aware routing a library can honestly do (see the destination-pricing section).
+- **fan-out** (default): every channel in `to`, results keyed by channel
+- **fallback chain** (`channels: [...]`): first success wins. **Order by cost-class, not just
+  availability** — SMS to Western Europe can be ~100× a push carrying the same words. This is
+  the one piece of cost-aware routing a library can honestly do, because the ordering is a
+  per-send policy decision rather than something needing live wholesale pricing
 
-Shares `subject` / `message` / `body` across channels, with per-channel overrides for the
-cases where the copy genuinely differs (SMS is 160 chars; email isn't).
+Shares `subject` / `message` / `body` across channels with per-channel overrides for where
+copy genuinely differs (SMS is 160 chars; email isn't).
 
-**Design for template-only channels up front**, even though WhatsApp lands in Phase 6.
-Some channels cannot accept free-form text at arbitrary times (see the 24-hour window
-there), so `send()` needs either a per-channel template mapping or a rule that a
-channel refusing free-form content triggers the fallback rather than an error. Retrofitting
-that into a shipped `send()` is far worse than allowing for it now.
+**Design for template-only channels up front**, even though WhatsApp lands in Phase 6. Some
+channels can't accept free-form text at arbitrary times, so `send()` needs either a
+per-channel template mapping or a rule that a channel refusing free-form content triggers
+fallback rather than an error. Retrofitting that later is far worse.
 
 **Effort: ~2 days.**
 
@@ -1165,41 +612,100 @@ that into a shipped `send()` is far worse than allowing for it now.
 
 ## Phase 5 — chat channels (no approval needed)
 
-Cheap, high value-per-line, all straight `Transport` subclasses with no new concepts:
-
-- **Slack / Discord / Teams incoming webhooks** — one POST each, no auth beyond the URL.
-  A couple of hours apiece and arguably the best return in this whole document.
+- **Slack / Discord / Teams incoming webhooks** — one POST each, no auth beyond the URL. A
+  couple of hours apiece and the best return in this document
 - **Telegram** — `POST https://api.telegram.org/bot{token}/sendMessage` with
-  `{ chat_id, text }`. No approval, no registration, genuinely trivial.
-  **But:** the recipient must have started a chat with your bot first, and you address
-  them by `chat_id`, not by anything you can know in advance. Same registered-identity
-  problem as push tokens — plan it alongside the subscription store, not alongside SMS.
+  `{ chat_id, text }`. No approval. **But** the recipient must have started a chat with your
+  bot and you address them by `chat_id` — the same registered-identity problem as push
+  tokens, so plan it alongside the subscription store
 
-**Effort: hours each.** These are the ones to ship first after Phase 1, because they cost
-almost nothing and make `send()` immediately worth having.
+**Effort: hours each.** Ship these first after Phase 1 — they cost almost nothing and make
+`send()` immediately worth having.
 
 ---
 
-## Phase 6 — WhatsApp and RCS (the approval-gated tier)
+## Phase 6 — WhatsApp and RCS (approval-gated)
 
-These are the channels sent.dm leads with, and they are **not** the cheap tier. Both need
-brand approval before a single message sends, and WhatsApp imposes a constraint that
-reshapes the API rather than sitting behind it.
+### RCS — do this one first
+
+Viable now: Android throughout plus iOS 18.1+ (2024), and Twilio took it generally available
+in August 2025 across all accounts. Brand verification is console-side, so the provider is
+thin — the same Twilio messaging endpoint with an RCS-capable sender.
+
+**Twilio already auto-upgrades**: add an RCS Sender to a Messaging Service and it routes by
+device capability with automatic SMS fallback, **no code change**. So within one provider
+there is nothing for us to build.
+
+**Pricing — RCS does *not* dodge carrier fees.** Every message carries a transport fee *and*
+a carrier pass-through. Its wins are structural:
+
+| Type | What | vs SMS |
+| --- | --- | --- |
+| **RCS Basic** | ≤160 chars | ~**parity** |
+| **RCS Single** | >160 chars, billed as **one message**, not per segment | ~**+20–30%** |
+| **RCS Conversational** | One fee covers **24h unlimited, both directions** | ~**2×** for the session |
+
+(The US uses per-segment "Rich RCS" and has **no** conversational option — a rare case where
+UK/EU is the better market.)
+
+**Win 1 — long messages.** SMS bills per 160-char segment; RCS Single bills once:
+
+| Length | SMS | RCS | Saving |
+| --- | --- | --- | --- |
+| ≤160 | 1× | ~1× (Basic) | parity |
+| 320 | 2× | ~1.25× (Single) | **~38%** |
+| 480 | 3× | ~1.25× (Single) | **~58%** |
+
+**Win 2 — delivery-only billing**, the edge The SMS Works sells on SMS (~8.9%), standard here.
+
+**Win 3 — conversational sessions.** Break-even is **two messages**; everything after is
+free. Cost per *interaction* collapses.
+
+**Costs:** ~**$700 one-time onboarding per sender** (Twilio); AWS splits it into setup +
+**annual** brand vetting + **monthly** maintenance. Rich media is MMS-priced (~2.5×).
+**Double-delivery**: if RCS lands after the revocation window but before SMS fallback,
+you're billed for both. **UK gotcha:** some carriers suspend a sender after **90 days
+without traffic**.
+
+**Honest UK verdict:** Twilio RCS Basic is at parity with Twilio *SMS* (~4.3p), still above
+UK-native SMS at 2.4–2.8p. For a short transactional message, cheap UK SMS still wins. RCS
+wins on **length**, **two-way**, and **branding**.
+
+#### Should `sms()` pick the rail automatically?
+
+Within one provider, Twilio already does it. **Our value would be cross-provider**, which no
+vendor will do — and there the crossover moves out because RCS's base rate is higher:
+
+| Length | PureSMS (2.8p/seg) | Twilio RCS (~4.3p) | Winner |
+| --- | --- | --- | --- |
+| ≤160 | 2.8p | ~4.3p | **SMS** by ~35% |
+| 320 | 5.6p | ~5.4p | wash |
+| 480 | 8.4p | ~5.4p | **RCS** by ~36% |
+
+So any rule must read the *configured* providers' real rates, not a constant.
+
+**The conversational idea has two traps.** Billing mode is set on the **agent at
+registration** and applies to all its traffic — a provisioning choice, not a per-send one.
+And a session only opens when the **recipient replies**, so a burst of outbound
+notifications bills individually.
+
+_Proposed:_ opt-in `sms({ to, message, upgrade: true })`. Length selection is deterministic
+so it's safe to automate; conversational pricing isn't, so document it. And **the result
+must report which rail delivered** — silent cost optimisation nobody can audit is how you
+lose trust the first time a bill looks strange.
+
+**Effort: ~3 days.**
 
 ### WhatsApp
 
-Two routes: Meta's Cloud API directly
-(`POST https://graph.facebook.com/v{version}/{phone_number_id}/messages`, Bearer token),
-or via Twilio using `whatsapp:+44…` prefixed `To`/`From` — which reuses the Phase 1 Twilio
-provider almost entirely and is the cheaper way in.
+Via Twilio with `whatsapp:+44…` prefixed `To`/`From` (reuses the Phase 1 provider almost
+entirely, and is the cheaper way in), or Meta's Cloud API directly
+(`POST https://graph.facebook.com/v{version}/{phone_number_id}/messages`, Bearer token).
 
-**The constraint that matters:** WhatsApp has a **24-hour customer service window**, opened
-when the user last messaged or called you and reset by each new inbound message. Inside it
-you may send free-form text. **Outside it you may only send pre-approved templates** —
-free-form sends are rejected. Most transactional sends (order shipped, OTP, appointment
-reminder) happen outside any window, so *template-only is the normal case, not the edge*.
-
-This breaks the `message: string` shape that SMS, push and chat all share:
+**The constraint that reshapes the API:** a **24-hour customer service window**, opened when
+the user last messaged you and reset by each inbound message. Inside it, free-form text.
+**Outside it, only pre-approved templates.** Most transactional sends happen outside any
+window, so **template-only is the normal case**:
 
 ```ts
 await whatsapp({
@@ -1209,162 +715,54 @@ await whatsapp({
 })
 ```
 
-So `PreparedWhatsApp` is template-shaped, and **`send()` must handle "this channel can
-only send a template right now"** — either by requiring a template mapping per channel, or
-by treating a window-closed WhatsApp send as a fallback trigger rather than an error. Worth
-settling in Phase 4's design even though WhatsApp lands later.
+Pricing is per delivered template since July 2025, by category and country. Utility
+templates and in-window service messages are free today, but **that ends 1 October 2026**.
 
-Pricing is per delivered template since July 2025, by category (marketing / utility /
-authentication) and recipient country. Utility templates and service messages inside the
-window are free today, but **that ends 1 October 2026** — relevant if we ever meter it.
-
-### RCS
-
-Now genuinely viable: Android throughout, plus iOS 18.1+ (2024), and Twilio took it
-generally available in August 2025 across all accounts via Programmable Messaging. Brand
-and sender verification is configured in the Twilio console rather than in code, so the
-provider itself is thin — it's the same Twilio messaging endpoint with an RCS-capable
-sender.
-
-The genuinely useful property is **automatic upgrade**: send to a number, get RCS where
-the handset supports it and SMS where it doesn't, with branding and read receipts on the
-RCS path. That's channel fallback the carrier does for us, and it's the cheapest possible
-version of what sent.dm sells.
-
-#### RCS pricing — where the savings actually are
-
-**Correction to an earlier claim in this doc: RCS does *not* dodge carrier fees.** AWS
-documents the model plainly — every RCS message carries "a message transport fee **and** a
-carrier pass-through fee", and carriers set RCS rates individually. So RCS is **not** a way
-to undercut the termination floor. Its advantages are structural, and three of them are
-real money.
-
-Message types outside the US:
-
-| Type | What it is | Rate vs SMS |
-| --- | --- | --- |
-| **RCS Basic** | ≤160 chars | ~**parity** with SMS |
-| **RCS Single** | >160 chars, billed as **one message**, *not* per segment | ~**+20–30%** on the single-segment rate |
-| **RCS Conversational** | One session fee covers **24h of unlimited messages, both directions** | ~**2×** SMS for the session |
-
-(The US uses "Rich RCS", metered per 160-char segment like SMS, and has **no** conversational
-option — the session model is a Europe/APAC thing. A rare case where the UK/EU is the
-*better* market, inverting the SMS story above.)
-
-**Win 1 — long messages, and this is the big one.** SMS bills per 160-character segment;
-RCS Single bills the whole message as one. So message length is where RCS pulls away:
-
-| Message length | SMS (segments) | RCS | Saving |
-| --- | --- | --- | --- |
-| ≤160 chars | 1× | ~1× (RCS **Basic**) | parity — no win either way |
-| 320 chars | 2× | ~1.25× (RCS **Single**) | **~38% cheaper** |
-| 480 chars | 3× | ~1.25× (RCS **Single**) | **~58% cheaper** |
-
-The crossover is **160 characters** — at or below it you're on RCS Basic at parity, above it
-RCS bills once where SMS starts multiplying.
-
-**Win 2 — delivery-only billing.** "RCS messages are charged only for delivered messages.
-This differs from SMS, which charges for requested messages." That's the same edge The SMS
-Works sells on SMS (~8.9% average saving), but built into the RCS billing model as standard.
-
-**Win 3 — conversational sessions.** At ~2× SMS for a 24-hour window of unlimited two-way
-traffic, break-even is **two messages**; everything after that is free. For support threads
-or an OTP with a follow-up, cost per *interaction* collapses even though cost per *message*
-looks higher.
-
-**What it costs you:**
-
-- **Onboarding: ~$700 one-time per sender** (Twilio). AWS splits it into a one-time agent
-  setup fee, an **annual brand vetting fee**, and a **monthly agent maintenance fee** — all
-  carrier pass-through, and AWS notes registration fees are excluded from volume discounts.
-- **Rich media is MMS-priced** (~$0.022 vs $0.0083 text on Twilio's US list) — roughly
-  2.5×. Rich RCS is a marketing tool, not a transactional one.
-- **Double-delivery risk:** if the RCS message lands after the revocation window but before
-  the SMS fallback, **you're billed for both**. Uncommon, but it's a real line item and
-  worth surfacing in our own reporting.
-- **UK gotcha:** some carriers **suspend an RCS sender after 90 days with no traffic**. A
-  low-volume sender can silently lose their agent. Worth a docs warning.
-
-**The honest UK verdict:** Twilio RCS Basic sits at parity with Twilio's *SMS* rate
-(~4.3p), which is still **above** UK-native SMS at 2.4–2.8p. So for a short transactional
-message in the UK, cheap UK-native SMS still wins on raw price. RCS wins when the message
-is **long**, when the conversation is **two-way**, or when **branding and read receipts**
-are worth something — and it wins on UX unconditionally.
-
-#### Should `sms()` pick the rail automatically?
-
-Tempting, and half of it is a genuinely good idea. But two things constrain it hard.
-
-**Within one provider, this is already done for us.** Twilio "automatically upgrades SMS
-messages to RCS on enabled devices" — you add the RCS Sender to a Messaging Service and it
-routes by device capability with automatic SMS fallback, **no code or API change**. So
-building SMS-vs-RCS selection inside a single provider is reimplementing something the
-provider gives away.
-
-**Where we'd add real value is *cross-provider*, and nobody else will do it.** The UK
-arbitrage isn't SMS-vs-RCS, it's *cheap UK-native SMS vs Twilio RCS* — two different
-vendors, which no vendor will route between:
-
-| Length | PureSMS (2.8p/segment) | Twilio RCS (~4.3p base) | Winner |
-| --- | --- | --- | --- |
-| ≤160 | 2.8p | ~4.3p | **SMS**, by ~35% |
-| 320 | 5.6p | ~5.4p | wash |
-| 480 | 8.4p | ~5.4p | **RCS**, by ~36% |
-
-Note the crossover moves from ~160 characters (within one provider) to **~320 characters**
-(across providers), because RCS's base rate is higher. Any routing rule has to be computed
-from the *configured* providers' actual rates, not from a hardcoded constant.
-
-**The 24-hour conversational idea has a trap in it.** Two, actually:
-
-1. **It isn't a per-send decision.** The billing mode is set on the **agent at registration
-   time** — "you choose the billing model when you register your RCS agent… this setting
-   applies to all traffic from that agent." You can't switch to conversational for one
-   message. It's a provisioning choice, so it belongs in docs and `postboi init`, not in
-   routing logic.
-2. **A session needs the recipient to *reply*.** A conversation is only created when the
-   recipient responds within 24h. Five outbound messages with no reply create **no**
-   session — they bill individually. So "several messages in 24h ⇒ RCS wins" is only true
-   for genuinely two-way traffic, which is support threads, not notification bursts.
-
-**Other reasons to keep it opt-in:**
-
-- **Capability is unknown at send time.** You can't tell whether a number is RCS-reachable
-  until you try, so we can never *promise* the cheaper path — only prefer it.
-- **Double-delivery billing** means an "optimisation" can occasionally cost *more*.
-- **It changes what the recipient sees** — branding, read receipts, a different sender
-  identity. That's a product decision, not a transport detail, and it shouldn't happen
-  silently.
-- It needs RCS onboarding (~$700 + annual + monthly) to be worth anything at all.
-
-**Recommended design:**
-
-```ts
-// explicit and predictable — sends SMS
-await sms({ to, message })
-
-// opt in to rail selection across configured providers
-await sms({ to, message, upgrade: true })
-```
-
-Length-based selection is deterministic and computable at send time, so it's safe to
-automate. Conversational pricing isn't, so document it instead. And whichever rail wins,
-**the result must report which one actually delivered** — silent cost optimisation that
-nobody can audit is how you lose trust the first time a bill looks strange.
-
-_Recommendation: RCS before WhatsApp._ It's a thinner provider, has no window semantics to
-model, and rides Phase 1's Twilio work.
-
-**Effort: ~3 days RCS, ~1 week WhatsApp**, both gated behind brand approval lead time.
+**Effort: ~1 week**, gated behind template approval.
 
 ### Deliberately not doing
 
-- **iMessage** — Apple Messages for Business is approval-gated, enterprise-shaped, and has
-  no general send API. Revisit only if Apple opens it up.
-- **Voice / TTS** — a small extension of the Twilio and Vonage providers if ever wanted.
-  Not a notification channel in the sense the rest of this doc means.
-- **Fax** — genuinely still exists (Twilio killed theirs in 2021; Documo and Phaxio are
-  plain REST, ~80 lines). Worth it for the README line and nothing else. Not scheduled.
+- **iMessage** — Apple Messages for Business is approval-gated, enterprise-shaped, no general
+  send API
+- **Voice / TTS** — a small extension of the Twilio/Vonage providers if ever wanted, but not
+  a notification channel in the sense meant here
+- **Fax** — genuinely still exists (Documo, Phaxio; Twilio killed theirs in 2021), ~80 lines,
+  worth it for the README line and nothing else
+
+---
+
+## Where this could go — the audience layer
+
+The Postboi provider already ships the primitives an engagement platform is built on:
+
+| Already built | Where |
+| --- | --- |
+| `contacts` — one per address, global `data`, search/filter | `postboi_provider.ts:550` |
+| `lists` + `recipients` — membership, three-state status, double opt-in | `:405`, `:481` |
+| **`lists.broadcast()`** — one message to a list, `{key}` templating, unsubscribe headers | `:463` |
+| `notifications` — recurring digests and `subscribe`-triggered sends | `:616` |
+| `suppressions` — account-wide opt-out | `:678` |
+| `messages` — status, reschedule, cancel | `:385` |
+
+Multi-channel turns that into the same thing everywhere:
+
+1. **Delivery profiles** — a contact carries `phone`, `whatsapp` and push tokens alongside
+   `email`. This is also our answer to sent.dm's identity resolution
+2. **`lists.broadcast()` goes multi-channel** — highest-leverage change here; templating,
+   membership, suppression and unsubscribe already work
+3. **Per-channel preferences** — not optional ambition: SMS STOP and email unsubscribe are
+   **legally required anyway**, so this gets built regardless
+
+All of it sits in the ~free column on Workers, so it bundles into the existing email tiers
+and **the "never charge per contact" commitment survives**.
+
+**Declined:** visual journey builders, A/B testing, behavioural analytics, in-app messaging.
+Those are the parts that force per-MAU pricing, and they're a different company — different
+buyer (growth/marketing, not developers) and different discipline (campaign UX, not delivery
+correctness).
+
+**Sequencing:** revisit after Phase 4. An audience layer is only interesting once there's
+more than one channel to route between.
 
 ---
 
@@ -1372,51 +770,141 @@ model, and rides Phase 1's Twilio work.
 
 | Risk | Mitigation |
 | --- | --- |
-| The `Transport` split churns every provider file | Keep `ProviderBase` as an alias; the existing test suite is the regression net |
-| `hooks.before.send` break lands badly | Do it in Phase 0 with one channel to migrate, not three. Pre-1.0 minor bump, documented in the changelog |
-| Bare-number `to` guesses the wrong country | Never guess — throw `ambiguous_number` unless a default country is configured |
-| A dev send reaches a real handset | Dev-inbox interception is not optional for SMS. Same precedence as email: inbox outranks a credentialled provider |
-| Leaked token → real money | Phase 2 only. Rate limits are launch-blocking, unlike for email |
-| The library sprawls | Per-channel subdirectories from the start (decision 4) |
-| APNs can't be smoke-tested locally on macOS | workerd#4841 — production is fine. Make the dev inbox cover push properly |
-| `send()` ships assuming free-form text, then WhatsApp needs templates | Design the template path into Phase 4, build it in Phase 6 |
-| Chasing sent.dm's routing/availability features into a library that can't have them | Those need hosted per-contact state. Extend the existing `contacts` namespace if we want them, don't fake them client-side |
+| The `Transport` split churns every provider file | Keep `ProviderBase` as an alias; the existing suite is the regression net |
+| The `hooks.before.send` break lands badly | Do it in Phase 0 with one channel to migrate, not six. Minor bump, changelog it |
+| Bare-number `to` guesses the wrong country | Never guess — throw `ambiguous_number` unless a default country is set |
+| A dev send reaches a real handset | Dev-inbox interception is not optional for SMS. Inbox outranks a credentialled provider |
+| `send()` ships assuming free-form text, then WhatsApp needs templates | Design the template path in Phase 4, build it in Phase 6 |
+| Chasing sent.dm's availability/rate-card routing into a library that can't have it | Those need hosted per-contact state. Build on `contacts` or don't fake it |
+| APNs can't be smoke-tested locally on macOS | workerd#4841 — production is fine. Make the dev inbox cover push |
+| The library sprawls | Per-channel subdirectories from the start |
+| Native SDK scope creep | JavaScript only. Native is a second product, not an extension |
 
 ---
 
 ## Upstream things to track
 
-None of these block shipping — they're the "has this got better yet?" list to re-check
-when a phase starts.
+None block shipping — this is the "has it got better yet?" list.
 
 | What | Where | Why we care |
 | --- | --- | --- |
-| APNs over `fetch()` fails in local workerd on macOS (works in production) | [cloudflare/workerd#4841](https://github.com/cloudflare/workerd/issues/4841) — open, Aug 2025, no CF response | Closing it means push can be smoke-tested locally. Until then the dev inbox is the only local path |
-| HTTP/2 bidirectional streaming (gRPC) in Workers | [cloudflare/workerd#6455](https://github.com/cloudflare/workerd/issues/6455) — open, Mar 2026, unlabelled | **Not needed for APNs.** Only if postboi ever wants a gRPC transport |
-| undici `allowH2` default | [nodejs/undici](https://github.com/nodejs/undici) `docs/docs/api/Client.md` | Currently `true`. If it ever flips back, Node-side APNs needs a `node:http2` fallback |
-| Workers runtime changes generally | [Workers changelog](https://developers.cloudflare.com/workers/platform/changelog/) | Protocol and API support moves without issue-tracker noise |
-| UK A2P SMS termination rates | [Ofcom A2P SMS termination market](https://www.ofcom.org.uk/phones-and-broadband/mobile-phones/a2p-sms-termination-market) | The MNO commitments expire **31 Dec 2028**. They set the floor under every UK SMS price, ours included |
-| UK SIM farm criminal offence | [Crime and Policing Act 2026 guidance](https://www.gov.uk/government/publications/possession-and-supply-of-sim-farms/crime-and-policing-act-2026-guidance-offences-relating-to-the-possession-and-supply-of-sim-farms-and-legitimate-uses-of-multiple-sim-devices-accessi) | 5+ SIMs = SIM farm; possession an offence from **29 Oct 2026**, no business-SMS exemption. Closes the "buy SIMs" route for good |
+| APNs over `fetch()` fails in local workerd on macOS | [workerd#4841](https://github.com/cloudflare/workerd/issues/4841) — open, Aug 2025 | Closing it means push can be smoke-tested locally |
+| HTTP/2 bidirectional streaming (gRPC) in Workers | [workerd#6455](https://github.com/cloudflare/workerd/issues/6455) — open, Mar 2026 | **Not needed for APNs.** Only if we ever want a gRPC transport |
+| undici `allowH2` default | [nodejs/undici](https://github.com/nodejs/undici) `docs/docs/api/Client.md` | Currently `true`. If it flips, Node-side APNs needs a `node:http2` fallback |
+| UK A2P SMS termination rates | [Ofcom](https://www.ofcom.org.uk/phones-and-broadband/mobile-phones/a2p-sms-termination-market) | MNO commitments expire **31 Dec 2028**. They set the floor under every UK SMS price |
+| UK SIM farm offence | [Crime and Policing Act 2026 guidance](https://www.gov.uk/government/publications/possession-and-supply-of-sim-farms/crime-and-policing-act-2026-guidance-offences-relating-to-the-possession-and-supply-of-sim-farms-and-legitimate-uses-of-multiple-sim-devices-accessi) | 5+ SIMs = SIM farm; offence from **29 Oct 2026**, no business exemption |
+| WhatsApp in-window pricing | Meta pricing docs | Utility templates and service messages become chargeable **1 Oct 2026** |
+| Workers runtime generally | [Workers changelog](https://developers.cloudflare.com/workers/platform/changelog/) | Protocol and API support moves without issue-tracker noise |
 
-Watching the two workerd issues on GitHub is enough — neither has CF engagement yet, so a
-notification on either is real signal.
+---
 
 ## Effort summary
 
 | Phase | Scope | Estimate | Blocked by |
 | --- | --- | --- | --- |
-| 0 | `Transport` split, generic hooks, `aws.ts` | 1–2 days | decision 2 |
-| 1 | SMS, BYO providers | ~1 week | Phase 0, decisions 3 & 4 |
-| 2 | SMS on the Postboi provider | ~1 week code | carrier + 10DLC + STOP handling — **and a business case; see economics** |
-| 3 | Push (Web Push, FCM, APNs) | 1–2 weeks | — |
+| 0 | `Transport` split, generic hooks, `aws.ts` | 1–2 days | — |
+| 1 | SMS, BYO providers | ~1 week | Phase 0, decisions 1 & 2 |
+| 2 | SMS on the Postboi provider | ~1 week code | **Not recommended** — see Appendix A |
+| 3 | Push + Web Push SDK | 1–2 weeks | — |
 | 4 | `send()` | ~2 days | Phases 1 & 3 |
 | 5 | Slack / Discord / Teams / Telegram | hours each | Phase 0 |
-| 6 | RCS, then WhatsApp | ~3 days + ~1 week | brand approval lead time |
+| 6 | RCS, then WhatsApp | ~3 days + ~1 week | Brand approval lead time |
 
-Phases 0, 1, 4 and 5 are ~2.5 weeks and need no external dependency. **That's the
-ship-it-first slice** — and with email already in place it's a more complete notifications
-story than the SMS-only comparables on day one.
+**Phases 0, 1, 3, 4 and 5 total roughly 3.5 weeks with no external dependency.** That's the
+ship-it-first slice — and with email already in place it's a more complete notifications
+story on day one than the SMS-only comparables have at all.
 
 Phase 5 is deliberately ordered before the flashier Phase 6: Slack and Telegram cost hours
 and make `send()` immediately useful, while WhatsApp and RCS can't send anything until
 someone else approves a brand.
+
+---
+
+## Appendix A — SMS economics
+
+Why we don't build hosted SMS. Three independent analyses, all landing in the same place.
+
+### 1. The floor: UK MNO termination
+
+UK networks charge a **termination fee** to deliver each A2P message. It is paid to the
+terminating operator, so scale cannot compete it away — it is not aggregator margin.
+
+- Wholesale termination rose **15–75% since 2021**, triggering an Ofcom market review
+- Ofcom's **March 2025 consultation proposed a 1.96p cap**
+- Ofcom then **accepted voluntary commitments instead of regulating** (Oct/Nov 2025) from
+  **BT/EE, Sky, Virgin Media O2, VodafoneThree** — over **90% of A2P sold to aggregators** —
+  running **1 Jan 2026 → 31 Dec 2028**, capping maximum standard price, limiting rises to
+  once per 12 months with 60 days' notice
+- The agreed maxima are **redacted**; market evidence puts the range at **2.00p–2.80p**
+
+### 2. UK retail, and why UK ≠ US
+
+**UK SMS costs roughly 4–7× US SMS.**
+
+| Provider | Price | Notes |
+| --- | --- | --- |
+| **PureSMS** | **2.8p** + VAT | UK-native, flat, no tiers or minimum, free sender ID |
+| **Esendex** | from 2.4p | UK-native, but £54/mo minimum plan |
+| **The SMS Works** | from 3.1p + VAT | UK-native, **charges only for delivered** (~8.9% saving) |
+| **Twilio** | **$0.056** (~4.3p) | Their own GB page. Short code $0.0524 + **$1,667/mo** for the code |
+
+US all-in is ~$0.008 (~0.6p): Telnyx $0.004 + $0.0035–0.0045 carrier surcharge; Twilio
+$0.0079–0.0083 + $0.003–0.005. Number rental (Twilio UK): local $1.15/mo, mobile $2.50/mo,
+**alphanumeric sender ID free**.
+
+UK prices are ex-VAT. USD-priced vendors hand you the FX risk; UK-native bills in GBP. I
+could not get hard UK figures from ClickSend or Vonage — their pricing renders client-side.
+
+**Note PureSMS at 2.8p and Esendex from 2.4p are already at or very near termination cost.**
+
+### 3. What we could achieve as the provider
+
+| Route | Realistic cost/msg | Price of admission |
+| --- | --- | --- |
+| Resell a CPaaS | 2.8p–4.3p | Nothing — and no better than our customers get |
+| Wholesale aggregator | ~2.2–2.6p | **2M SMS/month** minimum, or ~**800k** for micro-aggregator status |
+| Direct MNO SMPP | ~2.0–2.8p | Four carrier relationships, SMPP infrastructure, credit-worthy counterparty |
+
+Best case is **~0.6–0.8p gross margin** — ~25% at the very best, before compliance, fraud and
+24/7 ops. At the ~800k/month floor we'd commit to **~£22k/month of traffic before a single
+customer**, to earn ~£5.6k/month if we filled it. Email is 60–75% margin with no minimum.
+
+**SMS COGS is also ~80× email's** ($0.008 vs $0.0001), so it cannot ride the email tiers —
+20,000 SMS on the £9 tier would lose ~$150/month per customer. And it wants **prepaid
+credits**, not post-paid metering: AIT/SMS-pumping is 5–40% of international A2P traffic and
+cost businesses ~$1.6bn in 2023, so a leaked token on a post-paid account is our bill.
+
+### 4. Routes that don't exist
+
+**No origin arbitrage.** SMS is priced by the country the recipient is in, not where the
+account or number sits — Twilio's $0.056 GB rate is what a US account pays to reach a UK
+handset. Cross-border long-code sending is provider-restricted and lands as a `+1` nobody can
+reply to. And **alphanumeric sender IDs aren't supported in the US or Canada at all**, so a
+US-centric setup is *worse* equipped for UK sending, not cheaper.
+
+**No grey routes.** They bypass commercial A2P agreements by disguising A2P as P2P, cost
+operators ~$7.7bn/year, and are met with SMS firewalls doing live traffic classification.
+Unreliable delivery, junk DLRs, rewritten sender IDs, eventual cut-off.
+
+**No SIM farms — it's now a criminal offence.** The **Crime and Policing Act 2026** bans
+possession or supply of a SIM farm (**5+ physical SIMs** used simultaneously or
+interchangeably) from **29 October 2026**, unlimited fine in England & Wales. The good-reason
+defences are named and narrow — live broadcasting, freight GPS, on-train Wi-Fi, telecoms
+testing — and **"sending SMS to your own customers" is explicitly not among them**, with **no
+licence to apply for**. Networks detect device-originated A2P by its signalling signature
+anyway, and consumer bundles carry no-A2P fair-use terms.
+
+**EU is worse than the UK.** Netherlands, Belgium and Germany can exceed **$0.09/segment**.
+The intra-EU 6c cap is **consumer-only**; business traffic is excluded. France requires
+sender ID pre-registration, Spain and Australia were added in 2026, and unregistered traffic
+gets *content-filtered* rather than cleanly rejected — it fails quietly.
+
+### The conclusion
+
+**The termination fee is not a middleman markup — it is the price of the destination network
+agreeing to deliver.** Anything genuinely cheaper is, by construction, not-delivery. There is
+no legitimate below-floor lane for guaranteed A2P SMS.
+
+So don't try to undercut SMS. **Make it the fallback of last resort behind channels that
+don't ride the termination rail** — which is exactly what `send()`'s cost-ordered fallback is
+for, and the reason it's the most valuable thing in this plan for a UK/EU sender.
