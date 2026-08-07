@@ -108,6 +108,13 @@ sending code never names a provider, so swapping later is a one-line config chan
   the skill, with no diff in your repo. (Where symlinks aren't available the file is
   copied instead, and `postboi sync` keeps that copy current.)
 
+## Beyond email
+
+The same `init` sets up the other channels — `--sms`, `--whatsapp`, `--push`, `--chat` —
+and each channel's call works exactly the way `mail()` does. Start with
+[Multi-channel send()](/send), or jump straight to [SMS](/sms),
+[WhatsApp](/whatsapp), [Push](/push) or [Chat](/chat).
+
 ## Prefer to do it yourself?
 
 Skip the CLI and write the config file plus the credential env vars by hand, or
