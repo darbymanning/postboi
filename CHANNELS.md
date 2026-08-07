@@ -37,10 +37,12 @@ channel work — read it before starting a phase, and update it when a decision 
   **Explicitly rejected:** having `send()` sniff the shape of `to` and silently dispatch
   to one channel or many. Implicit channel detection is exactly the cleverness that bites
   later — `send()` always takes a channel-keyed `to`.
-  **Small cleanup this surfaced:** `config.ts:29`, `config.ts:39` and `registry.ts:3` all
-  refer to "the zero-config `send()`" in doc comments. That function doesn't exist — they
-  mean `mail()`. Stale since the rename; worth fixing whenever we're next in those files,
-  and doubly worth it before `send()` becomes a real export meaning something else.
+  **Cleanup this surfaced — already done.** Twelve doc comments across `config.ts`,
+  `registry.ts`, `mail.ts`, `ses.ts` and `smtp.ts` described the zero-config entry point as
+  `send()`, a function that has never existed. Fixed on `main` in `e855d64` ahead of this
+  work, precisely so `send()` is unclaimed when it arrives. The versioned docs under
+  `src/lib/content/v*/` were left alone (snapshots should keep saying what was true at that
+  release), as were references that genuinely mean `provider.send()`.
 
 ---
 
