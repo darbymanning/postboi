@@ -3,7 +3,7 @@
 The plan for taking postboi from an email library to a multi-channel messaging library:
 SMS, push, RCS, WhatsApp and chat, behind one API.
 
-**Status: Phases 0, 1 and 5 shipped.** Phases 2, 3, 4 and 6 are unbuilt. This document is the source
+**Status: Phases 0, 1, 4 and 5 shipped.** Phases 2, 3 and 6 are unbuilt. This document is the source
 of truth for the channel work — read it before starting a phase, and update it when a
 decision changes. Reasoning that led to these conclusions lives in this file's git history.
 
@@ -655,7 +655,7 @@ provider is the natural home later, alongside `contacts`.
 
 ---
 
-## Phase 4 — `send()`
+## Phase 4 — `send()` ✅ **done**
 
 Thin once the channels exist: a fan-out over the per-channel resolvers reusing `pooled_map`,
 returning per-channel results rather than rejecting wholesale — an SMS failure must not lose
@@ -670,12 +670,27 @@ the email. Two modes:
 Shares `subject` / `message` / `body` across channels with per-channel overrides for where
 copy genuinely differs (SMS is 160 chars; email isn't).
 
-**Design for template-only channels up front**, even though WhatsApp lands in Phase 6. Some
-channels can't accept free-form text at arbitrary times, so `send()` needs either a
-per-channel template mapping or a rule that a channel refusing free-form content triggers
-fallback rather than an error. Retrofitting that later is far worse.
+**Shipped** with email, SMS and chat; push slots in when Phase 3 lands.
 
-**Effort: ~2 days.**
+- **Fan-out** runs the channels **concurrently** — they're independent, and one slow
+  provider shouldn't hold up the rest.
+- **Fallback** runs **sequentially and stops at the first success**, which is the entire
+  point: not paying for the next channel once one has worked.
+- `channels: "cheapest"` uses the built-in order **push → chat → email → sms**, intersected
+  with the channels you actually have an address for — otherwise "cheapest" would try
+  everything every time.
+- `send()` only rejects when `to` names no reachable channel at all. Otherwise it resolves
+  with a per-channel result and `ok` reflecting whether _anything_ got through.
+- Every failure carries the channel it came from, filled in where a channel entry point
+  threw before a provider existed.
+
+**The template-only path is handled by construction rather than by a special case.** In a
+fallback chain any error advances to the next channel, so a WhatsApp send outside its 24-hour
+window will hand off rather than fail the send — no template mapping needed at this layer.
+Phase 6 only has to make WhatsApp throw the right error.
+
+**Effort: well under the ~2 day estimate**, because the three channels already had identical
+zero-config entry points to dispatch to.
 
 ---
 

@@ -11,6 +11,14 @@ export { mail, cancel } from "./mail.js"
 export { sms } from "./sms/send.js"
 // The zero-config `chat()` — Slack, Discord, Teams, Telegram.
 export { chat } from "./chat/send.js"
+// The multi-channel fan-out. Runs in your process — only transport is ever ours.
+export {
+	send,
+	type FanOutOptions,
+	type Recipients,
+	type SendResult,
+	type ChannelResult,
+} from "./send.js"
 
 // The Postboi provider itself lives in its own leaf module — `mail()`'s registry loads it
 // with a dynamic import, and a module that is both statically imported (this root, via
