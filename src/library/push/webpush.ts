@@ -102,6 +102,10 @@ export default class WebPush extends PushProvider<SendResponse> {
 	}
 
 	protected parse_error(response: Response, data: unknown): ProviderError | undefined {
+		// A 2xx is a delivery whatever the body says — some push services attach a short
+		// text body ("Created", a resource URL) to success, and without this guard that
+		// body would be thrown as a failure for a push that arrived.
+		if (response.ok) return undefined
 		// Push services answer with an empty body far more often than not, so the status is
 		// usually all there is. 410 is the one that matters and it means "stop storing this".
 		if (response.status === 404 || response.status === 410) {

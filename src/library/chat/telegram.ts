@@ -1,6 +1,7 @@
 import { ChatProvider, type ChatProviderOptions, type PreparedChat } from "./provider.js"
 import type { RequestSpec } from "../transport.js"
 import type { ProviderError } from "../errors.js"
+import { escape_html } from "../utils.js"
 
 /** Options for the Telegram provider constructor. */
 type Options = ChatProviderOptions & {
@@ -37,14 +38,21 @@ export default class Telegram extends ChatProvider<SendResponse> {
 	}
 
 	protected build_request(message: PreparedChat): RequestSpec {
-		const text = message.title ? `*${message.title}*\n${message.message}` : message.message
+		// A bold title needs a parse mode, and legacy Markdown applied to raw user text is a
+		// trap: one unbalanced `_` or `*` in the body (think "user_accounts") and Telegram
+		// rejects the whole send with 400. HTML mode has well-defined escaping — and only
+		// three characters to escape — so the body survives whatever it contains. With no
+		// title there's no formatting, so plain text needs neither mode nor escaping.
+		const text = message.title
+			? `<b>${escape_html(message.title)}</b>\n${escape_html(message.message)}`
+			: message.message
 		return {
 			url: `https://api.telegram.org/bot${this.#bot_token}/sendMessage`,
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				chat_id: message.to,
 				text,
-				...(message.title ? { parse_mode: "Markdown" } : {}),
+				...(message.title ? { parse_mode: "HTML" } : {}),
 			}),
 		}
 	}

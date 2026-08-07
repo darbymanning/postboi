@@ -7,8 +7,8 @@
  * to post to.
  */
 import { PostboiError, type Channel } from "../errors.js"
-import { Transport, type BatchResult, type TransportHooks } from "../transport.js"
-import { get_config, merge_hooks } from "../config.js"
+import { Transport, type BatchResult } from "../transport.js"
+import { get_config } from "../config.js"
 import { ensure_env_loaded } from "../env.js"
 import type { ChatDefaults, ChatOptions, ChatProviderOptions, PreparedChat } from "./types.js"
 
@@ -40,9 +40,6 @@ export abstract class ChatProvider<TResponse = unknown> extends Transport<TRespo
 		super(options)
 		const s = get_config()
 		this.defaults = { ...s.chat?.default, ...options.default }
-		// Same narrowing as the other channels: global hooks are declared over every
-		// channel's message shape, and a chat provider only ever hands them a PreparedChat.
-		this.set_hooks(merge_hooks(s.hooks as TransportHooks<PreparedChat>, options.hooks))
 	}
 
 	/** Post one message. Throws a {@link PostboiError} on any failure. */

@@ -8,8 +8,8 @@
  * interesting failure is a target that has expired.
  */
 import { PostboiError, type Channel } from "../errors.js"
-import { Transport, type BatchResult, type TransportHooks } from "../transport.js"
-import { get_config, merge_hooks } from "../config.js"
+import { Transport, type BatchResult } from "../transport.js"
+import { get_config } from "../config.js"
 import { ensure_env_loaded } from "../env.js"
 import type { PushDefaults, PushOptions, PushProviderOptions, PreparedPush } from "./types.js"
 
@@ -33,7 +33,6 @@ export abstract class PushProvider<TResponse = unknown> extends Transport<TRespo
 		super(options)
 		const s = get_config()
 		this.defaults = { ...s.push?.default, ...options.default }
-		this.set_hooks(merge_hooks(s.hooks as TransportHooks<PreparedPush>, options.hooks))
 	}
 
 	/** Send one notification. Throws a {@link PostboiError} on failure. */

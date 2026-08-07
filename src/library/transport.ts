@@ -10,7 +10,7 @@
  * Internal: the package root re-exports everything here that's public.
  */
 import { PostboiError, SkipSendError, type Channel } from "./errors.js"
-import { get_config } from "./config.js"
+import { get_config, merge_hooks } from "./config.js"
 import { pooled_map } from "./utils.js"
 
 export type { Channel, ProviderError } from "./errors.js"
@@ -145,17 +145,23 @@ export abstract class Transport<TResponse = unknown, TPrepared = unknown> {
 
 	constructor(options: TransportOptions<TPrepared> = {}) {
 		// Global config (postboi.config.ts / package.json) sits underneath per-instance
-		// options, so explicit constructor arguments always win.
+		// options, so explicit constructor arguments always win. Hooks included: merging
+		// them here — rather than leaving it to subclasses — is what guarantees a
+		// third-party channel extending Transport directly still runs postboi.config
+		// hooks, the invariant everything else (staging redirects, error reporting)
+		// quietly depends on.
 		const s = get_config()
 		this.#timeout = options.timeout ?? s.timeout ?? 30000
 		this.#retries = options.retries ?? s.retries ?? 0
 		this.#retry_delay = options.retry_delay ?? s.retry_delay ?? 500
-		this.#hooks = (options.hooks ?? {}) as TransportHooks<TPrepared>
-	}
-
-	/** Replace the merged hook set. Subclasses call this once they've merged global config. */
-	protected set_hooks(hooks: TransportHooks<TPrepared>): void {
-		this.#hooks = hooks
+		// Global hooks are declared over every channel's message union; this provider only
+		// ever hands them its own TPrepared, so the narrowing is safe inbound. A hook that
+		// *returns* another channel's shape is undefined behaviour — which is exactly what
+		// ctx.channel exists to prevent.
+		this.#hooks = merge_hooks(
+			s.hooks as unknown as TransportHooks<TPrepared> | undefined,
+			options.hooks
+		)
 	}
 
 	/** Map a prepared message into the provider's HTTP request. */

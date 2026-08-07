@@ -17,6 +17,15 @@ type SendResponse = { name: string }
 
 const encoder = new TextEncoder()
 
+/**
+ * OAuth tokens per service account, shared across instances. Module-level on purpose: the
+ * zero-config push() constructs a fresh provider per call (as mail() and sms() do), and an
+ * instance-level cache would silently turn every notification into two HTTPS requests.
+ * Storing the in-flight promise also means concurrent cold sends share one exchange
+ * instead of stampeding the token endpoint.
+ */
+const token_cache = new Map<string, Promise<{ value: string; expires_at: number }>>()
+
 /** Strip the PEM armour and decode the base64 body into DER bytes. */
 function pem_to_der(pem: string): Uint8Array<ArrayBuffer> {
 	const body = pem
@@ -54,7 +63,6 @@ export default class FCM extends PushProvider<SendResponse> {
 	#project_id: string
 	#client_email: string
 	#private_key: string
-	#token?: { value: string; expires_at: number }
 
 	constructor({ project_id, client_email, private_key, ...options }: Options) {
 		super(options)
@@ -65,12 +73,32 @@ export default class FCM extends PushProvider<SendResponse> {
 
 	/**
 	 * Mint (or reuse) an OAuth2 access token. Cached with a minute of headroom so a token
-	 * can't expire between the check and the request that uses it.
+	 * can't expire between the check and the request that uses it, and keyed by service
+	 * account so separate FCM instances (and the per-call zero-config path) share it.
 	 */
 	async #access_token(): Promise<string> {
 		const now = Date.now()
-		if (this.#token && this.#token.expires_at > now + 60_000) return this.#token.value
+		const cached = token_cache.get(this.#client_email)
+		if (cached) {
+			try {
+				const token = await cached
+				if (token.expires_at > now + 60_000) return token.value
+			} catch {
+				// A failed exchange must not poison the cache — fall through and retry.
+			}
+		}
+		const pending = this.#exchange(now)
+		token_cache.set(this.#client_email, pending)
+		try {
+			return (await pending).value
+		} catch (error) {
+			token_cache.delete(this.#client_email)
+			throw error
+		}
+	}
 
+	/** The actual JWT sign + token exchange. Only reached on a cold or expiring cache. */
+	async #exchange(now: number): Promise<{ value: string; expires_at: number }> {
 		const claims = {
 			iss: this.#client_email,
 			scope: "https://www.googleapis.com/auth/firebase.messaging",
@@ -119,11 +147,10 @@ export default class FCM extends PushProvider<SendResponse> {
 				raw: data,
 			})
 		}
-		this.#token = {
+		return {
 			value: data.access_token,
 			expires_at: now + (data.expires_in ?? 3600) * 1000,
 		}
-		return this.#token.value
 	}
 
 	protected async build_request(message: PreparedPush): Promise<RequestSpec> {

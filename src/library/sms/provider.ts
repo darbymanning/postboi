@@ -6,10 +6,10 @@
  * (`build_request`, `parse_response`, optionally `parse_error`) as an email one.
  */
 import { PostboiError, type Channel } from "../errors.js"
-import { Transport, type BatchResult, type TransportHooks } from "../transport.js"
-import { get_config, merge_hooks } from "../config.js"
+import { Transport, type BatchResult } from "../transport.js"
+import { get_config } from "../config.js"
 import { ensure_env_loaded } from "../env.js"
-import { to_e164, segments } from "./phone.js"
+import { to_e164 } from "./phone.js"
 import type { Phone, PreparedSms, SmsDefaults, SmsOptions, SmsProviderOptions } from "./types.js"
 
 export type {
@@ -36,7 +36,7 @@ export abstract class SmsProvider<TResponse = unknown> extends Transport<TRespon
 	protected readonly channel: Channel = "sms"
 
 	/** Whether the provider needs a sender. Providers that default it account-side set false. */
-	protected readonly requires_from: boolean = true
+	protected requires_from: boolean = true
 
 	/**
 	 * Whether the provider can schedule a send. Left false, a `scheduled_at` is **rejected**
@@ -52,9 +52,6 @@ export abstract class SmsProvider<TResponse = unknown> extends Transport<TRespon
 		// Global config sits underneath per-instance options, so explicit arguments win.
 		const s = get_config()
 		this.defaults = { ...s.sms?.default, ...options.default }
-		// Same narrowing as EmailProvider: global hooks are declared over every channel's
-		// message shape, and an SMS provider only ever hands them a `PreparedSms`.
-		this.set_hooks(merge_hooks(s.hooks as TransportHooks<PreparedSms>, options.hooks))
 	}
 
 	/** Send one text. Throws a {@link PostboiError} on any failure. */
@@ -97,11 +94,6 @@ export abstract class SmsProvider<TResponse = unknown> extends Transport<TRespon
 				.map((p) => this.parse_phone(p, country))
 		}
 		return [this.parse_phone(phones, country)]
-	}
-
-	/** How many segments a message body costs, and in which encoding. */
-	protected segments(text: string): ReturnType<typeof segments> {
-		return segments(text)
 	}
 
 	/**

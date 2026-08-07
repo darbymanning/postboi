@@ -62,17 +62,21 @@ export default class SmsWorks extends SmsProvider<SendResponse> {
 			Authorization: this.#api_key,
 			"Content-Type": "application/json",
 		}
+		// Scheduled sends go to the dedicated schedule endpoints — /message/send would
+		// deliver immediately and silently ignore the schedule field, which is precisely
+		// the failure supports_scheduling exists to rule out.
+		const scheduled = message.scheduled_at !== undefined
 		// One recipient is the common case and returns a single message id; several go to
 		// the batch endpoint, which takes fully-rendered messages per recipient.
 		if (message.to.length === 1) {
 			return {
-				url: `${this.#host}/message/send`,
+				url: `${this.#host}/message/${scheduled ? "schedule" : "send"}`,
 				headers,
 				body: JSON.stringify(this.#params(message, message.to[0])),
 			}
 		}
 		return {
-			url: `${this.#host}/batch/any`,
+			url: `${this.#host}/batch/${scheduled ? "schedule" : "any"}`,
 			headers,
 			body: JSON.stringify({ messages: message.to.map((to) => this.#params(message, to)) }),
 		}

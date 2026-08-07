@@ -9,7 +9,6 @@ import {
 	CHAT_PROVIDERS,
 	PUSH_PROVIDERS,
 	SMS_DEFAULT_FIELDS,
-	render_sms_config,
 	render_channel_config,
 	type CliSmsProvider,
 	DEFAULT_FIELDS,
@@ -351,22 +350,31 @@ function write_config(
 		if (captcha_key)
 			console.log(dim(`  ${render_block("captcha", { key: captcha_key }, "  ").trimEnd()}`))
 	} else {
-		// Match the project: .ts needs a TS toolchain; plain-JS projects get .js (ESM) or .mjs.
-		const type_module = (): boolean => {
-			try {
-				return JSON.parse(readFileSync("package.json", "utf8")).type === "module"
-			} catch {
-				return false
-			}
-		}
-		const file = existsSync("tsconfig.json")
-			? "postboi.config.ts"
-			: type_module()
-				? "postboi.config.js"
-				: "postboi.config.mjs"
+		const file = config_filename()
 		writeFileSync(file, render_config(provider_key, defaults, options, captcha_key))
 		console.log(`${green("✓")} wrote ${bold(file)}`)
 	}
+}
+
+/**
+ * Pick the config filename that will actually load in this project: .ts needs a TS
+ * toolchain; plain-JS projects get .js only under `"type": "module"`, and .mjs otherwise —
+ * an ESM-syntax .js in a CommonJS project fails to import, and config.ts swallows that
+ * failure, so the config would silently vanish.
+ */
+function config_filename(): string {
+	const type_module = (): boolean => {
+		try {
+			return JSON.parse(readFileSync("package.json", "utf8")).type === "module"
+		} catch {
+			return false
+		}
+	}
+	return existsSync("tsconfig.json")
+		? "postboi.config.ts"
+		: type_module()
+			? "postboi.config.js"
+			: "postboi.config.mjs"
 }
 
 /** Make sure postboi itself is installed in the project — it's required, so no prompt. */
@@ -853,7 +861,7 @@ async function sms_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	await offer_host_push(prompts, files, values)
 
 	ensure_install(files)
-	write_sms_config(provider.key, config_defaults, config_options)
+	write_channel_config("sms", provider.key, config_defaults, config_options)
 
 	console.log(`\n${green(bold("Done!"))} Now just text:\n`)
 	console.log(
@@ -916,13 +924,26 @@ async function channel_init(
 		} else if (value) config_options[field.arg] = value
 	}
 
+	// Channel defaults, committed to the config's `default:` block — not to `options`,
+	// which is strictly provider constructor arguments. Only Telegram has one worth asking
+	// for: its destination is a chat id you can't know until the bot hears from the user,
+	// where the webhook providers carry the destination inside the (secret) URL.
+	const config_defaults: Record<string, string> = {}
+	if (provider.key === "telegram") {
+		const chat_id = await prompts.ask(
+			`\nDefault chat id ${dim("(optional — the id your bot should post to)")}`,
+			{ required: false }
+		)
+		if (chat_id) config_defaults.to = chat_id
+	}
+
 	const targets = await choose_env_targets(prompts, files)
 	write_env_values(targets, values)
 	await offer_gitignore(prompts, targets)
 	await offer_host_push(prompts, files, values)
 
 	ensure_install(files)
-	write_channel_config(channel, provider.key, {}, config_options)
+	write_channel_config(channel, provider.key, config_defaults, config_options)
 
 	console.log(`\n${green(bold("Done!"))}\n`)
 	if (channel === "chat") {
@@ -960,34 +981,8 @@ function write_channel_config(
 		console.log(dim(`  },`))
 		return
 	}
-	const file = existsSync("tsconfig.json") ? "postboi.config.ts" : "postboi.config.js"
+	const file = config_filename()
 	writeFileSync(file, render_channel_config(channel, provider_key, defaults, options))
-	console.log(`${green("✓")} wrote ${bold(file)}`)
-}
-
-/** Write (or show how to merge) the `sms:` block of `postboi.config`. */
-function write_sms_config(
-	provider_key: string,
-	defaults: Record<string, string>,
-	options: Record<string, string>
-): void {
-	console.log()
-	const existing = CONFIG_FILES.find((f) => existsSync(f))
-	if (existing) {
-		// Anyone running `init --sms` has usually set up email already, so merging into a
-		// hand-edited file is the common path, not the edge case.
-		console.log(`${yellow("!")} ${bold(existing)} already exists — add to it:`)
-		console.log(dim(`\n  sms: {`))
-		console.log(dim(`    provider: ${JSON.stringify(provider_key)},`))
-		if (Object.keys(defaults).length)
-			console.log(dim(`  ${render_block("default", defaults, "    ").trimEnd()}`))
-		if (Object.keys(options).length)
-			console.log(dim(`  ${render_block("options", options, "    ").trimEnd()}`))
-		console.log(dim(`  },`))
-		return
-	}
-	const file = existsSync("tsconfig.json") ? "postboi.config.ts" : "postboi.config.js"
-	writeFileSync(file, render_sms_config(provider_key, defaults, options))
 	console.log(`${green("✓")} wrote ${bold(file)}`)
 }
 

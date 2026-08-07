@@ -4,6 +4,13 @@ import type { ProviderError } from "../errors.js"
 
 type SendResponse = { ok: true }
 
+/** Cap at Discord's 2000-code-point limit without splitting a surrogate pair. */
+function truncate(content: string): string {
+	const points = Array.from(content)
+	if (points.length <= 2000) return content
+	return `${points.slice(0, 1999).join("")}…`
+}
+
 /**
  * Discord webhooks — https://discord.com/developers/docs/resources/webhook
  *
@@ -31,10 +38,10 @@ export default class Discord extends ChatProvider<SendResponse> {
 			url: message.to,
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
-				// 2000 characters is a hard API limit; truncate rather than have Discord
-				// reject the whole post over a long stack trace.
-				// 1999 + the one-character ellipsis lands exactly on the limit.
-				content: content.length > 2000 ? `${content.slice(0, 1999)}…` : content,
+				// 2000 is a hard API limit and it counts code points — truncate on those
+				// rather than have Discord reject the whole post over a long stack trace,
+				// and never mid-surrogate-pair (a UTF-16 slice delivers U+FFFD mojibake).
+				content: truncate(content),
 				...(message.username ? { username: message.username } : {}),
 			}),
 		}

@@ -134,7 +134,12 @@ function ambiguous(value: string): PostboiError {
  * certain.
  */
 export function to_e164(input: string | number, country?: string): string {
-	const raw = typeof input === "number" ? String(input) : digits_only(input.trim())
+	// "(0)" in printed numbers ("+44 (0) 7788 223344") marks a trunk prefix to *omit* when
+	// dialling internationally. Handled before digits_only strips the brackets — after
+	// that the zero is indistinguishable from a real digit, and "+4407788223344" passes
+	// length validation while reaching nobody.
+	const cleaned = typeof input === "number" ? input : input.replace(/\(0\)/g, "")
+	const raw = typeof cleaned === "number" ? String(cleaned) : digits_only(cleaned.trim())
 	if (!raw) throw ambiguous(String(input))
 
 	// A number literal can never carry a "+", so it's only ever digits.
