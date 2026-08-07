@@ -432,6 +432,10 @@ export const SMS_PROVIDERS = [
 		url: "https://console.aws.amazon.com/iam/home#/security_credentials",
 		regions: ["global"],
 		note: "Cheapest if you're already on AWS; no per-message sender ID in most regions",
+		// Deliberately not a number: AWS SMS pricing varies by destination and region, and a
+		// single figure here would be wrong more often than right.
+		price: "varies by destination",
+		verified: "2026-08-07",
 		fields: [
 			{ env: "AWS_ACCESS_KEY_ID", arg: "access_key_id", label: "Access key ID", secret: true },
 			{

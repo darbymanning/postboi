@@ -5,6 +5,10 @@ import { join, delimiter } from "node:path"
 import { argv, cwd, exit, platform, env } from "node:process"
 import {
 	PROVIDERS,
+	SMS_PROVIDERS,
+	SMS_DEFAULT_FIELDS,
+	render_sms_config,
+	type CliSmsProvider,
 	DEFAULT_FIELDS,
 	usage_snippet,
 	render_config,
@@ -758,13 +762,135 @@ async function byo_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	// 8. Done — show how to use it
 	console.log(`\n${green(bold("Done!"))} Now just send — no setup, no instance:\n`)
 	console.log(
-		dim('import { send } from "postboi"\n\nawait send({ to: "…", subject: "…", body: "…" })') + "\n"
+		dim('import { mail } from "postboi"\n\nawait mail({ to: "…", subject: "…", body: "…" })') + "\n"
 	)
 	console.log(`${dim("…or construct the provider yourself:")}\n`)
 	console.log(dim(usage_snippet(provider)) + "\n")
 }
 
-async function init(): Promise<void> {
+/**
+ * Countries offered by name in the SMS flow. A short list on purpose: it exists to set the
+ * default country and to order the provider list, and anyone outside it can type a dialling
+ * code, which `to_e164` accepts directly.
+ */
+const SMS_COUNTRIES: Array<{ label: string; value: string }> = [
+	{ label: "United Kingdom", value: "GB" },
+	{ label: "United States", value: "US" },
+	{ label: "Ireland", value: "IE" },
+	{ label: "Germany", value: "DE" },
+	{ label: "France", value: "FR" },
+	{ label: "Australia", value: "AU" },
+]
+
+/**
+ * SMS onboarding. Unlike email, the right provider depends on **where you're sending** —
+ * UK-native providers are materially cheaper into the UK and useless elsewhere — so this
+ * asks for a destination first and orders the list by it rather than presenting a flat menu.
+ */
+async function sms_init(prompts: Prompts, files: Array<string>): Promise<void> {
+	// 1. Destination first: it decides the ordering, and it's also the default country used
+	// to resolve national numbers like "07788 223344".
+	const country = await prompts.select<string>(bold("Where are you sending?"), [
+		...SMS_COUNTRIES,
+		{ label: "Somewhere else / several countries", value: "" },
+	])
+
+	// 2. Providers whose region matches come first — that's the whole point of asking.
+	const ranked = [...SMS_PROVIDERS].sort((a, b) => {
+		const score = (p: CliSmsProvider) =>
+			country && p.regions.includes(country) ? 0 : p.regions.includes("global") ? 1 : 2
+		return score(a) - score(b)
+	})
+	const provider = await prompts.select<CliSmsProvider>(
+		`\n${bold("Which provider?")}`,
+		ranked.map((p) => ({
+			label: p.name,
+			value: p,
+			hint: [p.price, p.note].filter(Boolean).join(" · "),
+		}))
+	)
+	if (provider.verified) {
+		console.log(
+			dim(`\nPrices move — ${provider.name} was last checked on ${provider.verified}.`) + "\n"
+		)
+	}
+
+	// 3. Credentials. Same split as email: secrets to env, everything else committed.
+	console.log(`${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
+	const values: Record<string, string> = {}
+	const config_options: Record<string, string> = {}
+	for (const field of provider.fields) {
+		const value = await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
+			required: field.default === undefined,
+			default: field.default,
+		})
+		if (field.secret) {
+			if (value) values[field.env] = value
+		} else if (value) config_options[field.arg] = value
+	}
+
+	// 4. Defaults. The country is pre-filled from step 1, so it's usually just Enter.
+	const config_defaults: Record<string, string> = {}
+	if (country) config_defaults.country = country
+	for (const field of SMS_DEFAULT_FIELDS) {
+		if (field.arg === "country" && country) continue
+		const value = await prompts.ask(
+			`\n${field.label} ${dim("(optional)")}\n${dim(field.hint ?? "")}`,
+			{
+				required: false,
+			}
+		)
+		if (value) config_defaults[field.arg] = value
+	}
+
+	// 5–6. Write env vars, gitignore them, offer a host push
+	const targets = await choose_env_targets(prompts, files)
+	write_env_values(targets, values)
+	await offer_gitignore(prompts, targets)
+	await offer_host_push(prompts, files, values)
+
+	ensure_install(files)
+	write_sms_config(provider.key, config_defaults, config_options)
+
+	console.log(`\n${green(bold("Done!"))} Now just text:\n`)
+	console.log(
+		dim('import { sms } from "postboi"\n\nawait sms({ to: "+447788223344", message: "…" })') + "\n"
+	)
+	// Worth saying out loud: the safe default surprises people who expect a real send.
+	console.log(
+		dim(
+			"In development texts are logged, not sent — set POSTBOI_SMS_DEV=send when you want real delivery."
+		) + "\n"
+	)
+}
+
+/** Write (or show how to merge) the `sms:` block of `postboi.config`. */
+function write_sms_config(
+	provider_key: string,
+	defaults: Record<string, string>,
+	options: Record<string, string>
+): void {
+	console.log()
+	const existing = CONFIG_FILES.find((f) => existsSync(f))
+	if (existing) {
+		// Anyone running `init --sms` has usually set up email already, so merging into a
+		// hand-edited file is the common path, not the edge case.
+		console.log(`${yellow("!")} ${bold(existing)} already exists — add to it:`)
+		console.log(dim(`\n  sms: {`))
+		console.log(dim(`    provider: ${JSON.stringify(provider_key)},`))
+		if (Object.keys(defaults).length)
+			console.log(dim(`  ${render_block("default", defaults, "    ").trimEnd()}`))
+		if (Object.keys(options).length)
+			console.log(dim(`  ${render_block("options", options, "    ").trimEnd()}`))
+		console.log(dim(`  },`))
+		return
+	}
+	const file = existsSync("tsconfig.json") ? "postboi.config.ts" : "postboi.config.js"
+	writeFileSync(file, render_sms_config(provider_key, defaults, options))
+	console.log(`${green("✓")} wrote ${bold(file)}`)
+}
+
+async function init(sms_only = false): Promise<void> {
 	const prompts = create_prompts()
 	console.log()
 	console.log(banner())
@@ -773,19 +899,29 @@ async function init(): Promise<void> {
 	const files = readdirSync(cwd())
 
 	try {
-		const mode = await prompts.select<"cloud" | "byo">(bold("How do you want to send?"), [
-			{
-				label: "Postboi",
-				value: "cloud",
-				hint: "zero config — sign in and start sending",
-			},
-			{
-				label: "Bring your own provider",
-				value: "byo",
-				hint: "Resend, SES, Mailgun, Postmark, …",
-			},
-		])
+		if (sms_only) return await sms_init(prompts, files)
+		const mode = await prompts.select<"cloud" | "byo" | "sms">(
+			bold("What do you want to set up?"),
+			[
+				{
+					label: "Email — Postboi",
+					value: "cloud",
+					hint: "zero config — sign in and start sending",
+				},
+				{
+					label: "Email — bring your own provider",
+					value: "byo",
+					hint: "Resend, SES, Mailgun, Postmark, …",
+				},
+				{
+					label: "SMS",
+					value: "sms",
+					hint: "The SMS Works, Twilio, Amazon SNS",
+				},
+			]
+		)
 		if (mode === "cloud") await cloud_init(prompts, files)
+		else if (mode === "sms") await sms_init(prompts, files)
 		else await byo_init(prompts, files)
 	} finally {
 		prompts.close()
@@ -795,7 +931,7 @@ async function init(): Promise<void> {
 async function main(): Promise<void> {
 	const command = argv[2]
 	if (command === "-V" || command === "--version") return console.log(version())
-	if (command === "init") return init()
+	if (command === "init") return init(argv.includes("--sms"))
 	if (command === "sync") return sync()
 	if (command === "dev") return dev_command(argv.slice(3))
 	if (command && (await api_command(command, argv.slice(3)))) return

@@ -2,14 +2,20 @@
 // can never drift. The CLI keeps the prompt-only extras (default fields, usage snippet).
 export {
 	PROVIDERS,
+	SMS_PROVIDERS,
 	find_provider,
+	find_sms_provider,
 	type ProviderMeta,
 	type ProviderField,
+	type SmsProviderMeta,
 } from "../library/registry.js"
-import type { ProviderMeta } from "../library/registry.js"
+import type { ProviderMeta, SmsProviderMeta } from "../library/registry.js"
 
 /** Alias kept for the CLI's existing call sites. */
 export type CliProvider = ProviderMeta
+
+/** The SMS equivalent — carries regions and an indicative price so `init` can recommend. */
+export type CliSmsProvider = SmsProviderMeta
 
 /**
  * Optional default fields. Config-first: init commits them to postboi.config. The
@@ -28,6 +34,50 @@ export const DEFAULT_FIELDS: Array<{ arg: string; env: string; label: string; hi
 	{ arg: "cc", env: "POSTBOI_CC", label: "Default cc" },
 	{ arg: "bcc", env: "POSTBOI_BCC", label: "Default bcc" },
 ]
+
+/**
+ * Optional default fields for the SMS channel. Shorter than the email set because SMS has
+ * no cc/bcc/reply-to — a sender ID and a country is the whole of it.
+ */
+export const SMS_DEFAULT_FIELDS: Array<{
+	arg: string
+	env: string
+	label: string
+	hint?: string
+}> = [
+	{
+		arg: "from",
+		env: "POSTBOI_SMS_FROM",
+		label: "Sender",
+		hint: 'a purchased number, or an alphanumeric sender ID — e.g. "POSTBOI" (11 chars max)',
+	},
+	{
+		arg: "country",
+		env: "POSTBOI_SMS_COUNTRY",
+		label: "Default country",
+		hint: 'resolves national numbers like "07788 223344" — an ISO code ("GB") or dialling code ("+44")',
+	},
+]
+
+/**
+ * Build a `postboi.config.ts` carrying only the SMS channel — used when `init --sms` runs
+ * in a project that has no config file yet.
+ */
+export function render_sms_config(
+	provider: string,
+	defaults: Record<string, string>,
+	options: Record<string, string>
+): string {
+	return `import { config } from "postboi"
+
+// Project-wide config, picked up automatically by sms(). Commit this — keep secrets in env.
+export default config({
+	sms: {
+		provider: ${JSON.stringify(provider)},
+${render_block("default", defaults, "\t\t")}${render_block("options", options, "\t\t")}	},
+})
+`
+}
 
 /** Render a `{ key: "value" }` block (one entry per line, tab-indented). Empty → "". */
 export function render_block(name: string, entries: Record<string, string>, indent = "\t"): string {
