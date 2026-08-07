@@ -12,6 +12,19 @@ import {
 	type TransportHooks,
 	type TransportOptions,
 } from "./transport.js"
+// Type-only: the SMS channel's prepared shape widens `Hooks`, without pulling the SMS
+// provider into the email module graph.
+import type { PreparedSms } from "./sms/types.js"
+
+// The SMS channel's public types, surfaced from the root alongside the email ones.
+export type {
+	Phone,
+	PreparedSms,
+	SmsDefaults,
+	SmsOptions,
+	SmsProviderOptions,
+	SmsApiKeyOptions,
+} from "./sms/types.js"
 
 // Errors are shared across every channel, but the package root stays their public home.
 export {
@@ -314,15 +327,24 @@ export type ApiKeyOptions = CommonProviderOptions & {
 }
 
 /**
- * Awaitable lifecycle hooks, run around every send. `before.send` can observe, replace
- * or cancel a message; the rest are best-effort observers (errors they throw are
- * swallowed so logging/telemetry can't break a send).
+ * Awaitable lifecycle hooks, run around every send on every channel. `before.send` can
+ * observe, replace or cancel a message; the rest are best-effort observers (errors they
+ * throw are swallowed so logging/telemetry can't break a send).
  *
- * Every hook context carries a `channel`. Today email is the only one, so `message` is
- * always a {@link PreparedMessage} — as SMS and push land, this widens to a union and a
- * hook reading channel-specific fields narrows on `ctx.channel` first.
+ * `message` is a union across channels, so **narrow on `ctx.channel` before reading
+ * channel-specific fields**:
+ *
+ * ```ts
+ * hooks: {
+ * 	before: {
+ * 		send: ({ channel, message }) => {
+ * 			if (channel === "email") console.log(message.subject)
+ * 		},
+ * 	},
+ * }
+ * ```
  */
-export type Hooks = TransportHooks<PreparedMessage>
+export type Hooks = TransportHooks<PreparedMessage | PreparedSms>
 
 /**
  * Base class for all providers.
@@ -384,9 +406,12 @@ export abstract class EmailProvider<TResponse = unknown> extends Transport<
 		this.defaults = { ...s.default, ...options.default }
 		this.#auto_text = options.auto_text ?? s.auto_text ?? true
 		this.#captcha = merge_captcha(s.captcha, options.captcha)
-		// Hooks merge global under instance, which the base can't do for us — it has no
-		// view of the email-shaped config.
-		this.set_hooks(merge_hooks(s.hooks, options.hooks))
+		// Hooks merge global under instance, which the base can't do for us — it has no view
+		// of the email-shaped config. Global hooks are declared over every channel's message
+		// shape; an email provider only ever hands them a `PreparedMessage`, so narrowing is
+		// safe on the way in. A hook that *returns* another channel's shape is undefined
+		// behaviour — which is exactly what `ctx.channel` exists to prevent.
+		this.set_hooks(merge_hooks(s.hooks as TransportHooks<PreparedMessage>, options.hooks))
 	}
 
 	/**

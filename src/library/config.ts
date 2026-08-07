@@ -21,7 +21,9 @@
  */
 import type { Defaults, Hooks } from "./index.js"
 import type { CaptchaOptions } from "./captcha.js"
-import type { ProviderKey } from "./registry.js"
+import type { ProviderKey, SmsProviderKey } from "./registry.js"
+import type { TransportHooks } from "./transport.js"
+import type { SmsDefaults } from "./sms/types.js"
 
 /** Everything you can configure globally via `postboi.config.ts` or {@link configure}. */
 export interface PostboiConfig {
@@ -50,8 +52,27 @@ export interface PostboiConfig {
 	retry_delay?: number
 	/** Derive a plain-text body from the HTML body when `text` is omitted. On by default. */
 	auto_text?: boolean
-	/** Lifecycle hooks run around every send (the main reason to use a config file). */
+	/**
+	 * Lifecycle hooks run around every send, on every channel (the main reason to use a
+	 * config file). `ctx.channel` says which channel fired it; narrow on that before
+	 * reading channel-specific fields like `message.subject`.
+	 */
 	hooks?: Hooks
+	/**
+	 * SMS channel settings for the zero-config `sms()`. `POSTBOI_SMS_*` env vars win over
+	 * anything here, the same way they do for email.
+	 */
+	sms?: {
+		/** Provider key (`twilio`, `smsworks`, …). `POSTBOI_SMS_PROVIDER` wins. */
+		provider?: SmsProviderKey | "mock"
+		/** Default fields applied to every text — sender, recipients, country. */
+		default?: SmsDefaults
+		/**
+		 * Non-secret SMS provider constructor options, keyed by the provider's option name.
+		 * Keep secrets in the environment.
+		 */
+		options?: Record<string, string>
+	}
 	/** Spam-protection settings applied to every FormData send (honeypot + Turnstile). */
 	captcha?: CaptchaOptions
 	/** Development-only behaviour. Ignored outside `NODE_ENV=development`. */
@@ -61,6 +82,14 @@ export interface PostboiConfig {
 		 * On by default — set false if you want local sends to reach the real provider.
 		 */
 		inbox?: boolean
+		/**
+		 * Capture texts in development instead of sending them. **On by default, and
+		 * stricter than `inbox`** — mail is only intercepted when an inbox is running, but
+		 * texts are always intercepted in development, because a stray one costs money and
+		 * reaches a real handset with no way to recall it. Set false (or
+		 * `POSTBOI_SMS_DEV=send`) when you genuinely need to test real delivery.
+		 */
+		sms?: boolean
 	}
 }
 
@@ -71,8 +100,14 @@ function defined<T extends object>(obj: T): Partial<T> {
 	return out as Partial<T>
 }
 
-/** Deep-merge hook groups so instance overrides don't clobber unrelated global hooks. */
-export function merge_hooks(base: Hooks = {}, override: Hooks = {}): Hooks {
+/**
+ * Deep-merge hook groups so instance overrides don't clobber unrelated global hooks.
+ * Generic over the prepared-message shape so each channel merges its own hook type.
+ */
+export function merge_hooks<T>(
+	base: TransportHooks<T> = {},
+	override: TransportHooks<T> = {}
+): TransportHooks<T> {
 	return {
 		before: { ...base.before, ...defined(override.before ?? {}) },
 		after: { ...base.after, ...defined(override.after ?? {}) },
@@ -88,6 +123,11 @@ function merge(base: PostboiConfig, override: PostboiConfig): PostboiConfig {
 		default: { ...base.default, ...defined(override.default ?? {}) },
 		hooks: merge_hooks(base.hooks, override.hooks),
 		captcha: { ...base.captcha, ...defined(override.captcha ?? {}) },
+		sms: {
+			...base.sms,
+			...defined(override.sms ?? {}),
+			default: { ...base.sms?.default, ...defined(override.sms?.default ?? {}) },
+		},
 	}
 }
 
