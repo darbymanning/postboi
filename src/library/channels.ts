@@ -11,7 +11,7 @@
  * Internal: not part of the public surface.
  */
 import { PostboiError, type Channel } from "./errors.js"
-import type { ProviderMeta } from "./registry.js"
+import { find_channel_provider } from "./registry.js"
 import { load_config, type PostboiConfig } from "./config.js"
 import { ensure_env_loaded, is_development, read_env } from "./env.js"
 
@@ -22,8 +22,6 @@ export interface ChannelResolution<TProvider> {
 	env_key: string
 	/** Lazy constructors keyed by provider key — same shape as mail()'s LOADERS. */
 	loaders: Record<string, () => Promise<new (options: Record<string, unknown>) => TProvider>>
-	/** Registry lookup for the provider's credential fields. */
-	find: (key: string) => ProviderMeta | undefined
 	/** Channel defaults read from the environment, passed as `options.default`. */
 	env_defaults: () => Record<string, unknown>
 	/** The channel's section of the config file. */
@@ -88,7 +86,7 @@ export async function resolve_channel_provider<TProvider>(
 
 	const options: Record<string, unknown> = { default: spec.env_defaults() }
 	// `meta` is undefined for credential-free providers (the mock) with no registry entry.
-	const meta = spec.find(key)
+	const meta = find_channel_provider(spec.channel, key)
 	for (const field of meta?.fields ?? []) {
 		// env wins, then a non-secret value committed to the config file, then the default.
 		const value = read_env(field.env) ?? section?.options?.[field.arg] ?? field.default

@@ -6,6 +6,7 @@ import {
 } from "./provider.js"
 import type { BatchResult, RequestSpec } from "../transport.js"
 import { PostboiError } from "../errors.js"
+import { MockRecorder, type MockRecorderOptions } from "../mock_recorder.js"
 import { segments } from "./phone.js"
 
 /** A normalized snapshot of a text captured by the mock provider. */
@@ -23,16 +24,7 @@ export interface SentSms {
 }
 
 /** Options for the SMS mock constructor. */
-type Options = SmsProviderOptions & {
-	/** When true, every `send` rejects with a simulated {@link PostboiError}. */
-	fail?: boolean
-	/**
-	 * Print each captured text to the console. Off by default so tests stay quiet;
-	 * `sms()` turns it on whenever it resolves the mock itself, because there the point is
-	 * seeing the code you would have texted.
-	 */
-	log?: boolean
-}
+type Options = SmsProviderOptions & MockRecorderOptions
 
 type SendResponse = { id: string; message: SentSms }
 
@@ -57,27 +49,26 @@ export default class MockSms extends SmsProvider<SendResponse> {
 	protected readonly provider = "mock"
 	protected override readonly requires_from = false
 	protected override readonly supports_scheduling = true
-	#fail: boolean
-	#log: boolean
-	#counter = 0
-
-	/** Every text captured by this instance, in send order. */
-	readonly sent: Array<SentSms> = []
+	#recorder: MockRecorder<SentSms>
 
 	constructor({ fail, log, ...options }: Options = {}) {
 		super(options)
-		this.#fail = fail ?? false
-		this.#log = log ?? false
+		this.#recorder = new MockRecorder("sms", { fail, log }, log_sms)
+	}
+
+	/** Every text captured by this instance, in send order. */
+	get sent(): Array<SentSms> {
+		return this.#recorder.sent
 	}
 
 	/** The most recently captured text, or undefined if nothing has been sent. */
 	get last(): SentSms | undefined {
-		return this.sent.at(-1)
+		return this.#recorder.last
 	}
 
 	/** Forget all captured texts. */
 	clear(): void {
-		this.sent.length = 0
+		this.#recorder.clear()
 	}
 
 	send(options: SmsOptions): Promise<SendResponse>
@@ -94,25 +85,14 @@ export default class MockSms extends SmsProvider<SendResponse> {
 		}
 		return this.with_hooks(
 			() => this.prepare_sms(options),
-			async (message) => {
-				if (this.#fail) {
-					throw new PostboiError({
-						provider: "mock",
-						channel: "sms",
-						message: "Simulated failure from mock SMS provider",
-					})
-				}
-				const captured: SentSms = {
+			async (message) =>
+				this.#recorder.capture({
 					to: message.to,
 					from: message.from,
 					message: message.message,
 					segments: segments(message.message),
 					scheduled_at: message.scheduled_at,
-				}
-				this.sent.push(captured)
-				if (this.#log) log_sms(captured)
-				return { id: `mock-sms-${++this.#counter}`, message: captured }
-			}
+				})
 		)
 	}
 

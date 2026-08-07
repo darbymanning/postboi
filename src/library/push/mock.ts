@@ -6,6 +6,7 @@ import {
 } from "./provider.js"
 import type { BatchResult, RequestSpec } from "../transport.js"
 import { PostboiError } from "../errors.js"
+import { MockRecorder, type MockRecorderOptions } from "../mock_recorder.js"
 
 /** A normalized snapshot of a notification captured by the mock. */
 export interface SentPush {
@@ -17,14 +18,11 @@ export interface SentPush {
 }
 
 /** Options for the push mock constructor. */
-type Options = PushProviderOptions & {
-	/** When true, every `send` rejects with a simulated {@link PostboiError}. */
-	fail?: boolean
-	/** When true, every `send` rejects as though the subscription had expired (410). */
-	expired?: boolean
-	/** Print each captured notification. Off by default so tests stay quiet. */
-	log?: boolean
-}
+type Options = PushProviderOptions &
+	MockRecorderOptions & {
+		/** When true, every `send` rejects as though the subscription had expired (410). */
+		expired?: boolean
+	}
 
 type SendResponse = { id: string; message: SentPush }
 
@@ -47,29 +45,28 @@ type SendResponse = { id: string; message: SentPush }
  */
 export default class MockPush extends PushProvider<SendResponse> {
 	protected readonly provider = "mock"
-	#fail: boolean
 	#expired: boolean
-	#log: boolean
-	#counter = 0
-
-	/** Every notification captured by this instance, in send order. */
-	readonly sent: Array<SentPush> = []
+	#recorder: MockRecorder<SentPush>
 
 	constructor({ fail, expired, log, ...options }: Options = {}) {
 		super({ ...options, default: { to: "mock-token", ...options.default } })
-		this.#fail = fail ?? false
 		this.#expired = expired ?? false
-		this.#log = log ?? false
+		this.#recorder = new MockRecorder("push", { fail, log }, log_push)
+	}
+
+	/** Every notification captured by this instance, in send order. */
+	get sent(): Array<SentPush> {
+		return this.#recorder.sent
 	}
 
 	/** The most recently captured notification, or undefined if nothing has been sent. */
 	get last(): SentPush | undefined {
-		return this.sent.at(-1)
+		return this.#recorder.last
 	}
 
 	/** Forget all captured notifications. */
 	clear(): void {
-		this.sent.length = 0
+		this.#recorder.clear()
 	}
 
 	send(options: PushOptions): Promise<SendResponse>
@@ -96,26 +93,13 @@ export default class MockPush extends PushProvider<SendResponse> {
 						message: "Push subscription has expired or been unsubscribed (simulated).",
 					})
 				}
-				if (this.#fail) {
-					throw new PostboiError({
-						provider: "mock",
-						channel: "push",
-						message: "Simulated failure from mock push provider",
-					})
-				}
-				const captured: SentPush = {
+				return this.#recorder.capture({
 					to: typeof message.to === "string" ? message.to : message.to.endpoint,
 					title: message.title,
 					message: message.message,
 					url: message.url,
 					data: message.data,
-				}
-				this.sent.push(captured)
-				if (this.#log) {
-					const heading = captured.title ? `${captured.title}\n` : ""
-					console.log(`postboi (mock push) → ${captured.to}\n\n${heading}${captured.message}`)
-				}
-				return { id: `mock-push-${++this.#counter}`, message: captured }
+				})
 			}
 		)
 	}
@@ -136,4 +120,10 @@ export default class MockPush extends PushProvider<SendResponse> {
 			message: "The mock push provider does not make requests",
 		})
 	}
+}
+
+/** Print a captured notification. */
+function log_push(captured: SentPush): void {
+	const heading = captured.title ? `${captured.title}\n` : ""
+	console.log(`postboi (mock push) → ${captured.to}\n\n${heading}${captured.message}`)
 }

@@ -8,7 +8,6 @@ import type { BatchResult } from "../transport.js"
 import type { SmsOptions, SmsDefaults } from "./types.js"
 import type { SmsProvider } from "./provider.js"
 import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
-import { find_sms_provider } from "../registry.js"
 import { load_config } from "../config.js"
 import { is_development, read_env } from "../env.js"
 
@@ -50,7 +49,6 @@ const RESOLUTION: ChannelResolution<SmsProvider<unknown>> = {
 	channel: "sms",
 	env_key: "POSTBOI_SMS_PROVIDER",
 	loaders: LOADERS,
-	find: find_sms_provider,
 	env_defaults: sms_env_defaults as () => Record<string, unknown>,
 	section: (config) => config.sms,
 	init_flag: "--sms",

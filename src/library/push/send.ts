@@ -5,7 +5,6 @@ import type { BatchResult } from "../transport.js"
 import type { PushDefaults, PushOptions } from "./types.js"
 import type { PushProvider } from "./provider.js"
 import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
-import { find_push_provider } from "../registry.js"
 import { read_env } from "../env.js"
 
 type PushConstructor = new (options: Record<string, unknown>) => PushProvider<unknown>
@@ -31,7 +30,6 @@ const RESOLUTION: ChannelResolution<PushProvider<unknown>> = {
 	channel: "push",
 	env_key: "POSTBOI_PUSH_PROVIDER",
 	loaders: LOADERS,
-	find: find_push_provider,
 	env_defaults: push_env_defaults as () => Record<string, unknown>,
 	section: (config) => config.push,
 	init_flag: "--push",
