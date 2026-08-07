@@ -164,6 +164,9 @@ describe("expiry handling", () => {
 		const notify = new MockPush({ expired: true })
 		const error = await notify.send({ to: "tok", message: "hi" }).catch((e) => e)
 		expect(PushProvider.is_expired(error)).toBe(true)
+		// The documented one-import form: the check hangs off push() itself.
+		expect(push.expired(error)).toBe(true)
+		expect(push.expired(new Error("other"))).toBe(false)
 
 		const other = await new MockPush({ fail: true })
 			.send({ to: "tok", message: "hi" })

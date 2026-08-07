@@ -69,6 +69,9 @@ describe("mock outside_window simulation", () => {
 		const error = await wa.send({ to: "+447788223344", message: "hi" }).catch((e) => e)
 		expect(WhatsappProvider.is_outside_window(error)).toBe(true)
 		expect(MockWhatsapp.is_outside_window(error)).toBe(true)
+		// The documented one-import form: the check hangs off whatsapp() itself.
+		expect(whatsapp.closed(error)).toBe(true)
+		expect(whatsapp.closed(new Error("other"))).toBe(false)
 
 		await wa.send({ to: "+447788223344", template: "order_shipped" })
 		expect(wa.last?.template).toBe("order_shipped")

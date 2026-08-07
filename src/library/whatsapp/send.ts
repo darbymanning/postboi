@@ -7,7 +7,7 @@
  */
 import type { BatchResult } from "../transport.js"
 import type { WhatsappDefaults, WhatsappOptions } from "./types.js"
-import type { WhatsappProvider } from "./provider.js"
+import { WhatsappProvider } from "./provider.js"
 import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
 import { load_config } from "../config.js"
 import { is_development, read_env } from "../env.js"
@@ -100,3 +100,20 @@ export async function whatsapp(
 	if (Array.isArray(options)) return provider.send(options, batch)
 	return provider.send(options)
 }
+
+/**
+ * Is this failure the 24-hour customer service window being closed? The routine WhatsApp
+ * failure, and the signal to send a pre-approved template instead. Hangs off `whatsapp`
+ * itself so the send and its routine failure check are one import.
+ *
+ * @example
+ * ```ts
+ * try {
+ * 	await whatsapp({ to, message })
+ * } catch (error) {
+ * 	if (!whatsapp.closed(error)) throw error
+ * 	await whatsapp({ to, template: "re_engage", variables: { name } })
+ * }
+ * ```
+ */
+whatsapp.closed = WhatsappProvider.is_outside_window
