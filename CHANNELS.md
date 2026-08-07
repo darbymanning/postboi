@@ -3,7 +3,7 @@
 The plan for taking postboi from an email library to a multi-channel messaging library:
 SMS, push, RCS, WhatsApp and chat, behind one API.
 
-**Status: Phases 0 and 1 shipped.** Phase 2 onward is unbuilt. This document is the source
+**Status: Phases 0, 1 and 5 shipped.** Phases 2, 3, 4 and 6 are unbuilt. This document is the source
 of truth for the channel work — read it before starting a phase, and update it when a
 decision changes. Reasoning that led to these conclusions lives in this file's git history.
 
@@ -679,7 +679,7 @@ fallback rather than an error. Retrofitting that later is far worse.
 
 ---
 
-## Phase 5 — chat channels (no approval needed)
+## Phase 5 — chat channels (no approval needed) ✅ **done**
 
 - **Slack / Discord / Teams incoming webhooks** — one POST each, no auth beyond the URL. A
   couple of hours apiece and the best return in this document
@@ -688,8 +688,28 @@ fallback rather than an error. Retrofitting that later is far worse.
   bot and you address them by `chat_id` — the same registered-identity problem as push
   tokens, so plan it alongside the subscription store
 
-**Effort: hours each.** Ship these first after Phase 1 — they cost almost nothing and make
-`send()` immediately worth having.
+**Shipped.** `chat()` with Slack, Discord, Teams and Telegram, plus a mock — the thinnest
+channel yet, since there are no addresses to parse, no encoding to count and no delivery
+receipts.
+
+⚠️ **Teams needed rewriting before it was written.** The plan said "incoming webhooks",
+meaning Office 365 connectors — **Microsoft disabled those in May 2026**, so a legacy
+`office.com/webhook/…` URL no longer delivers at all. The provider targets a **Power
+Automate Workflows** webhook and posts an **Adaptive Card**. Workflows still accepts the old
+MessageCard shape for migration, but Microsoft's guidance is Adaptive Cards and MessageCard
+drops interactive elements. The registry note says so in the provider picker, because a dead
+connector URL looks perfectly plausible.
+
+**No development interception here**, unlike SMS — deliberately. Posting to your own Slack
+channel while developing is usually the point: it costs nothing, reaches only your team, and
+can be deleted. The SMS interception exists because a stray text costs money and can't be
+recalled; neither applies.
+
+Telegram sits with the push work rather than the webhook providers in one respect: a
+`chat_id` is a **registered identity**, not an address — a bot can't message someone who
+hasn't started a chat with it — so it has the same storage problem as a push token.
+
+**Effort: a few hours, as estimated.**
 
 ---
 

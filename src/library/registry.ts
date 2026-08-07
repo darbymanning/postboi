@@ -456,3 +456,74 @@ export type SmsProviderKey = (typeof SMS_PROVIDERS)[number]["key"]
 export function find_sms_provider(key: string): SmsProviderMeta | undefined {
 	return SMS_PROVIDERS.find((p) => p.key === key)
 }
+
+/**
+ * A chat provider's metadata. Simpler than SMS — chat is free, has no destination-based
+ * pricing, and mostly needs nothing but a webhook URL.
+ */
+export type ChatProviderMeta = ProviderMeta & {
+	/** One line on what you'd use it for. */
+	note: string
+}
+
+/** The chat providers `chat()` can drive. */
+export const CHAT_PROVIDERS = [
+	{
+		key: "slack",
+		name: "Slack",
+		import: "postboi/slack",
+		class: "Slack",
+		url: "https://api.slack.com/messaging/webhooks",
+		note: "Incoming webhook — the channel is baked into the URL",
+		fields: [
+			{
+				env: "SLACK_WEBHOOK_URL",
+				arg: "webhook_url",
+				label: "Incoming webhook URL",
+				secret: true,
+			},
+		],
+	},
+	{
+		key: "discord",
+		name: "Discord",
+		import: "postboi/discord",
+		class: "Discord",
+		url: "https://discord.com/developers/docs/resources/webhook",
+		note: "Channel webhook — same shape as Slack",
+		fields: [
+			{ env: "DISCORD_WEBHOOK_URL", arg: "webhook_url", label: "Webhook URL", secret: true },
+		],
+	},
+	{
+		key: "teams",
+		name: "Microsoft Teams",
+		import: "postboi/teams",
+		class: "Teams",
+		url: "https://learn.microsoft.com/en-us/power-automate/overview-cloud",
+		// Worth saying in the picker itself: a legacy connector URL looks plausible and
+		// silently no longer delivers.
+		note: "Power Automate Workflows webhook — Office 365 connectors were disabled in May 2026",
+		fields: [{ env: "TEAMS_WEBHOOK_URL", arg: "webhook_url", label: "Workflow URL", secret: true }],
+	},
+	{
+		key: "telegram",
+		name: "Telegram",
+		import: "postboi/telegram",
+		class: "Telegram",
+		url: "https://core.telegram.org/bots#botfather",
+		note: "Bot API — the recipient must have started a chat with your bot first",
+		fields: [
+			{ env: "TELEGRAM_BOT_TOKEN", arg: "bot_token", label: "Bot token", secret: true },
+			{ env: "POSTBOI_CHAT_TO", arg: "to", label: "Default chat id", default: "" },
+		],
+	},
+] as const satisfies ReadonlyArray<ChatProviderMeta>
+
+/** A known chat provider key, e.g. `"slack"`. */
+export type ChatProviderKey = (typeof CHAT_PROVIDERS)[number]["key"]
+
+/** Look up a chat provider by its key. */
+export function find_chat_provider(key: string): ChatProviderMeta | undefined {
+	return CHAT_PROVIDERS.find((p) => p.key === key)
+}
