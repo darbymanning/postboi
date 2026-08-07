@@ -172,7 +172,7 @@ export default class Mock extends ProviderBase<SendResponse> {
 			return this.send_data_batch(options)
 		}
 
-		return this.with_hooks(options, async (message) => {
+		return this.with_hooks(async () => this.prepare_send(options), async (message) => {
 			if (this.#fail) {
 				throw new PostboiError({
 					provider: "mock",
