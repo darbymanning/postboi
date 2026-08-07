@@ -36,7 +36,7 @@ type SendResponse = { response: string }
 
 // node:net/node:tls are loaded lazily (same pattern as env.ts) so bundlers targeting
 // non-node platforms — Convex, workers without nodejs_compat — can bundle the zero-config
-// send() without resolving them. esbuild demotes an unresolvable dynamic import to a
+// mail() without resolving them. esbuild demotes an unresolvable dynamic import to a
 // warning only when it sits in a try block, so the try is load-bearing. Every socket is
 // created via Connection.connect, which loads both before anything touches them.
 let net: typeof import("node:net") | undefined

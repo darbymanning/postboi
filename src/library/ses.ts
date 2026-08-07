@@ -2,7 +2,7 @@ import type { PreparedMessage, CommonProviderOptions, ProviderError, RequestSpec
 import { ProviderBase, PostboiError } from "./index.js"
 
 // Loaded lazily (same pattern as env.ts) so bundlers targeting non-node platforms —
-// Convex, workers without nodejs_compat — can bundle the zero-config send() without
+// Convex, workers without nodejs_compat — can bundle the zero-config mail() without
 // resolving node:crypto. esbuild demotes an unresolvable dynamic import to a warning
 // only when it sits in a try block, so the try is load-bearing.
 let node_crypto: typeof import("node:crypto") | undefined
