@@ -290,16 +290,59 @@ turns it into the same thing across every channel almost for free:
 That path is credible, reuses what exists, and stays monetised through hosted email where
 the margin is.
 
-**⚠️ But it collides head-on with the pricing model above, and that needs deciding, not
-drifting.** Our strongest argument against Knock and Courier is *"there is no server in the
-send path, so routing is free."* An engagement platform **is** a server in the path — it's
-stateful, it stores contacts and segments and analytics, and its costs scale with the size
-of the audience rather than the number of sends. That is precisely **why** OneSignal charges
-per MAU and sent.dm per contact. Go far enough down this road and we face the same
-economics, and end up either adopting the per-contact pricing we just committed against, or
-absorbing a cost that grows with customers who may never send anything.
+#### What it actually costs us to hold an audience — the real numbers
 
-**So the honest recommendation is: take the audience half, decline the marketing half.**
+An earlier draft of this section claimed an engagement platform's "costs scale with the size
+of the audience", and used that to explain OneSignal's per-MAU pricing. **On Cloudflare that
+is mostly wrong, and it's worth being precise, because the true cost boundary turns out to
+be more useful than the false one.**
+
+Current Cloudflare rates: Workers Paid $5/mo with 10M requests included then $0.30/million;
+**D1 storage 5 GB included then $0.75/GB-month**, **25 billion rows read/month included**
+then $0.001/million, **50 million rows written/month included** then $1.00/million.
+
+**Storing contacts is effectively free:**
+
+| Contacts | Approx. storage (~300 B/row) | D1 cost |
+| --- | --- | --- |
+| 100k | ~30 MB | **$0** (inside the 5 GB allowance) |
+| 1M | ~300 MB | **$0** |
+| 10M | ~3 GB | **$0** |
+
+A dormant contact costs storage and nothing else, and storage doesn't start billing until
+roughly **15 million** of them. So sent.dm's $0.015/contact/month and OneSignal's
+$0.012/MAU are **not cost pass-through — they're value pricing.** Good to know, and a fair
+thing to say out loud in our docs.
+
+**Broadcasting is also nearly free:**
+
+A 100k-recipient broadcast ≈ 100k row reads + ~300k writes (message + delivery events) +
+100k Worker requests ≈ **~$0.33 of infrastructure** — against ~£29 of revenue at the current
+email tier for that volume. The 25-billion-read allowance covers ~250,000 such broadcasts a
+month before a penny of overage.
+
+**So where does it genuinely start to cost?** Two places, and neither is "having contacts":
+
+1. **Retained history — storage × time.** Contacts are small; *messages* aren't. Storing
+   rendered HTML bodies and per-message events accumulates: ~1M messages/month at ~20 KB
+   each is ~20 GB, or ~**$15/month for every month you keep**, growing linearly forever.
+   This is exactly why OneSignal sells "1-year data retention" as a paid tier. **Retention
+   policy is a real decision to make early**, not a detail.
+2. **Anything that recomputes *per contact* on a schedule.** A journey with 500k users in
+   flight, ticked hourly, is on the order of **360M writes/month ≈ $360/month — for one
+   journey**. Behavioural segments ("opened in the last 30 days") mean repeatedly scanning
+   event tables. *That* is genuine per-MAU cost, and it's what actually forces per-MAU
+   pricing.
+
+**The useful conclusion: the cost boundary lands exactly on the take/decline split below.**
+Contacts, delivery profiles, preferences, lists and broadcast are all in the ~free column on
+Workers — so they can be bundled into the existing email tiers and **the "never charge per
+contact" commitment survives intact.** Journeys, behavioural segmentation and analytics
+retention are the parts that would force per-MAU pricing. The line isn't arbitrary; it's
+where the infrastructure bill starts.
+
+**So the recommendation stands, now for a better reason: take the audience half, decline the
+marketing half.**
 
 | Take | Decline |
 | --- | --- |
