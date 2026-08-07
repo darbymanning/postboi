@@ -661,18 +661,18 @@ deliver your message to its subscriber.** Anything genuinely cheaper is, by cons
 grey route / SIM box, which is what §2 and §1 shut down. There is no legitimate below-floor
 lane for guaranteed A2P SMS. Full stop.
 
-**The genuinely creative answer is to stop paying the SMS rail at all.** The money is
-trapped on the SS7/termination rail; the exit is to send over *data* instead, where there
-is no per-message termination fee:
+**The genuinely creative answer is to stop paying the SMS rail at all** — or at least to
+stop paying it *per 160 characters*:
 
-- **RCS** — rides data, verified branding, and text-only RCS is ~the same headline rate as
-  SMS *but* falls back to SMS only for handsets that can't receive it. On a modern UK/EU
-  handset base that's a shrinking tail, so blended cost drops below all-SMS with *better*
-  UX. Carrier-run SMS fallback means we never lose the message.
+- **RCS** — verified branding, and roughly at **parity** with SMS for short messages.
+  ⚠️ It does **not** escape carrier fees (see the RCS pricing section below — an earlier
+  draft of this doc wrongly claimed it did). Its wins are structural rather than
+  headline-rate: single-billing for long messages, session pricing for two-way, and
+  delivery-only billing. Carrier-run SMS fallback means we never lose the message.
 - **WhatsApp** — free inside the 24-hour service window, template-priced outside it; for
   conversational/support flows the effective per-message cost collapses.
-- **Push + email** — effectively free (SES is $0.0001), and reach any user who's installed
-  the app or given an address.
+- **Push + email** — the only genuinely termination-free channels here. Effectively free
+  (SES is $0.0001), and reach any user who's installed the app or given an address.
 
 None of these is a way to send *SMS* more cheaply — that door is now bolted and alarmed.
 They're ways to deliver *the same message* without buying SMS at all. Which is the entire
@@ -940,6 +940,63 @@ The genuinely useful property is **automatic upgrade**: send to a number, get RC
 the handset supports it and SMS where it doesn't, with branding and read receipts on the
 RCS path. That's channel fallback the carrier does for us, and it's the cheapest possible
 version of what sent.dm sells.
+
+#### RCS pricing — where the savings actually are
+
+**Correction to an earlier claim in this doc: RCS does *not* dodge carrier fees.** AWS
+documents the model plainly — every RCS message carries "a message transport fee **and** a
+carrier pass-through fee", and carriers set RCS rates individually. So RCS is **not** a way
+to undercut the termination floor. Its advantages are structural, and three of them are
+real money.
+
+Message types outside the US:
+
+| Type | What it is | Rate vs SMS |
+| --- | --- | --- |
+| **RCS Basic** | ≤160 chars | ~**parity** with SMS |
+| **RCS Single** | >160 chars, billed as **one message**, *not* per segment | ~**+20–30%** on the single-segment rate |
+| **RCS Conversational** | One session fee covers **24h of unlimited messages, both directions** | ~**2×** SMS for the session |
+
+(The US uses "Rich RCS", metered per 160-char segment like SMS, and has **no** conversational
+option — the session model is a Europe/APAC thing. A rare case where the UK/EU is the
+*better* market, inverting the SMS story above.)
+
+**Win 1 — long messages, and this is the big one.** SMS bills per 160-character segment;
+RCS Single bills the whole message as one. So message length is where RCS pulls away:
+
+| Message length | SMS (segments) | RCS Single | Saving |
+| --- | --- | --- | --- |
+| 160 chars | 1× | ~1.25× | RCS ~25% *worse* |
+| 320 chars | 2× | ~1.25× | **~38% cheaper** |
+| 480 chars | 3× | ~1.25× | **~58% cheaper** |
+
+**Win 2 — delivery-only billing.** "RCS messages are charged only for delivered messages.
+This differs from SMS, which charges for requested messages." That's the same edge The SMS
+Works sells on SMS (~8.9% average saving), but built into the RCS billing model as standard.
+
+**Win 3 — conversational sessions.** At ~2× SMS for a 24-hour window of unlimited two-way
+traffic, break-even is **two messages**; everything after that is free. For support threads
+or an OTP with a follow-up, cost per *interaction* collapses even though cost per *message*
+looks higher.
+
+**What it costs you:**
+
+- **Onboarding: ~$700 one-time per sender** (Twilio). AWS splits it into a one-time agent
+  setup fee, an **annual brand vetting fee**, and a **monthly agent maintenance fee** — all
+  carrier pass-through, and AWS notes registration fees are excluded from volume discounts.
+- **Rich media is MMS-priced** (~$0.022 vs $0.0083 text on Twilio's US list) — roughly
+  2.5×. Rich RCS is a marketing tool, not a transactional one.
+- **Double-delivery risk:** if the RCS message lands after the revocation window but before
+  the SMS fallback, **you're billed for both**. Uncommon, but it's a real line item and
+  worth surfacing in our own reporting.
+- **UK gotcha:** some carriers **suspend an RCS sender after 90 days with no traffic**. A
+  low-volume sender can silently lose their agent. Worth a docs warning.
+
+**The honest UK verdict:** Twilio RCS Basic sits at parity with Twilio's *SMS* rate
+(~4.3p), which is still **above** UK-native SMS at 2.4–2.8p. So for a short transactional
+message in the UK, cheap UK-native SMS still wins on raw price. RCS wins when the message
+is **long**, when the conversation is **two-way**, or when **branding and read receipts**
+are worth something — and it wins on UX unconditionally.
 
 _Recommendation: RCS before WhatsApp._ It's a thinner provider, has no window semantics to
 model, and rides Phase 1's Twilio work.
