@@ -64,6 +64,11 @@ export const contentSections: ContentSectionConfig[] = [
 				],
 			},
 			{
+				slug: "channels",
+				name: "Channels",
+				items: [{ slug: "sms", name: "SMS" }],
+			},
+			{
 				slug: "guides",
 				name: "Guides",
 				items: [
