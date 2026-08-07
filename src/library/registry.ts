@@ -365,7 +365,90 @@ export const PROVIDERS = [
 /** A known provider key, e.g. `"resend"` — derived from {@link PROVIDERS} so it can't drift. */
 export type ProviderKey = (typeof PROVIDERS)[number]["key"]
 
-/** Look up a provider by its key. */
+/** Look up an email provider by its key. */
 export function find_provider(key: string): ProviderMeta | undefined {
 	return PROVIDERS.find((p) => p.key === key)
+}
+
+/**
+ * An SMS provider's metadata. Carries more than the email equivalent because, unlike
+ * email, the right SMS provider depends on **where you're sending** — `regions` and
+ * `note` let `postboi init` recommend rather than just list.
+ *
+ * `price` is indicative only and goes stale; `verified` is the date it was last checked, so
+ * a reader can tell how much to trust it. Never treat these as quotes.
+ */
+export type SmsProviderMeta = ProviderMeta & {
+	/** ISO country codes this provider is a good fit for, or "global". */
+	regions: ReadonlyArray<string>
+	/** One line on why you'd pick this one. */
+	note: string
+	/** Indicative price per message, as a display string (e.g. "2.8p"). */
+	price?: string
+	/** ISO date the price was last verified. */
+	verified?: string
+}
+
+/** The SMS providers `postboi init --sms` can configure and `sms()` can drive. */
+export const SMS_PROVIDERS = [
+	{
+		key: "smsworks",
+		name: "The SMS Works",
+		import: "postboi/smsworks",
+		class: "SmsWorks",
+		url: "https://thesmsworks.co.uk/login",
+		regions: ["GB"],
+		note: "UK-native, and only charges for messages that actually arrive",
+		price: "~2.8p effective",
+		verified: "2026-08-07",
+		fields: [{ env: "SMSWORKS_API_KEY", arg: "api_key", label: "API key (JWT)", secret: true }],
+	},
+	{
+		key: "twilio",
+		name: "Twilio",
+		import: "postboi/twilio",
+		class: "Twilio",
+		url: "https://console.twilio.com",
+		regions: ["global"],
+		note: "Global coverage, and the provider every example on the internet uses",
+		price: "~4.3p to UK",
+		verified: "2026-08-07",
+		fields: [
+			{ env: "TWILIO_ACCOUNT_SID", arg: "account_sid", label: "Account SID", secret: true },
+			{ env: "TWILIO_AUTH_TOKEN", arg: "auth_token", label: "Auth token", secret: true },
+			{
+				env: "TWILIO_MESSAGING_SERVICE_SID",
+				arg: "messaging_service_sid",
+				label: "Messaging Service SID (optional; required to schedule)",
+				default: "",
+			},
+		],
+	},
+	{
+		key: "sns",
+		name: "Amazon SNS",
+		import: "postboi/sns",
+		class: "SNS",
+		url: "https://console.aws.amazon.com/iam/home#/security_credentials",
+		regions: ["global"],
+		note: "Cheapest if you're already on AWS; no per-message sender ID in most regions",
+		fields: [
+			{ env: "AWS_ACCESS_KEY_ID", arg: "access_key_id", label: "Access key ID", secret: true },
+			{
+				env: "AWS_SECRET_ACCESS_KEY",
+				arg: "secret_access_key",
+				label: "Secret access key",
+				secret: true,
+			},
+			{ env: "AWS_REGION", arg: "region", label: "Region", default: "us-east-1" },
+		],
+	},
+] as const satisfies ReadonlyArray<SmsProviderMeta>
+
+/** A known SMS provider key, e.g. `"twilio"` — derived from {@link SMS_PROVIDERS}. */
+export type SmsProviderKey = (typeof SMS_PROVIDERS)[number]["key"]
+
+/** Look up an SMS provider by its key. */
+export function find_sms_provider(key: string): SmsProviderMeta | undefined {
+	return SMS_PROVIDERS.find((p) => p.key === key)
 }

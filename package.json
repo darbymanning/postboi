@@ -126,6 +126,22 @@
       "types": "./dist/mock.d.ts",
       "default": "./dist/mock.js"
     },
+    "./twilio": {
+      "types": "./dist/sms/twilio.d.ts",
+      "default": "./dist/sms/twilio.js"
+    },
+    "./smsworks": {
+      "types": "./dist/sms/smsworks.d.ts",
+      "default": "./dist/sms/smsworks.js"
+    },
+    "./sns": {
+      "types": "./dist/sms/sns.d.ts",
+      "default": "./dist/sms/sns.js"
+    },
+    "./sms-mock": {
+      "types": "./dist/sms/mock.d.ts",
+      "default": "./dist/sms/mock.js"
+    },
     "./webhooks": {
       "types": "./dist/webhooks/index.d.ts",
       "default": "./dist/webhooks/index.js"

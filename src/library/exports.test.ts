@@ -51,9 +51,23 @@ describe("package exports", () => {
 			"inbox_art.ts", // the dev inbox's sign-on artwork, served by inbox_server.ts
 			"inbox_desktop.ts", // the dev inbox's wallpaper, clip and Start button, served by inbox_server.ts
 		])
-		const providers = readdirSync(`${root}src/library`).filter(
-			(f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !internal.has(f)
-		)
+		// Channel providers live in subdirectories (`sms/`), so scan those too — otherwise a
+		// new provider could ship with no exports entry and nothing would notice.
+		const channel_internal = new Set([
+			"sms/types.ts", // pure types, re-exported from the root
+			"sms/provider.ts", // the SMS base class, reached via each provider
+			"sms/phone.ts", // E.164 + segment helpers, used by sms/provider.ts
+			"sms/send.ts", // the zero-config sms(), re-exported from the root
+		])
+		const providers = [
+			...readdirSync(`${root}src/library`).filter(
+				(f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !internal.has(f)
+			),
+			...readdirSync(`${root}src/library/sms`)
+				.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
+				.map((f) => `sms/${f}`)
+				.filter((f) => !channel_internal.has(f)),
+		]
 		const exported = new Set(
 			entries.map(([, t]) => to_source(t.default).replace("src/library/", ""))
 		)
