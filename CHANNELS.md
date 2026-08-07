@@ -3,7 +3,7 @@
 The plan for taking postboi from an email library to a multi-channel messaging library:
 SMS, push, RCS, WhatsApp and chat, behind one API.
 
-**Status: planning.** Nothing here is built. This document is the source of truth for the
+**Status: Phase 0 shipped, Phase 1 next.** Everything from Phase 1 onward is unbuilt. This document is the source of truth for the
 channel work — read it before starting a phase, and update it when a decision changes.
 Reasoning that led to these conclusions lives in this file's git history.
 
@@ -393,25 +393,45 @@ Rebranding is mechanical and can happen in one pass whenever: README opener, sit
 
 ---
 
-## Phase 0 — the `Transport` split
+## Phase 0 — the `Transport` split ✅ **done**
 
-**No user-visible change. Everything below is cheaper once this lands.**
+**No user-visible change.** Landed in `ab1b476` and `6ac84c1`.
 
-1. Extract the channel-agnostic members into `abstract class Transport` in
-   `src/library/transport.ts`.
-2. `EmailProvider extends Transport` keeps the email-specific half.
-3. `export { EmailProvider as ProviderBase }` — existing providers and third-party
-   subclasses keep working untouched.
-4. Generalise `Hooks` with a `channel` discriminant (decided above).
-5. Move the SigV4 signer out of `ses.ts:146` into `src/library/aws.ts`, parameterised by
-   service — SES hardcodes `"ses"` at `ses.ts:181`, and AWS SNS needs the same signer with
-   `"sns"`.
+1. ✅ `src/library/transport.ts` — `abstract class Transport<TResponse, TPrepared>` owns
+   `request`/retry/backoff, `read_json`, `error_for`, hook sequencing, `normalize_error`,
+   bounded batch fan-out, `fill_template`, `resolve_scheduled_at` and `file_to_base64`.
+2. ✅ `src/library/errors.ts` — `PostboiError`, `SkipSendError`, `SpamError` and the guards
+   moved to their own module so `transport.ts` and `index.ts` can both reach them without
+   importing each other. **`PostboiError` gained `channel`.**
+3. ✅ `EmailProvider extends Transport<TResponse, PreparedMessage>` keeps `prepare_send`,
+   FormData rendering, captcha and address parsing — exported as `ProviderBase`.
+4. ✅ Hook contexts gained `channel`; `Hooks` is now `TransportHooks<PreparedMessage>`.
+5. ✅ SigV4 lifted into `src/library/aws.ts`, parameterised by service.
 
-**Tests:** the existing suite is the regression net. `provider.test.ts`, `providers.test.ts`,
-`batch.test.ts` and `hooks.test.ts` all exercise the base class through real providers. If
-they pass unchanged bar the hook-context shape, the split is clean.
+**Two signatures changed, both `protected`:**
 
-**Effort: 1–2 days.**
+- `with_hooks(prepare, core)` — it used to take `SendOptions` and call `prepare_send`
+  itself, which tied it to the email options shape. It now takes a prepare callback.
+- `run_batch(messages, send, batch)` on `Transport` is the generic form; `send_batch` stays
+  on `EmailProvider` as the email-shaped wrapper.
+
+Only `mock.ts`, `smtp.ts` (both override `send`) and `ses.ts` (the signer) needed touching.
+**Every other provider file was unchanged**, which was the point of the alias.
+
+**Verified:** 502/502 tests, `bun run lint`, `bun run check` (0 errors), `bun run prepack`
+(publint clean). Two test expectations updated — a `toEqual` on the retry-hook context now
+carries `channel`, and `exports.test.ts` gained the three new internal modules.
+
+⚠️ **Deviation worth knowing.** The plan said `message` would widen across channels here.
+It can't yet — `PreparedSms` doesn't exist, so the union has one member and nothing
+observable broke. Hook contexts gaining `channel` is **additive**; the actual breaking
+widening lands in Phase 1 when `Hooks` becomes
+`TransportHooks<PreparedMessage | PreparedSms>`. That's arguably better — 0.24 ships a
+pure refactor, 0.25 ships SMS _and_ the break — but it means **the hooks break is a Phase 1
+release note, not a Phase 0 one**.
+
+**Actual effort: well under the 1–2 day estimate**, because the coupling audit held: no
+`ProviderBase` references in `kit.ts` / `form.ts` / `vite.ts` / `mail.remote.ts`.
 
 ---
 
