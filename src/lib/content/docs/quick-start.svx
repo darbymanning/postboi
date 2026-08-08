@@ -73,9 +73,15 @@ are all documented in [The Postboi provider](/provider), along with plan limits.
 ## Bringing your own provider
 
 Pick **Bring your own provider** and the CLI asks which one, then collects its credentials
-(an API key, plus a domain for Mailgun or a region for SES). It **writes only secrets** to
-your env file and **everything else** — the provider, defaults, and non-secret options — to
-a committed [`postboi.config.ts`](/config). The best case is a single env var:
+(an API key, plus a domain for Mailgun or a region for SES) — printing the exact dashboard
+page each one comes from. If you're signed in and your team has
+[synced the credential](/provider#team-credentials) before, the prompt answers itself: the
+key is pulled from your account and you type nothing. What you do type is synced up for
+the next teammate, so any credential is typed once, on one machine, ever.
+
+Either way it **writes only secrets** to your env file and **everything else** — the
+provider, defaults, and non-secret options — to a committed
+[`postboi.config.ts`](/config). The best case is a single env var:
 
 ```ts
 // postboi.config.ts  (committed)

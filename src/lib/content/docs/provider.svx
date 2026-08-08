@@ -122,9 +122,11 @@ command:
 bunx postboi sync   # pulls every synced credential your local env is missing
 ```
 
-`postboi init` pushes credentials up as it collects them, so for most projects this is
-invisible: one person runs `init --sms`, everyone else's `sync` (already in the `prepare`
-script) fills in `TWILIO_AUTH_TOKEN` on their machine. Zero ceremony.
+`postboi init` pushes credentials up as it collects them **and pulls them back down as it
+asks**: a prompt whose value the team already synced answers itself. So for most projects
+this is invisible — one person runs `init --sms` and types `TWILIO_AUTH_TOKEN` once, ever;
+every teammate's `init` or `sync` (already in the `prepare` script) fills it in from the
+team. Zero ceremony.
 
 The rules, because these are secrets:
 
