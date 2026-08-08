@@ -11,8 +11,9 @@ calling code.
 
 This page is the **email** roster. The other channels' providers live with their channel:
 [SMS](/sms#providers) (The SMS Works, Twilio, Amazon SNS),
-[WhatsApp](/whatsapp#providers) (Twilio, Meta Cloud API), [Push](/push) (Web Push, FCM)
-and [Chat](/chat#setup) (Slack, Discord, Teams, Telegram).
+[WhatsApp](/whatsapp#providers) (Twilio, Meta Cloud API), [Push](/push) (Web Push, FCM),
+and the chat platforms — [Slack](/slack), [Discord](/discord), [Teams](/teams),
+[Telegram](/telegram) — each on its own page.
 
 The **environment variables** are what [`postboi init`](/quick-start) writes and the
 zero-config [`mail()`](/api) reads; the **constructor options** are the same values passed
