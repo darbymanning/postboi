@@ -24,7 +24,8 @@ await sms({ to: '+44 7788 223344', message: 'Your code is 4291' })
 - 👨‍💻 **Zero configuration**: works out of the box with minimal setup.
 - 🔌 **Provider-based**: swap providers on any channel without changing your code.
 - 💬 **Five channels, one shape**: [`sms()`](/sms), [`whatsapp()`](/whatsapp),
-  [`push()`](/push) and [`chat()`](/chat) resolve, hook and error exactly like `mail()`.
+  [`push()`](/push), [`slack()` and friends](/chat) resolve, hook and error exactly like
+  `mail()`.
 - 📡 **Multi-channel [`send()`](/send)**: fan out to every channel, or stop at the
   cheapest one that works.
 - 📝 **Smart FormData parsing**: automatically converts `FormData` to HTML tables.

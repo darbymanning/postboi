@@ -31,7 +31,7 @@ Postboi is a framework-agnostic messaging library optimised for SvelteKit — **
 - 🍯 **Invisible spam protection** - a zero-config [honeypot](https://docs.postboi.email/spam), plus invisible captcha — fully managed on the Postboi provider, or bring your own Turnstile key
 - 🧩 **`<Captcha />` component** - one prop-free tag inside your own form, for [Svelte, React, Vue and Astro](https://docs.postboi.email/spam#the-captcha-component) — `postboi sync` bakes in the key
 - 🛡️ **Type-safe** - full TypeScript support with normalized error handling
-- 💬 **Every channel, one shape** - [`sms()`](https://docs.postboi.email/sms), [`whatsapp()`](https://docs.postboi.email/whatsapp), [`push()`](https://docs.postboi.email/push) and [`chat()`](https://docs.postboi.email/chat) resolve, hook and error exactly like `mail()` — Twilio, The SMS Works, Meta, Web Push, FCM, Slack, Discord, Teams, Telegram
+- 💬 **Every channel, one shape** - [`sms()`](https://docs.postboi.email/sms), [`whatsapp()`](https://docs.postboi.email/whatsapp), [`push()`](https://docs.postboi.email/push), [`slack()`, `discord()`, `teams()` and `telegram()`](https://docs.postboi.email/chat) resolve, hook and error exactly like `mail()` — Twilio, The SMS Works, Meta, Web Push, FCM and friends behind them
 - 📡 **Multi-channel `send()`** - [one call](https://docs.postboi.email/send) fans out to everything in `to`, or walks `channels: "cheapest"` (push → chat → email → whatsapp → sms) and stops at the first success — the fan-out runs in your process, so nobody meters it
 
 ## Quick start
@@ -156,12 +156,12 @@ Every channel is the same three moves: `bunx postboi init --sms` (or `--whatsapp
 normalized errors, same zero config:
 
 ```typescript
-import { sms, whatsapp, push, chat, send } from "postboi"
+import { sms, whatsapp, push, slack, send } from "postboi"
 
 await sms({ to: "+447788223344", message: "Your code is 4291" })
 await whatsapp({ to: "+447788223344", template: "order_shipped", variables: { name: "Ada" } })
 await push({ to: subscription, title: "Order shipped", message: "On its way" })
-await chat({ message: "Deploy finished" })
+await slack({ message: "Deploy finished" })
 
 // …or one call that stops at the first (cheapest) channel that works:
 await send({

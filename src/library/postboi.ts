@@ -9,9 +9,10 @@ export * from "./index.js"
 export { mail, cancel } from "./mail.js"
 // The zero-config `sms()` — same shape as `mail()`, on the SMS channel.
 export { sms } from "./sms/send.js"
-// The zero-config `chat()` — Slack, Discord, Teams, Telegram — and the per-platform
-// functions, so posting to two platforms is two imports rather than a provider choice.
-export { chat, slack, discord, teams, telegram } from "./chat/send.js"
+// The chat channel's per-platform functions. There's deliberately no generic `chat()`
+// export: you always know which platform you're posting to, so the platform is the name.
+// The channel-generic resolver still exists internally as `send()`'s chat leg.
+export { slack, discord, teams, telegram } from "./chat/send.js"
 // The zero-config `push()` — Web Push and FCM.
 export { push } from "./push/send.js"
 // The zero-config `whatsapp()` — Twilio or Meta's Cloud API.
