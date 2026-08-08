@@ -12,7 +12,7 @@
 import type { BatchResult } from "../transport.js"
 import type { ChatDefaults, ChatOptions } from "./types.js"
 import type { ChatProvider } from "./provider.js"
-import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
+import { resolve_channel_provider, resolve_fields, type ChannelResolution } from "../channels.js"
 import { inbox_sink } from "../channel_inbox.js"
 import { find_chat_provider, type ChatProviderKey } from "../registry.js"
 import { load_config } from "../config.js"
@@ -90,31 +90,32 @@ async function resolve_platform(key: ChatProviderKey): Promise<ChatProvider<unkn
 	const config = await load_config()
 	await ensure_env_loaded()
 
-	// The platform is fixed, so only its credentials need resolving: env first, then a
-	// non-secret value committed to the chat section of the config file.
+	// The platform is fixed, so only its credentials need resolving — the same precedence
+	// rule as the shared resolver (env, then a non-secret committed config value, then the
+	// field default), via the same code.
 	const meta = find_chat_provider(key)!
 	const options: Record<string, unknown> = { default: chat_env_defaults() }
-	for (const field of meta.fields) {
-		const value = read_env(field.env) ?? config.chat?.options?.[field.arg] ?? field.default
-		if (value === undefined) {
-			// Unconfigured in development is a fresh clone: capture to the inbox/console
-			// rather than fail, the same fallback chat() itself has.
-			if (is_development()) {
-				if (!warned_platform.has(key)) {
-					warned_platform.add(key)
-					console.warn(`postboi: no ${field.env} set — logging ${key} messages instead of posting.`)
-				}
-				const Mock = await LOADERS.mock()
-				return new Mock({ log: true, sink: inbox_sink("chat"), default: chat_env_defaults() })
+	const missing = resolve_fields(meta.fields, config.chat, options)
+	if (missing) {
+		// Unconfigured in development is a fresh clone: capture to the inbox/console
+		// rather than fail, the same fallback the shared resolver has.
+		if (is_development()) {
+			if (!warned_platform.has(key)) {
+				warned_platform.add(key)
+				console.warn(`postboi: no ${missing.env} set — logging ${key} messages instead of posting.`)
 			}
-			throw new PostboiError({
-				provider: key,
-				channel: "chat",
-				code: "missing_env",
-				message: `${key}() needs ${field.env} — set it in the environment.`,
-			})
+			const Mock = await LOADERS.mock()
+			return new Mock({ log: true, sink: inbox_sink("chat"), default: chat_env_defaults() })
 		}
-		options[field.arg] = value
+		throw new PostboiError({
+			provider: key,
+			channel: "chat",
+			code: "missing_env",
+			message:
+				`${key}() needs ${missing.env} — set it in the environment` +
+				(missing.secret ? "" : ` or as \`chat.options.${missing.arg}\` in postboi.config.ts`) +
+				". Run `bunx postboi init --chat`.",
+		})
 	}
 	const Provider = await LOADERS[key]()
 	return new Provider(options)

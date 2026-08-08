@@ -106,6 +106,13 @@ export function dialling_code(country: string): string {
 	return code
 }
 
+/**
+ * Dialling codes where the trunk `0` is kept when dialling internationally. Italy's leading
+ * zero is part of the number itself (+39 02… is a Milan landline), so stripping it reaches
+ * nobody — the opposite of the UK/EU norm.
+ */
+const TRUNK_ZERO_KEPT = new Set(["39"])
+
 /** Message the ambiguous-number error carries, kept in one place so tests can assert on it. */
 function ambiguous(value: string): PostboiError {
 	return new PostboiError({
@@ -125,6 +132,7 @@ function ambiguous(value: string): PostboiError {
  * Definitive shapes need no country: a leading `+`, or a leading `00` international prefix.
  * A national number needs `country` — a single leading `0` is treated as a trunk prefix and
  * stripped, which is right for the UK and most of Europe and harmless where there isn't one.
+ * Italy is the exception (its zero is part of the number) and is kept.
  *
  * **The ambiguous case**, and the one worth knowing about: bare digits with no `+` and no
  * leading `0` could be a national number *or* an international one someone forgot the `+`
@@ -150,8 +158,12 @@ export function to_e164(input: string | number, country?: string): string {
 	if (!country) throw ambiguous(String(input))
 	const code = dialling_code(country)
 
-	// National number with a trunk prefix — the common UK/EU shape.
-	if (raw.startsWith("0")) return validate(code + raw.replace(/^0+/, ""), input)
+	// National number with a trunk prefix — the common UK/EU shape. Italy is the exception:
+	// its leading zero is part of the subscriber number, not a prefix, so +39 keeps it.
+	if (raw.startsWith("0")) {
+		if (TRUNK_ZERO_KEPT.has(code)) return validate(code + raw, input)
+		return validate(code + raw.slice(1), input)
+	}
 	// Already carries the country code (someone dropped the "+"). The length guard is what
 	// stops a short national number that happens to begin with the dialling code being read
 	// as international: seven digits is the floor for a plausible subscriber number, and the

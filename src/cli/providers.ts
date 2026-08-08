@@ -7,16 +7,10 @@ export {
 	PUSH_PROVIDERS,
 	WHATSAPP_PROVIDERS,
 	find_provider,
-	find_sms_provider,
-	find_chat_provider,
-	find_push_provider,
-	find_whatsapp_provider,
 	type ProviderMeta,
 	type ProviderField,
 	type SmsProviderMeta,
-	type ChatProviderMeta,
-	type PushProviderMeta,
-	type WhatsappProviderMeta,
+	type NotedProviderMeta,
 } from "../library/registry.js"
 import type { ProviderMeta, SmsProviderMeta } from "../library/registry.js"
 
@@ -78,7 +72,12 @@ export function render_channel_config(
 	defaults: Record<string, string>,
 	options: Record<string, string>
 ): string {
-	const fn = { sms: "sms()", chat: "chat()", push: "push()", whatsapp: "whatsapp()" }[channel]
+	const fn = {
+		sms: "sms()",
+		chat: "slack() and friends",
+		push: "push()",
+		whatsapp: "whatsapp()",
+	}[channel]
 	return `import { config } from "postboi"
 
 // Project-wide config, picked up automatically by ${fn}. Commit this — keep secrets in env.

@@ -32,9 +32,10 @@ VAPID_PRIVATE_KEY=…
 VAPID_SUBJECT=mailto:you@example.com
 ```
 
-The VAPID key pair identifies **you** to the push service. The public half is also what the
-browser subscribes with, so the two must match — mismatched keys are rejected on every send
-with a 401 that explains nothing.
+The VAPID key pair identifies **you** to the push service. No dashboard hands one out —
+`bunx postboi init --push` generates it for you. The public half is also what the browser
+subscribes with, so the two must match — mismatched keys are rejected on every send with a
+401 that explains nothing.
 
 `VAPID_SUBJECT` is required by RFC 8292 so a push service operator can reach you about
 misbehaving traffic. `mailto:` or an https URL.

@@ -1,10 +1,5 @@
-import {
-	PushProvider,
-	type PreparedPush,
-	type PushOptions,
-	type PushProviderOptions,
-} from "./provider.js"
-import type { BatchResult, RequestSpec } from "../transport.js"
+import { PushProvider, type PreparedPush, type PushProviderOptions } from "./provider.js"
+import type { RequestSpec } from "../transport.js"
 import { PostboiError } from "../errors.js"
 import { MockRecorder, type MockRecorderOptions } from "../mock_recorder.js"
 
@@ -69,42 +64,28 @@ export default class MockPush extends PushProvider<SendResponse> {
 		this.#recorder.clear()
 	}
 
-	send(options: PushOptions): Promise<SendResponse>
-	send(
-		options: Array<PushOptions>,
-		batch?: { concurrency?: number }
-	): Promise<Array<BatchResult<SendResponse>>>
-	async send(
-		options: PushOptions | Array<PushOptions>,
-		batch: { concurrency?: number } = {}
-	): Promise<SendResponse | Array<BatchResult<SendResponse>>> {
-		if (Array.isArray(options)) {
-			return this.run_batch(options, (one) => this.send(one), batch)
+	// Capture instead of sending. Overriding `deliver` (not `send`) keeps the base class's
+	// overload handling, hooks and batching — the parts that would otherwise drift.
+	protected override async deliver(message: PreparedPush): Promise<SendResponse> {
+		if (this.#expired) {
+			throw new PostboiError({
+				provider: "mock",
+				channel: "push",
+				status: 410,
+				code: "expired_subscription",
+				message: "Push subscription has expired or been unsubscribed (simulated).",
+			})
 		}
-		return this.with_hooks(
-			() => this.prepare_push(options),
-			async (message) => {
-				if (this.#expired) {
-					throw new PostboiError({
-						provider: "mock",
-						channel: "push",
-						status: 410,
-						code: "expired_subscription",
-						message: "Push subscription has expired or been unsubscribed (simulated).",
-					})
-				}
-				return this.#recorder.capture({
-					to: typeof message.to === "string" ? message.to : message.to.endpoint,
-					title: message.title,
-					message: message.message,
-					url: message.url,
-					data: message.data,
-				})
-			}
-		)
+		return this.#recorder.capture({
+			to: typeof message.to === "string" ? message.to : message.to.endpoint,
+			title: message.title,
+			message: message.message,
+			url: message.url,
+			data: message.data,
+		})
 	}
 
-	// Never reached — `send` is overridden and nothing calls through to the HTTP path.
+	// Never reached — `deliver` is overridden and nothing calls through to the HTTP path.
 	protected build_request(_message: PreparedPush): RequestSpec {
 		throw new PostboiError({
 			provider: "mock",

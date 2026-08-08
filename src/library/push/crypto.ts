@@ -9,32 +9,11 @@
  */
 import { PostboiError } from "../errors.js"
 import type { WebPushSubscription } from "./types.js"
+import { from_base64url, to_base64url, type Bytes } from "../encoding.js"
+
+export { from_base64url, to_base64url }
 
 const encoder = new TextEncoder()
-
-/**
- * Byte arrays backed by a plain `ArrayBuffer`.
- *
- * WebCrypto's `BufferSource` excludes `SharedArrayBuffer`, and a bare `Uint8Array` is
- * `Uint8Array<ArrayBufferLike>` — which includes it. Pinning the buffer type here is what
- * lets these values be passed to `subtle.*` without a cast at every call.
- */
-type Bytes = Uint8Array<ArrayBuffer>
-
-/** Decode base64url (no padding) into bytes. */
-export function from_base64url(value: string): Bytes {
-	const base64 = value.replace(/-/g, "+").replace(/_/g, "/")
-	const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=")
-	const binary = atob(padded)
-	return Uint8Array.from(binary, (c) => c.charCodeAt(0))
-}
-
-/** Encode bytes as base64url with no padding. */
-export function to_base64url(bytes: Uint8Array): string {
-	let binary = ""
-	for (const byte of bytes) binary += String.fromCharCode(byte)
-	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-}
 
 function concat(...parts: Array<Uint8Array>): Bytes {
 	const total = parts.reduce((n, p) => n + p.length, 0)

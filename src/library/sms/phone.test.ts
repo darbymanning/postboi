@@ -19,6 +19,12 @@ describe("to_e164", () => {
 		expect(to_e164("07788 223344", "GB")).toBe("+447788223344")
 	})
 
+	it("keeps the leading zero for Italy, where it is part of the number", () => {
+		// +39 02… is a Milan landline; stripping the zero reaches nobody.
+		expect(to_e164("02 1234 5678", "IT")).toBe("+390212345678")
+		expect(to_e164("021234 5678", "+39")).toBe("+390212345678")
+	})
+
 	it("accepts a dialling code as the country, with or without the plus", () => {
 		expect(to_e164("07788223344", "+44")).toBe("+447788223344")
 		expect(to_e164("07788223344", "44")).toBe("+447788223344")

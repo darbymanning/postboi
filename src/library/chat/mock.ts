@@ -1,10 +1,5 @@
-import {
-	ChatProvider,
-	type ChatOptions,
-	type ChatProviderOptions,
-	type PreparedChat,
-} from "./provider.js"
-import type { BatchResult, RequestSpec } from "../transport.js"
+import { ChatProvider, type ChatProviderOptions, type PreparedChat } from "./provider.js"
+import type { RequestSpec } from "../transport.js"
 import { PostboiError } from "../errors.js"
 import { MockRecorder, type MockRecorderOptions } from "../mock_recorder.js"
 
@@ -61,31 +56,18 @@ export default class MockChat extends ChatProvider<SendResponse> {
 		this.#recorder.clear()
 	}
 
-	send(options: ChatOptions): Promise<SendResponse>
-	send(
-		options: Array<ChatOptions>,
-		batch?: { concurrency?: number }
-	): Promise<Array<BatchResult<SendResponse>>>
-	async send(
-		options: ChatOptions | Array<ChatOptions>,
-		batch: { concurrency?: number } = {}
-	): Promise<SendResponse | Array<BatchResult<SendResponse>>> {
-		if (Array.isArray(options)) {
-			return this.run_batch(options, (one) => this.send(one), batch)
-		}
-		return this.with_hooks(
-			() => this.prepare_chat(options),
-			async (message) =>
-				this.#recorder.capture({
-					to: message.to,
-					message: message.message,
-					title: message.title,
-					username: message.username,
-				})
-		)
+	// Capture instead of sending. Overriding `deliver` (not `send`) keeps the base class's
+	// overload handling, hooks and batching — the parts that would otherwise drift.
+	protected override async deliver(message: PreparedChat): Promise<SendResponse> {
+		return this.#recorder.capture({
+			to: message.to,
+			message: message.message,
+			title: message.title,
+			username: message.username,
+		})
 	}
 
-	// Never reached — `send` is overridden and nothing calls through to the HTTP path.
+	// Never reached — `deliver` is overridden and nothing calls through to the HTTP path.
 	protected build_request(_message: PreparedChat): RequestSpec {
 		throw new PostboiError({
 			provider: "mock",

@@ -453,21 +453,16 @@ export const SMS_PROVIDERS = [
 /** A known SMS provider key, e.g. `"twilio"` — derived from {@link SMS_PROVIDERS}. */
 export type SmsProviderKey = (typeof SMS_PROVIDERS)[number]["key"]
 
-/** Look up an SMS provider by its key. */
-export function find_sms_provider(key: string): SmsProviderMeta | undefined {
-	return SMS_PROVIDERS.find((p) => p.key === key)
-}
-
 /**
- * A chat provider's metadata. Simpler than SMS — chat is free, has no destination-based
- * pricing, and mostly needs nothing but a webhook URL.
+ * Provider metadata plus the one-line picker note — the shape chat, push and WhatsApp
+ * share. Simpler than SMS, which also carries regions and indicative pricing.
  */
-export type ChatProviderMeta = ProviderMeta & {
-	/** One line on what you'd use it for. */
+export type NotedProviderMeta = ProviderMeta & {
+	/** One line on why you'd pick this one. */
 	note: string
 }
 
-/** The chat providers `chat()` can drive. */
+/** The chat providers `slack()`, `discord()`, `teams()` and `telegram()` drive. */
 export const CHAT_PROVIDERS = [
 	{
 		key: "slack",
@@ -519,20 +514,14 @@ export const CHAT_PROVIDERS = [
 		// `fields` made the CLI commit it somewhere no provider reads.
 		fields: [{ env: "TELEGRAM_BOT_TOKEN", arg: "bot_token", label: "Bot token", secret: true }],
 	},
-] as const satisfies ReadonlyArray<ChatProviderMeta>
+] as const satisfies ReadonlyArray<NotedProviderMeta>
 
 /** A known chat provider key, e.g. `"slack"`. */
 export type ChatProviderKey = (typeof CHAT_PROVIDERS)[number]["key"]
 
-/** Look up a chat provider by its key. */
-export function find_chat_provider(key: string): ChatProviderMeta | undefined {
+/** Look up a chat provider by its key — what the platform functions resolve with. */
+export function find_chat_provider(key: string): NotedProviderMeta | undefined {
 	return CHAT_PROVIDERS.find((p) => p.key === key)
-}
-
-/** A push provider's metadata. */
-export type PushProviderMeta = ProviderMeta & {
-	/** One line on what you'd use it for. */
-	note: string
 }
 
 /** The push providers `push()` can drive. */
@@ -572,25 +561,14 @@ export const PUSH_PROVIDERS = [
 			},
 		],
 	},
-] as const satisfies ReadonlyArray<PushProviderMeta>
+] as const satisfies ReadonlyArray<NotedProviderMeta>
 
 /** A known push provider key, e.g. `"webpush"`. */
 export type PushProviderKey = (typeof PUSH_PROVIDERS)[number]["key"]
 
-/** Look up a push provider by its key. */
-export function find_push_provider(key: string): PushProviderMeta | undefined {
-	return PUSH_PROVIDERS.find((p) => p.key === key)
-}
-
-/**
- * A WhatsApp provider's metadata. The `note` carries the thing the picker most needs to
- * say: which of the two onboarding paths (Twilio sender vs Meta Business verification)
- * this provider commits you to.
- */
-export type WhatsappProviderMeta = ProviderMeta & {
-	/** One line on why you'd pick this one. */
-	note: string
-}
+// The WhatsApp notes carry the thing the picker most needs to say: which of the two
+// onboarding paths (Twilio sender vs Meta Business verification) each provider commits
+// you to.
 
 /** The WhatsApp providers `whatsapp()` can drive. */
 export const WHATSAPP_PROVIDERS = [
@@ -633,15 +611,10 @@ export const WHATSAPP_PROVIDERS = [
 			},
 		],
 	},
-] as const satisfies ReadonlyArray<WhatsappProviderMeta>
+] as const satisfies ReadonlyArray<NotedProviderMeta>
 
 /** A known WhatsApp provider key, e.g. `"meta"`. */
 export type WhatsappProviderKey = (typeof WHATSAPP_PROVIDERS)[number]["key"]
-
-/** Look up a WhatsApp provider by its key. */
-export function find_whatsapp_provider(key: string): WhatsappProviderMeta | undefined {
-	return WHATSAPP_PROVIDERS.find((p) => p.key === key)
-}
 
 /**
  * Every channel's provider list under one key. The `satisfies` is the point: adding a

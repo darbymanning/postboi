@@ -1,7 +1,7 @@
 import { PushProvider, type PreparedPush, type PushProviderOptions } from "./provider.js"
 import type { RequestSpec } from "../transport.js"
 import { PostboiError, type ProviderError } from "../errors.js"
-import { to_base64url } from "./crypto.js"
+import { base64_decode, to_base64url } from "../encoding.js"
 
 /** Options for the FCM provider constructor. */
 type Options = PushProviderOptions & {
@@ -34,8 +34,7 @@ function pem_to_der(pem: string): Uint8Array<ArrayBuffer> {
 		// Service-account JSON stores the key with literal "\n" sequences.
 		.replace(/\\n/g, "")
 		.replace(/\s/g, "")
-	const binary = atob(body)
-	return Uint8Array.from(binary, (c) => c.charCodeAt(0))
+	return base64_decode(body)
 }
 
 /**
