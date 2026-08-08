@@ -1,19 +1,21 @@
 ---
 title: Chat
 name: Chat
-description: Post to Slack, Discord, Teams or Telegram with chat() — the same shape as mail() and sms().
+description: Post to Slack, Discord, Teams or Telegram with slack(), discord(), teams() and telegram() — the same shape as mail() and sms(), with the platform in the name.
 category: Channels
 ---
 
 ```typescript
-import { chat } from "postboi"
+import { slack } from "postboi"
 
-await chat({ title: "Deploy", message: "Finished in 42s" })
+await slack({ title: "Deploy", message: "Finished in 42s" })
 ```
 
 The thinnest channel postboi has: no addresses to parse, no encoding to worry about, no
 delivery receipts. For Slack, Discord and Teams the destination lives inside the webhook
-URL, so there's usually nothing to pass but the message.
+URL, so there's usually nothing to pass but the message — and because you always know
+which platform you're posting to, **the platform is the function name**. There's no
+generic `chat()` to configure.
 
 ## Setup
 
@@ -38,12 +40,8 @@ Office 365 connector URLs with a clear error rather than letting them fail silen
 
 ## One platform, or several
 
-`chat()` posts to whichever platform `POSTBOI_CHAT_PROVIDER` (or `chat.provider` in your
-config) names — the right call when "the team chat" is one place, and the one
-[`send()`](/send) fans out through.
-
-The **per-platform functions** skip the provider question entirely. Each reads its own
-credential, so posting to two platforms is two imports, not a configuration choice:
+Each function reads its own credential, so posting to two platforms is two imports, not a
+configuration choice — a platform is configured the moment its env var exists:
 
 ```typescript
 import { slack, discord } from "postboi"
@@ -52,8 +50,10 @@ await slack({ title: "Deploy", message: "Finished in 42s" })
 await discord({ message: "New release is live 🎉" })
 ```
 
-There's no comma-separated provider list to maintain — a platform is configured the moment
-its env var exists.
+The one place a generic "team chat" still exists is [`send()`](/send): its chat leg is
+channel-generic by design, and posts to whichever platform `chat.provider` (or
+`POSTBOI_CHAT_PROVIDER`) names. That setting routes `send()`; your own code just calls
+the platform.
 
 ## Telegram is a registered identity, not an address
 

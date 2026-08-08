@@ -725,7 +725,10 @@ zero-config entry points to dispatch to.
   bot and you address them by `chat_id` — the same registered-identity problem as push
   tokens, so plan it alongside the subscription store
 
-**Shipped.** `chat()` with Slack, Discord, Teams and Telegram, plus a mock — the thinnest
+**Shipped.** Slack, Discord, Teams and Telegram, plus a mock — later reshaped into the
+per-platform `slack()`/`discord()`/`teams()`/`telegram()` (the generic `chat()` left the
+public surface: you always know which platform you're posting to, so it survives only as
+`send()`'s channel-generic chat leg) — the thinnest
 channel yet, since there are no addresses to parse, no encoding to count and no delivery
 receipts.
 

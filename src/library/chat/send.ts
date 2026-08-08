@@ -52,16 +52,13 @@ const RESOLUTION: ChannelResolution<ChatProvider<unknown>> = {
 }
 
 /**
- * Post a chat message without constructing anything. The provider comes from
- * `POSTBOI_CHAT_PROVIDER`; its webhook URL or token is read from the environment on each
- * call. Pass an array to post many.
+ * The channel-generic chat send: the provider comes from `POSTBOI_CHAT_PROVIDER` /
+ * `chat.provider`. **Not exported from the package root** — you always know which
+ * platform you're posting to, so the public surface is `slack()`, `discord()`, `teams()`
+ * and `telegram()`. This exists as `send()`'s chat leg, where "the team chat, whichever
+ * platform that is" is a real question because the caller is channel-generic.
  *
- * @example
- * ```ts
- * import { chat } from "postboi"
- *
- * await chat({ message: "Deploy finished" })
- * ```
+ * @internal
  */
 export function chat(options: ChatOptions): Promise<unknown>
 export function chat(
