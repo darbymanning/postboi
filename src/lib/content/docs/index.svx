@@ -24,7 +24,7 @@ await sms({ to: '+44 7788 223344', message: 'Your code is 4291' })
 - 👨‍💻 **Zero configuration**: works out of the box with minimal setup.
 - 🔌 **Provider-based**: swap providers on any channel without changing your code.
 - 💬 **Five channels, one shape**: [`sms()`](/sms), [`whatsapp()`](/whatsapp),
-  [`push()`](/push), [`slack()` and friends](/chat) resolve, hook and error exactly like
+  [`push()`](/push), [`slack()`](/slack) and friends resolve, hook and error exactly like
   `mail()`.
 - 📡 **Multi-channel [`send()`](/send)**: fan out to every channel, or stop at the
   cheapest one that works.
@@ -59,7 +59,7 @@ or set things up by hand with [Manual setup](/manual-setup).
 | ------------------------------------------ | ------------------------------------------------- |
 | [Quick start](/quick-start)           | `postboi init`: pick a provider, send your first email |
 | [Multi-channel send()](/send)         | One call across email, SMS, WhatsApp, push and chat |
-| [SMS](/sms), [WhatsApp](/whatsapp), [Push](/push), [Chat](/chat) | Each channel's setup and quirks |
+| [SMS](/sms), [WhatsApp](/whatsapp), [Push](/push), [Slack](/slack), [Discord](/discord), [Teams](/teams), [Telegram](/telegram) | Each channel's setup and quirks |
 | [Manual setup](/manual-setup)         | Wire Postboi up by hand without the CLI           |
 | [SvelteKit form actions](/sveltekit)  | One-line contact forms                            |
 | [Hosted forms](/forms)                | Contact forms for static sites, no backend       |

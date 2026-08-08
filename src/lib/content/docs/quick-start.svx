@@ -112,8 +112,9 @@ sending code never names a provider, so swapping later is a one-line config chan
 
 The same `init` sets up the other channels — `--sms`, `--whatsapp`, `--push`, `--chat` —
 and each channel's call works exactly the way `mail()` does. Start with
-[Multi-channel send()](/send), or jump straight to [SMS](/sms),
-[WhatsApp](/whatsapp), [Push](/push) or [Chat](/chat).
+[Multi-channel send()](/send), or jump straight to [SMS](/sms), [WhatsApp](/whatsapp),
+[Push](/push), [Slack](/slack), [Discord](/discord), [Teams](/teams) or
+[Telegram](/telegram).
 
 Signed in to the Postboi provider, `init` also **syncs the credentials it collects to
 your account**, so a teammate's `postboi sync` fills in their env file with no ceremony —

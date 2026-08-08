@@ -11,7 +11,7 @@ terminal means you never see the thing you're actually building.
 
 So Postboi ships a local inbox. Start your dev server and everything lands at
 `/__postboi` instead of going out — mail with rendered HTML, headers and attachments, and
-[texts](/sms), [WhatsApp messages](/whatsapp), [chat posts](/chat) and
+[texts](/sms), [WhatsApp messages](/whatsapp), [chat posts](/slack) and
 [pushes](/push) alongside them.
 
 **Your code doesn't change.** No `preview()`, no `if (dev)`, no separate provider. The
@@ -87,9 +87,10 @@ The other channels land here too, each by its own rule:
 - **[SMS](/sms) and [WhatsApp](/whatsapp)** are intercepted in development whether or not
   an inbox is running — a stray text costs money and can't be recalled. With an inbox up,
   the capture lands there; without one, it's printed to the console.
-- **[Chat](/chat) and [push](/push)** send for real in development once configured
-  (posting to your own Slack is usually the point). Unconfigured, their dev fallback
-  captures to the inbox instead of erroring.
+- **Chat ([Slack](/slack), [Discord](/discord), [Teams](/teams), [Telegram](/telegram))
+  and [push](/push)** send for real in development once configured (posting to your own
+  Slack is usually the point). Unconfigured, their dev fallback captures to the inbox
+  instead of erroring.
 
 Two guards keep that from ever biting a deploy:
 
