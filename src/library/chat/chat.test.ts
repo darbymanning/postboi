@@ -4,7 +4,7 @@ import Slack from "./slack.js"
 import Discord from "./discord.js"
 import Teams from "./teams.js"
 import Telegram from "./telegram.js"
-import { chat } from "./send.js"
+import { chat, slack, discord, telegram } from "./send.js"
 import { configure, reset_config } from "../config.js"
 import type { Channel, PostboiError } from "../errors.js"
 
@@ -194,5 +194,90 @@ describe("zero-config chat()", () => {
 
 		await chat({ message: "hi" })
 		expect(fetch).toHaveBeenCalledOnce()
+	})
+})
+
+describe("per-platform functions", () => {
+	afterEach(() => {
+		delete process.env.DISCORD_WEBHOOK_URL
+		delete process.env.TELEGRAM_BOT_TOKEN
+	})
+
+	it("slack() reads its own env credential, no provider selection involved", async () => {
+		process.env.SLACK_WEBHOOK_URL = HOOK
+		const fetch = vi.fn().mockResolvedValue(respond({ body: "ok" }))
+		vi.stubGlobal("fetch", fetch)
+
+		await slack({ message: "Deploy finished" })
+		expect(fetch.mock.calls[0][0]).toBe(HOOK)
+	})
+
+	it("two platforms post side by side from one app", async () => {
+		process.env.SLACK_WEBHOOK_URL = HOOK
+		process.env.DISCORD_WEBHOOK_URL = "https://discord.example.test/api/webhooks/1/x"
+		const fetch = vi.fn().mockResolvedValue(respond({ status: 204 }))
+		vi.stubGlobal("fetch", fetch)
+
+		await slack({ message: "to slack" })
+		await discord({ message: "to discord" })
+		expect(fetch.mock.calls[0][0]).toBe(HOOK)
+		expect(fetch.mock.calls[1][0]).toContain("discord.example.test")
+	})
+
+	it("telegram() takes a chat id per send, with the token from env", async () => {
+		process.env.TELEGRAM_BOT_TOKEN = "123:ABC"
+		const fetch = vi
+			.fn()
+			.mockResolvedValue(respond({ body: { ok: true, result: { message_id: 7 } } }))
+		vi.stubGlobal("fetch", fetch)
+
+		await telegram({ to: "987654321", message: "Deploy finished" })
+		expect(fetch.mock.calls[0][0]).toContain("api.telegram.org/bot123:ABC")
+		expect(JSON.parse(fetch.mock.calls[0][1].body as string).chat_id).toBe("987654321")
+	})
+
+	it("names the missing env var outside development", async () => {
+		await expect(slack({ message: "hi" })).rejects.toMatchObject({ code: "missing_env" })
+		await expect(slack({ message: "hi" })).rejects.toThrow(/SLACK_WEBHOOK_URL/)
+	})
+
+	it("falls back to the logging mock in development", async () => {
+		process.env.NODE_ENV = "development"
+		const fetch = vi.fn()
+		vi.stubGlobal("fetch", fetch)
+		const log = vi.spyOn(console, "log").mockImplementation(() => {})
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+		await slack({ message: "hi" })
+		expect(fetch).not.toHaveBeenCalled()
+		log.mockRestore()
+		warn.mockRestore()
+	})
+})
+
+describe("teams legacy connector URLs", () => {
+	it("rejects an Office 365 connector URL instead of letting it fail silently", async () => {
+		vi.stubGlobal("fetch", vi.fn())
+		const legacy = new Teams({ webhook_url: "https://outlook.office.com/webhook/abc/def" })
+		await expect(legacy.send({ message: "hi" })).rejects.toMatchObject({
+			code: "legacy_webhook",
+		})
+
+		const tenant = new Teams({
+			webhook_url: "https://contoso.webhook.office.com/webhookb2/xyz",
+		})
+		await expect(tenant.send({ message: "hi" })).rejects.toMatchObject({
+			code: "legacy_webhook",
+		})
+	})
+
+	it("accepts a Workflows URL", async () => {
+		const fetch = vi.fn().mockResolvedValue(respond({ status: 202 }))
+		vi.stubGlobal("fetch", fetch)
+		const flow = new Teams({
+			webhook_url: "https://prod-01.westeurope.logic.azure.com:443/workflows/x/triggers/y",
+		})
+		await flow.send({ message: "hi" })
+		expect(fetch.mock.calls[0][0]).toContain("logic.azure.com")
 	})
 })

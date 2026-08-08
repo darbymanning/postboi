@@ -502,9 +502,9 @@ export const CHAT_PROVIDERS = [
 		import: "postboi/teams",
 		class: "Teams",
 		url: "https://learn.microsoft.com/en-us/power-automate/overview-cloud",
-		// Worth saying in the picker itself: a legacy connector URL looks plausible and
-		// silently no longer delivers.
-		note: "Power Automate Workflows webhook — Office 365 connectors were disabled in May 2026",
+		// Legacy connector URLs are rejected by the provider itself, so the picker only has
+		// to say which kind of URL to go and get.
+		note: "Power Automate Workflows webhook (legacy connector URLs are rejected)",
 		fields: [{ env: "TEAMS_WEBHOOK_URL", arg: "webhook_url", label: "Workflow URL", secret: true }],
 	},
 	{
