@@ -1,10 +1,9 @@
 import {
 	WhatsappProvider,
 	type PreparedWhatsapp,
-	type WhatsappOptions,
 	type WhatsappProviderOptions,
 } from "./provider.js"
-import type { BatchResult, RequestSpec } from "../transport.js"
+import type { RequestSpec } from "../transport.js"
 import { PostboiError } from "../errors.js"
 import { MockRecorder, type MockRecorderOptions } from "../mock_recorder.js"
 
@@ -72,43 +71,29 @@ export default class MockWhatsapp extends WhatsappProvider<SendResponse> {
 		this.#recorder.clear()
 	}
 
-	send(options: WhatsappOptions): Promise<SendResponse>
-	send(
-		options: Array<WhatsappOptions>,
-		batch?: { concurrency?: number }
-	): Promise<Array<BatchResult<SendResponse>>>
-	async send(
-		options: WhatsappOptions | Array<WhatsappOptions>,
-		batch: { concurrency?: number } = {}
-	): Promise<SendResponse | Array<BatchResult<SendResponse>>> {
-		if (Array.isArray(options)) {
-			return this.run_batch(options, (one) => this.send(one), batch)
+	// Capture instead of sending. Overriding `deliver` (not `send`) keeps the base class's
+	// overload handling, hooks and batching — the parts that would otherwise drift.
+	protected override async deliver(message: PreparedWhatsapp): Promise<SendResponse> {
+		if (this.#outside_window && message.message) {
+			throw new PostboiError({
+				provider: "mock",
+				channel: "whatsapp",
+				code: "outside_window",
+				message:
+					"Outside the 24-hour customer service window (simulated) — send a template instead.",
+			})
 		}
-		return this.with_hooks(
-			() => this.prepare_whatsapp(options),
-			async (message) => {
-				if (this.#outside_window && message.message) {
-					throw new PostboiError({
-						provider: "mock",
-						channel: "whatsapp",
-						code: "outside_window",
-						message:
-							"Outside the 24-hour customer service window (simulated) — send a template instead.",
-					})
-				}
-				return this.#recorder.capture({
-					to: message.to,
-					from: message.from,
-					message: message.message,
-					template: message.template,
-					variables: message.variables,
-					language: message.language,
-				})
-			}
-		)
+		return this.#recorder.capture({
+			to: message.to,
+			from: message.from,
+			message: message.message,
+			template: message.template,
+			variables: message.variables,
+			language: message.language,
+		})
 	}
 
-	// Never reached — `send` is overridden and nothing calls through to the HTTP path.
+	// Never reached — `deliver` is overridden and nothing calls through to the HTTP path.
 	protected build_request(_message: PreparedWhatsapp): RequestSpec {
 		throw new PostboiError({
 			provider: "mock",

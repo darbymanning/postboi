@@ -18,7 +18,14 @@ import {
 	render_block,
 	type CliProvider,
 } from "./providers.js"
-import { detect_env_targets, upsert_env, remove_env, is_gitignored, type EnvTarget } from "./env.js"
+import {
+	detect_env_targets,
+	upsert_env,
+	remove_env,
+	is_gitignored,
+	parse_env,
+	type EnvTarget,
+} from "./env.js"
 import {
 	detect_hosts,
 	detect_adapter_host,
@@ -59,6 +66,7 @@ import {
 	type PostboiDomain,
 } from "./postboi.js"
 import { credential_env_keys } from "../library/registry.js"
+import { to_base64url } from "../library/encoding.js"
 import {
 	write_types,
 	write_runtime,
@@ -199,6 +207,16 @@ function write_env_values(targets: Array<EnvTarget>, values: Record<string, stri
 	}
 }
 
+/** Every assignment in the project's env file(s) — what the bare `env push` sweep reads. */
+function read_project_env(): Record<string, string> {
+	const out: Record<string, string> = {}
+	for (const target of detect_env_targets(readdirSync("."))) {
+		if (!existsSync(target.file)) continue
+		Object.assign(out, parse_env(readFileSync(target.file, "utf8")))
+	}
+	return out
+}
+
 /**
  * Push freshly-collected credentials to the account, so teammates (and this developer's
  * next machine) get them from `postboi sync` with no ceremony. Quiet no-op without a
@@ -213,10 +231,14 @@ async function sync_credentials_up(values: Record<string, string>): Promise<void
 	await ensure_env_loaded()
 	const token = read_env("POSTBOI_TOKEN")
 	if (!token) return
-	if (await push_env_vars(cloud_base(), token, syncable)) {
+	const pushed = await push_env_vars(cloud_base(), token, syncable)
+	if (pushed.ok) {
 		console.log(
 			`${green("✓")} synced ${Object.keys(syncable).length} credential(s) to your Postboi account ${dim("(teammates get them with `postboi sync`)")}`
 		)
+	} else if (pushed.reason) {
+		// A rejection is worth a line; an unreachable API stays quiet — sync is best-effort.
+		console.log(yellow(`! credential sync skipped — ${pushed.reason}`))
 	}
 }
 
@@ -567,6 +589,18 @@ function warn_unbundled_config(): void {
 }
 
 /**
+ * Preview a secret: enough to recognise a value, never enough to reconstruct one. The
+ * reveal scales with length — at most a quarter of the value, capped at six characters,
+ * and nothing at all for short secrets (showing 6 of a 9-char secret is most of it).
+ */
+function masked(value: string): string {
+	const budget = Math.min(6, Math.floor(value.length / 4))
+	if (budget < 3) return "•••"
+	const head = Math.ceil((budget * 2) / 3)
+	return `${value.slice(0, head)}…${value.slice(-(budget - head))}`
+}
+
+/**
  * `postboi env` — the team's synced channel credentials, explicitly.
  *
  * `init` pushes what it collects and `sync` pulls what's missing, so most projects never
@@ -597,10 +631,7 @@ async function env_command(args: Array<string>): Promise<void> {
 		}
 		console.log(`${bold("Synced credentials")} ${dim(`(${keys.length})`)}`)
 		for (const key of keys) {
-			const value = synced.vars[key]
-			// Enough to recognise a value, never enough to use one.
-			const masked = value.length > 8 ? `${value.slice(0, 4)}…${value.slice(-2)}` : "•••"
-			console.log(`  ${green("✓")} ${bold(key)} ${dim(masked)}`)
+			console.log(`  ${green("✓")} ${bold(key)} ${dim(masked(synced.vars[key]))}`)
 		}
 		console.log(dim("\nPull into this machine: `postboi sync` (or `postboi env pull --force`)"))
 		return
@@ -608,7 +639,10 @@ async function env_command(args: Array<string>): Promise<void> {
 
 	if (action === "push") {
 		// Explicit KEY=value args win; otherwise push every registry-known credential the
-		// local environment holds. POSTBOI_* never syncs — the token is per developer.
+		// *project's env files* hold. Never the ambient shell environment: an exported
+		// AWS_SECRET_ACCESS_KEY for unrelated work matches the registry too, and a bare
+		// `env push` must not quietly sync it to the whole team. POSTBOI_* never syncs —
+		// the token is per developer.
 		const explicit = args.slice(1).filter((arg) => arg.includes("="))
 		const vars: Record<string, string> = {}
 		if (explicit.length > 0) {
@@ -617,19 +651,25 @@ async function env_command(args: Array<string>): Promise<void> {
 				vars[pair.slice(0, at)] = pair.slice(at + 1)
 			}
 		} else {
+			const local = read_project_env()
 			for (const key of credential_env_keys()) {
-				const value = read_env(key)
+				const value = local[key]
 				if (value !== undefined && value !== "") vars[key] = value
 			}
 		}
 		const keys = Object.keys(vars).filter((key) => !key.startsWith("POSTBOI_"))
 		if (keys.length === 0) {
-			console.log(dim("No credentials found in the local environment to push."))
+			console.log(
+				dim(
+					"No credentials found in the project's env files to push. Pass KEY=value to push one explicitly."
+				)
+			)
 			return
 		}
 		const payload = Object.fromEntries(keys.map((key) => [key, vars[key]]))
-		if (!(await push_env_vars(base, token, payload))) {
-			console.log(red("Push failed — could not reach the Postboi API."))
+		const pushed = await push_env_vars(base, token, payload)
+		if (!pushed.ok) {
+			console.log(red(`Push failed — ${pushed.reason ?? "could not reach the Postboi API."}`))
 			return exit(1)
 		}
 		console.log(`${green("✓")} pushed ${keys.length} credential(s): ${bold(keys.join(", "))}`)
@@ -649,8 +689,9 @@ async function env_command(args: Array<string>): Promise<void> {
 	}
 
 	if (action === "remove" && args[1]) {
-		if (!(await push_env_vars(base, token, { [args[1]]: null }))) {
-			console.log(red("Remove failed — could not reach the Postboi API."))
+		const removed = await push_env_vars(base, token, { [args[1]]: null })
+		if (!removed.ok) {
+			console.log(red(`Remove failed — ${removed.reason ?? "could not reach the Postboi API."}`))
 			return exit(1)
 		}
 		console.log(`${green("✓")} removed ${bold(args[1])} from the synced credentials`)
@@ -1050,6 +1091,56 @@ type ChannelProvider = {
 }
 
 /**
+ * Mint a VAPID key pair (P-256): the public key as the base64url uncompressed point the
+ * push service and `subscribe_push` expect, the private key as the JWK `d` scalar —
+ * exactly the shapes `vapid_header` consumes.
+ */
+export async function generate_vapid_keys(): Promise<{ public_key: string; private_key: string }> {
+	const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+		"sign",
+		"verify",
+	])
+	const point = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))
+	const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey)
+	return { public_key: to_base64url(point), private_key: jwk.d! }
+}
+
+/**
+ * What makes one channel's init its own: the registry, the picker prompt, and the
+ * done-snippet. A compile-checked map instead of per-call ternary chains, so a new
+ * channel can't silently fall through to another channel's branch.
+ */
+const CHANNEL_INIT = {
+	chat: {
+		registry: CHAT_PROVIDERS as ReadonlyArray<ChannelProvider>,
+		picker: "Which chat platform?",
+		// The public surface is the platform function, so the snippet names the one just
+		// configured — there is no generic chat() import.
+		done: (provider: ChannelProvider) => [
+			`import { ${provider.key} } from "postboi"\n\nawait ${provider.key}({ message: "Deploy finished" })`,
+		],
+	},
+	push: {
+		registry: PUSH_PROVIDERS as ReadonlyArray<ChannelProvider>,
+		picker: "Which push service?",
+		done: () => [
+			'import { push } from "postboi"\n\nawait push({ to: subscription, message: "…" })',
+			// The half people forget: a push target has to be registered before it exists.
+			"Subscribe in the browser with `subscribe_push()` from postboi/push-client first.",
+		],
+	},
+	whatsapp: {
+		registry: WHATSAPP_PROVIDERS as ReadonlyArray<ChannelProvider>,
+		picker: "WhatsApp via which provider?",
+		done: () => [
+			'import { whatsapp } from "postboi"\n\nawait whatsapp({ to: "+447788223344", template: "…", variables: { name: "Ada" } })',
+			// The constraint that shapes everything: free-form only works in-window.
+			"Free-form `message` only delivers within 24h of the user's last reply — templates deliver anytime.\nIn development messages are logged, not sent — set POSTBOI_WHATSAPP_DEV=send for real delivery.",
+		],
+	},
+} satisfies Record<"chat" | "push" | "whatsapp", unknown>
+
+/**
  * Chat, push and WhatsApp onboarding.
  *
  * Simpler than SMS: none of these have destination-dependent pricing, so there's nothing
@@ -1061,29 +1152,35 @@ async function channel_init(
 	files: Array<string>,
 	channel: "chat" | "push" | "whatsapp"
 ): Promise<void> {
-	// Widened to the shared shape: the registries are separate const-narrowed tuples, and
-	// only the fields used here are common to them.
-	const registry: ReadonlyArray<ChannelProvider> =
-		channel === "chat" ? CHAT_PROVIDERS : channel === "push" ? PUSH_PROVIDERS : WHATSAPP_PROVIDERS
+	// The registries are separate const-narrowed tuples; the map widens each to the shared
+	// shape, which carries every field used here.
+	const spec = CHANNEL_INIT[channel]
 	const provider = await prompts.select<ChannelProvider>(
-		bold(
-			channel === "chat"
-				? "Which chat platform?"
-				: channel === "push"
-					? "Which push service?"
-					: "WhatsApp via which provider?"
-		),
-		registry.map((p) => ({ label: p.name, value: p, hint: p.note }))
+		bold(spec.picker),
+		spec.registry.map((p) => ({ label: p.name, value: p, hint: p.note }))
 	)
 
 	console.log(`\n${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
 	const values: Record<string, string> = {}
 	const config_options: Record<string, string> = {}
+	// Web Push's "credential" is a VAPID key pair you mint yourself — no dashboard hands
+	// one out, so mint it here rather than dead-ending the prompt on keys nobody has.
+	const prefilled: Record<string, string> = {}
+	if (provider.key === "webpush" && (await prompts.confirm("Generate a fresh VAPID key pair?"))) {
+		const pair = await generate_vapid_keys()
+		prefilled.VAPID_PUBLIC_KEY = pair.public_key
+		prefilled.VAPID_PRIVATE_KEY = pair.private_key
+		console.log(
+			`${green("✓")} generated — the public key also goes to the browser's \`subscribe_push({ key })\`:\n  ${dim(pair.public_key)}\n`
+		)
+	}
 	for (const field of provider.fields) {
-		const value = await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
-			required: field.default === undefined,
-			default: field.default,
-		})
+		const value =
+			prefilled[field.env] ??
+			(await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
+				required: field.default === undefined,
+				default: field.default,
+			}))
 		if (field.secret) {
 			if (value) values[field.env] = value
 		} else if (value) config_options[field.arg] = value
@@ -1128,31 +1225,7 @@ async function channel_init(
 	write_channel_config(channel, provider.key, config_defaults, config_options)
 
 	console.log(`\n${green(bold("Done!"))}\n`)
-	if (channel === "chat") {
-		console.log(
-			dim('import { chat } from "postboi"\n\nawait chat({ message: "Deploy finished" })') + "\n"
-		)
-	} else if (channel === "push") {
-		console.log(
-			dim('import { push } from "postboi"\n\nawait push({ to: subscription, message: "…" })') + "\n"
-		)
-		// The half people forget: a push target has to be registered before it exists.
-		console.log(
-			dim("Subscribe in the browser with `subscribe_push()` from postboi/push-client first.") + "\n"
-		)
-	} else {
-		console.log(
-			dim(
-				'import { whatsapp } from "postboi"\n\nawait whatsapp({ to: "+447788223344", template: "…", variables: { name: "Ada" } })'
-			) + "\n"
-		)
-		// The constraint that shapes everything: free-form only works in-window.
-		console.log(
-			dim(
-				"Free-form `message` only delivers within 24h of the user's last reply — templates deliver anytime.\nIn development messages are logged, not sent — set POSTBOI_WHATSAPP_DEV=send for real delivery."
-			) + "\n"
-		)
-	}
+	for (const line of spec.done(provider)) console.log(dim(line) + "\n")
 }
 
 /** Write (or show how to merge) a channel block of `postboi.config`. */

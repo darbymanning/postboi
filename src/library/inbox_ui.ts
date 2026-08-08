@@ -10,6 +10,18 @@
  */
 
 import { THEME_CSS } from "./inbox_theme.js"
+import type { Channel } from "./errors.js"
+
+/**
+ * Channel chip labels, typed here (and inlined into the client script below) so adding a
+ * channel without a label is a compile error rather than a blank chip.
+ */
+const CHANNEL_LABELS = {
+	sms: "SMS",
+	whatsapp: "WhatsApp",
+	chat: "Chat",
+	push: "Push",
+} satisfies Record<Exclude<Channel, "email">, string>
 
 /**
  * The Postboi mark, inlined as a data URI — the tab icon, and the badge in every title
@@ -643,7 +655,7 @@ var ICON_BELL =
 	'<path d="M8 1.3c2.5 0 4 1.8 4 4.2 0 2.3.7 3.2 1.5 3.9h-11c.8-.7 1.5-1.6 1.5-3.9C4 3.1 5.5 1.3 8 1.3z" fill="#fff2c9" stroke="#3f3f3f" stroke-linejoin="round"/>' +
 	'<path d="M6.7 10.4a1.4 1.4 0 0 0 2.6 0" fill="none" stroke="#3f3f3f"/>' +
 	"</svg>"
-var CHANNELS = { sms: "SMS", whatsapp: "WhatsApp", chat: "Chat", push: "Push" }
+var CHANNELS = ${JSON.stringify(CHANNEL_LABELS)}
 function channel_of(m) { return m.channel || "email" }
 function snip(text, n) {
 	text = String(text == null ? "" : text)

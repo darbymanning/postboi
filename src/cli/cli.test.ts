@@ -18,7 +18,14 @@ import {
 	render_config,
 	render_block,
 } from "./providers.js"
-import { detect_env_targets, format_line, upsert_env, remove_env, is_gitignored } from "./env.js"
+import {
+	detect_env_targets,
+	format_line,
+	upsert_env,
+	remove_env,
+	is_gitignored,
+	parse_env,
+} from "./env.js"
 import { detect_hosts, detect_adapter_host, push_spec, manual_hint } from "./deploy.js"
 import {
 	add_remote_exclude,
@@ -170,6 +177,21 @@ describe("env file writing", () => {
 
 	it("escapes quotes and backslashes", () => {
 		expect(format_line("dotenv", "K", 'a"b\\c')).toBe('K="a\\"b\\\\c"')
+	})
+
+	it("escapes newlines so a multi-line value cannot corrupt the file", () => {
+		// An FCM service-account key is a multi-line PEM; raw newlines would split it
+		// across lines and garble everything after it.
+		const pem = "-----BEGIN PRIVATE KEY-----\nabc\ndef\n-----END PRIVATE KEY-----"
+		const line = format_line("dotenv", "FCM_PRIVATE_KEY", pem)
+		expect(line).not.toContain("\n")
+		expect(parse_env(`${line}\nOTHER=1\n`)).toEqual({ FCM_PRIVATE_KEY: pem, OTHER: "1" })
+	})
+
+	it("parse_env reads quoted, exported and bare assignments, skipping comments", () => {
+		expect(
+			parse_env('# comment\nRESEND_API_KEY="re_1"\nexport K="v"\nBARE=plain\nnot a line\n')
+		).toEqual({ RESEND_API_KEY: "re_1", K: "v", BARE: "plain" })
 	})
 
 	it("remove_env drops the key line (any flavour) and leaves everything else", () => {
@@ -741,13 +763,9 @@ describe("synced credentials (postboi env)", () => {
 		const synced = await fetch_env_vars("https://postboi.email", "pb_secret", async (url, init) => {
 			expect(url).toBe("https://postboi.email/v1/env")
 			expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer pb_secret")
-			return json({
-				vars: { RESEND_API_KEY: "re_123", BROKEN: 42 },
-				updated_at: "2026-08-08T00:00:00Z",
-			})
+			return json({ vars: { RESEND_API_KEY: "re_123", BROKEN: 42 } })
 		})
 		expect(synced?.vars).toEqual({ RESEND_API_KEY: "re_123" })
-		expect(synced?.updated_at).toBe("2026-08-08T00:00:00Z")
 	})
 
 	it("fetch_env_vars returns undefined on an API that predates the endpoint", async () => {
@@ -769,10 +787,32 @@ describe("synced credentials (postboi env)", () => {
 				return json({ stored: 1, removed: 1 })
 			}
 		)
-		expect(ok).toBe(true)
+		expect(ok).toEqual({ ok: true })
 		expect(sent).toEqual({
 			vars: { SLACK_WEBHOOK_URL: "https://hooks.slack.com/x", OLD_KEY: null },
 		})
+	})
+
+	it("push_env_vars relays the API's rejection reason instead of blaming the network", async () => {
+		const rejected = await push_env_vars(
+			"https://postboi.email",
+			"pb_secret",
+			{ RESEND_API_KEY: "re_123" },
+			async () => json({ message: "an account stores at most 100 env vars" }, 422)
+		)
+		expect(rejected).toEqual({ ok: false, reason: "an account stores at most 100 env vars" })
+	})
+
+	it("push_env_vars reports an unreachable API with no reason", async () => {
+		const failed = await push_env_vars(
+			"https://postboi.email",
+			"pb_secret",
+			{ RESEND_API_KEY: "re_123" },
+			async () => {
+				throw new Error("network down")
+			}
+		)
+		expect(failed).toEqual({ ok: false })
 	})
 
 	it("credential_env_keys spans every channel and never includes POSTBOI_TOKEN", () => {

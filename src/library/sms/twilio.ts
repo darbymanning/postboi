@@ -1,6 +1,13 @@
 import { SmsProvider, type PreparedSms, type SmsProviderOptions } from "./provider.js"
 import type { RequestSpec } from "../transport.js"
 import { PostboiError, type ProviderError } from "../errors.js"
+import {
+	twilio_auth,
+	twilio_messages_url,
+	twilio_parse_error,
+	twilio_parse_response,
+	type TwilioSendResponse,
+} from "../twilio_common.js"
 
 /** Options for the Twilio provider constructor. */
 type Options = SmsProviderOptions & {
@@ -15,7 +22,7 @@ type Options = SmsProviderOptions & {
 	messaging_service_sid?: string
 }
 
-type SendResponse = { sid: string; status: string }
+type SendResponse = TwilioSendResponse
 
 /**
  * Twilio — https://www.twilio.com/docs/messaging/api/message-resource
@@ -90,11 +97,10 @@ export default class Twilio extends SmsProvider<SendResponse> {
 			body.set("SendAt", message.scheduled_at.toISOString())
 		}
 
-		const auth = Buffer.from(`${this.#account_sid}:${this.#auth_token}`).toString("base64")
 		return {
-			url: `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(this.#account_sid)}/Messages.json`,
+			url: twilio_messages_url(this.#account_sid),
 			headers: {
-				Authorization: `Basic ${auth}`,
+				Authorization: twilio_auth(this.#account_sid, this.#auth_token),
 				"Content-Type": "application/x-www-form-urlencoded",
 				...(message.idempotency_key
 					? { "I-Twilio-Idempotency-Token": message.idempotency_key }
@@ -105,27 +111,19 @@ export default class Twilio extends SmsProvider<SendResponse> {
 	}
 
 	protected parse_response(_response: Response, data: unknown): SendResponse {
-		const d = data as Record<string, unknown> | null
-		return { sid: (d?.sid as string) ?? "", status: (d?.status as string) ?? "queued" }
+		return twilio_parse_response(data)
 	}
 
 	protected parse_error(_response: Response, data: unknown): ProviderError | undefined {
-		if (data === null || typeof data !== "object") return undefined
-		const e = data as Record<string, unknown>
-		// Twilio errors: { code, message, more_info, status }. A success carries `sid`.
-		if (typeof e.message === "string" && !("sid" in e)) {
-			return { message: e.message, code: e.code as string | number | undefined }
-		}
-		return undefined
+		return twilio_parse_error(data)
 	}
 
 	/** Cancel a scheduled message — only possible while its status is still `scheduled`. */
 	async cancel(id: string): Promise<{ id: string }> {
-		const auth = Buffer.from(`${this.#account_sid}:${this.#auth_token}`).toString("base64")
 		const response = await this.request({
-			url: `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(this.#account_sid)}/Messages/${encodeURIComponent(id)}.json`,
+			url: twilio_messages_url(this.#account_sid, id),
 			headers: {
-				Authorization: `Basic ${auth}`,
+				Authorization: twilio_auth(this.#account_sid, this.#auth_token),
 				"Content-Type": "application/x-www-form-urlencoded",
 			},
 			body: new URLSearchParams({ Status: "canceled" }).toString(),

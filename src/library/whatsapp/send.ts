@@ -1,17 +1,16 @@
 /**
  * The zero-config `whatsapp()`, on the shared channel resolution in `channels.ts`.
  *
- * Development interception mirrors SMS, for the same reason: a WhatsApp template send
- * costs real money and reaches a real handset with no way to recall it. The way back out
- * is explicit — `dev: { whatsapp: false }` or `POSTBOI_WHATSAPP_DEV=send`.
+ * Development interception (shared with SMS, in the resolver) exists for the same reason
+ * SMS has it: a WhatsApp template send costs real money and reaches a real handset with no
+ * way to recall it. The way back out is explicit — `dev: { whatsapp: false }` or
+ * `POSTBOI_WHATSAPP_DEV=send`.
  */
 import type { BatchResult } from "../transport.js"
 import type { WhatsappDefaults, WhatsappOptions } from "./types.js"
 import { WhatsappProvider } from "./provider.js"
 import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
-import { inbox_sink } from "../channel_inbox.js"
-import { load_config } from "../config.js"
-import { is_development, read_env } from "../env.js"
+import { read_env } from "../env.js"
 
 type WhatsappConstructor = new (options: Record<string, unknown>) => WhatsappProvider<unknown>
 
@@ -20,14 +19,6 @@ const LOADERS: ChannelResolution<WhatsappProvider<unknown>>["loaders"] = {
 	twilio: () => import("./twilio.js").then((m) => m.default as unknown as WhatsappConstructor),
 	meta: () => import("./meta.js").then((m) => m.default as unknown as WhatsappConstructor),
 	mock: () => import("./mock.js").then((m) => m.default as unknown as WhatsappConstructor),
-}
-
-let announced_intercept = false
-
-/** Has the developer explicitly asked for real sends in development? */
-function dev_sending_allowed(configured: boolean | undefined): boolean {
-	if (read_env("POSTBOI_WHATSAPP_DEV") === "send") return true
-	return configured === false
 }
 
 /** Read the WhatsApp defaults from the environment. Only defined values are included. */
@@ -53,24 +44,12 @@ const RESOLUTION: ChannelResolution<WhatsappProvider<unknown>> = {
 	init_flag: "--whatsapp",
 	dev_fallback_warning:
 		"postboi: no WhatsApp provider configured — logging messages to the console instead of sending. Run `bunx postboi init --whatsapp` to send for real.",
-}
-
-async function resolve_provider(): Promise<WhatsappProvider<unknown>> {
-	// Same interception policy as SMS, checked before any credential is looked at, so a
-	// configured provider is outranked rather than consulted.
-	const config = await load_config()
-	if (is_development() && !dev_sending_allowed(config.dev?.whatsapp)) {
-		if (!announced_intercept) {
-			announced_intercept = true
-			console.warn(
-				"postboi: development — WhatsApp messages are logged, not sent. Set `dev: { whatsapp: false }` in postboi.config or POSTBOI_WHATSAPP_DEV=send to send for real."
-			)
-		}
-		const Mock = await LOADERS.mock()
-		// Captured messages land in the dev inbox when one is running, console otherwise.
-		return new Mock({ log: true, sink: inbox_sink("whatsapp"), default: whatsapp_env_defaults() })
-	}
-	return resolve_channel_provider(RESOLUTION)
+	dev_intercept: {
+		env_key: "POSTBOI_WHATSAPP_DEV",
+		configured: (config) => config.dev?.whatsapp,
+		warning:
+			"postboi: development — WhatsApp messages are logged, not sent. Set `dev: { whatsapp: false }` in postboi.config or POSTBOI_WHATSAPP_DEV=send to send for real.",
+	},
 }
 
 /**
@@ -98,7 +77,7 @@ export async function whatsapp(
 	options: WhatsappOptions | Array<WhatsappOptions>,
 	batch: { concurrency?: number } = {}
 ): Promise<unknown> {
-	const provider = await resolve_provider()
+	const provider = await resolve_channel_provider(RESOLUTION)
 	if (Array.isArray(options)) return provider.send(options, batch)
 	return provider.send(options)
 }

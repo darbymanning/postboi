@@ -60,7 +60,7 @@ export class PostboiError extends Error {
  * **not** trigger the `on.error` hook.
  */
 export class SkipSendError extends PostboiError {
-	constructor(message = "Email send was skipped by a before.send hook", code: string = "skipped") {
+	constructor(message = "Send was skipped by a before.send hook", code: string = "skipped") {
 		super({ provider: "skip", message, code })
 		this.name = "SkipSendError"
 	}

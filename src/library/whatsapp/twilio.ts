@@ -5,6 +5,13 @@ import {
 } from "./provider.js"
 import type { RequestSpec } from "../transport.js"
 import type { ProviderError } from "../errors.js"
+import {
+	twilio_auth,
+	twilio_messages_url,
+	twilio_parse_error,
+	twilio_parse_response,
+	type TwilioSendResponse,
+} from "../twilio_common.js"
 
 /** Options for the Twilio WhatsApp provider constructor. */
 type Options = WhatsappProviderOptions & {
@@ -19,7 +26,7 @@ type Options = WhatsappProviderOptions & {
 	messaging_service_sid?: string
 }
 
-type SendResponse = { sid: string; status: string }
+type SendResponse = TwilioSendResponse
 
 /**
  * Twilio's error code for a free-form message sent outside the 24-hour customer service
@@ -74,11 +81,10 @@ export default class TwilioWhatsapp extends WhatsappProvider<SendResponse> {
 			body.set("Body", message.message ?? "")
 		}
 
-		const auth = Buffer.from(`${this.#account_sid}:${this.#auth_token}`).toString("base64")
 		return {
-			url: `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(this.#account_sid)}/Messages.json`,
+			url: twilio_messages_url(this.#account_sid),
 			headers: {
-				Authorization: `Basic ${auth}`,
+				Authorization: twilio_auth(this.#account_sid, this.#auth_token),
 				"Content-Type": "application/x-www-form-urlencoded",
 			},
 			body: body.toString(),
@@ -86,25 +92,20 @@ export default class TwilioWhatsapp extends WhatsappProvider<SendResponse> {
 	}
 
 	protected parse_response(_response: Response, data: unknown): SendResponse {
-		const d = data as Record<string, unknown> | null
-		return { sid: (d?.sid as string) ?? "", status: (d?.status as string) ?? "queued" }
+		return twilio_parse_response(data)
 	}
 
 	protected parse_error(_response: Response, data: unknown): ProviderError | undefined {
-		if (data === null || typeof data !== "object") return undefined
-		const e = data as Record<string, unknown>
-		// Twilio errors: { code, message, more_info, status }. A success carries `sid`.
-		if (typeof e.message === "string" && !("sid" in e)) {
-			if (e.code === OUTSIDE_WINDOW) {
-				return {
-					message:
-						"Outside the 24-hour customer service window — free-form text can't be delivered. Send a pre-approved template instead. Check with whatsapp.closed(error).",
-					code: "outside_window",
-				}
+		const error = twilio_parse_error(data)
+		// The one WhatsApp-specific mapping: outside the 24-hour customer service window.
+		if (error?.code === OUTSIDE_WINDOW) {
+			return {
+				message:
+					"Outside the 24-hour customer service window — free-form text can't be delivered. Send a pre-approved template instead. Check with whatsapp.closed(error).",
+				code: "outside_window",
 			}
-			return { message: e.message, code: e.code as string | number | undefined }
 		}
-		return undefined
+		return error
 	}
 }
 

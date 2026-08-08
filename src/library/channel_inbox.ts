@@ -1,8 +1,8 @@
 /**
  * The bridge between the channel mocks and the local dev inbox: normalise a capture into
  * the inbox's mail-ish shape and hand it over. Wired in by the dev-interception paths
- * (`sms()`, `whatsapp()`) and the unconfigured-in-development fallback (`chat()`,
- * `push()`), never by a mock a test constructed itself.
+ * (`sms()`, `whatsapp()`) and the unconfigured-in-development fallback (`slack()` and
+ * friends, `push()`), never by a mock a test constructed itself.
  *
  * Internal: not part of the public surface.
  */
@@ -24,12 +24,16 @@ const CHANNEL_NOUN: Record<NonEmail, string> = {
 
 const announced = new Set<NonEmail>()
 
-/** Turn one channel's captured shape into the inbox's. */
-function normalise(channel: NonEmail, captured: unknown): ChannelCapture {
-	if (channel === "sms") {
+/**
+ * Per-channel capture → inbox-shape normalisers. A map checked with `satisfies` so adding
+ * a channel without teaching the inbox about it is a compile error, not a capture quietly
+ * rendered as a push notification with the wrong fields.
+ */
+const NORMALISERS = {
+	sms(captured: unknown): ChannelCapture {
 		const sms = captured as SentSms
 		return {
-			channel,
+			channel: "sms",
 			to: sms.to.map((address) => ({ address })),
 			from: sms.from ? { address: sms.from } : undefined,
 			text: sms.message,
@@ -41,43 +45,45 @@ function normalise(channel: NonEmail, captured: unknown): ChannelCapture {
 			],
 			scheduled_at: sms.scheduled_at,
 		}
-	}
-	if (channel === "whatsapp") {
+	},
+	whatsapp(captured: unknown): ChannelCapture {
 		const wa = captured as SentWhatsapp
 		const meta: Array<[string, string]> = []
 		if (wa.template) meta.push(["Template", wa.template], ["Language", wa.language])
 		if (wa.variables) meta.push(["Variables", JSON.stringify(wa.variables)])
 		return {
-			channel,
+			channel: "whatsapp",
 			to: [{ address: wa.to }],
 			from: wa.from ? { address: wa.from } : undefined,
 			subject: wa.template ? `Template: ${wa.template}` : undefined,
 			text: wa.message,
 			meta,
 		}
-	}
-	if (channel === "chat") {
+	},
+	chat(captured: unknown): ChannelCapture {
 		const chat = captured as SentChat
 		return {
-			channel,
+			channel: "chat",
 			to: [{ address: chat.to }],
 			subject: chat.title,
 			text: chat.message,
 			meta: chat.username ? [["Posts as", chat.username]] : [],
 		}
-	}
-	const push = captured as SentPush
-	const meta: Array<[string, string]> = []
-	if (push.url) meta.push(["Opens", push.url])
-	if (push.data) meta.push(["Data", JSON.stringify(push.data)])
-	return {
-		channel,
-		to: [{ address: push.to }],
-		subject: push.title,
-		text: push.message,
-		meta,
-	}
-}
+	},
+	push(captured: unknown): ChannelCapture {
+		const push = captured as SentPush
+		const meta: Array<[string, string]> = []
+		if (push.url) meta.push(["Opens", push.url])
+		if (push.data) meta.push(["Data", JSON.stringify(push.data)])
+		return {
+			channel: "push",
+			to: [{ address: push.to }],
+			subject: push.title,
+			text: push.message,
+			meta,
+		}
+	},
+} satisfies Record<NonEmail, (captured: unknown) => ChannelCapture>
 
 /**
  * A {@link MockRecorderOptions.sink} for one channel: deliver each capture to a running
@@ -90,7 +96,7 @@ export function inbox_sink(channel: Channel): (captured: unknown) => Promise<boo
 	return async function deliver(captured: unknown): Promise<boolean> {
 		const inbox = await resolve_inbox()
 		if (!inbox) return false
-		const taken = await inbox.capture(normalise(chan, captured))
+		const taken = await inbox.capture(NORMALISERS[chan](captured))
 		if (taken && !announced.has(chan)) {
 			announced.add(chan)
 			console.log(

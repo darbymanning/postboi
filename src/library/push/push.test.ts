@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import MockPush from "./mock.js"
-import WebPush from "./webpush.js"
+import WebPush, { clear_vapid_cache } from "./webpush.js"
 import { PushProvider } from "./provider.js"
 import { push } from "./send.js"
 import { configure, reset_config } from "../config.js"
@@ -107,6 +107,7 @@ describe("webpush", () => {
 	})
 
 	it("signs one VAPID JWT per push-service origin, not per send", async () => {
+		clear_vapid_cache()
 		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond({})))
 		// ECDSA signing only happens in vapid_header — payload encryption is ECDH + AES.
 		const sign_spy = vi.spyOn(crypto.subtle, "sign")
@@ -121,6 +122,12 @@ describe("webpush", () => {
 			endpoint: "https://updates.push.services.mozilla.com/wpush/v2/xyz",
 		}
 		await notify.send({ to: elsewhere, message: "three" })
+		expect(sign_spy).toHaveBeenCalledTimes(2)
+
+		// The cache is shared across instances on purpose: zero-config push() constructs a
+		// fresh provider per call, and a per-instance cache would never hit.
+		const fresh = new WebPush(VAPID)
+		await fresh.send({ to: SUBSCRIPTION, message: "four" })
 		expect(sign_spy).toHaveBeenCalledTimes(2)
 		sign_spy.mockRestore()
 	})

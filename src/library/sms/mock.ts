@@ -1,10 +1,5 @@
-import {
-	SmsProvider,
-	type PreparedSms,
-	type SmsOptions,
-	type SmsProviderOptions,
-} from "./provider.js"
-import type { BatchResult, RequestSpec } from "../transport.js"
+import { SmsProvider, type PreparedSms, type SmsProviderOptions } from "./provider.js"
+import type { RequestSpec } from "../transport.js"
 import { PostboiError } from "../errors.js"
 import { MockRecorder, type MockRecorderOptions } from "../mock_recorder.js"
 import { segments } from "./phone.js"
@@ -71,32 +66,19 @@ export default class MockSms extends SmsProvider<SendResponse> {
 		this.#recorder.clear()
 	}
 
-	send(options: SmsOptions): Promise<SendResponse>
-	send(
-		options: Array<SmsOptions>,
-		batch?: { concurrency?: number }
-	): Promise<Array<BatchResult<SendResponse>>>
-	async send(
-		options: SmsOptions | Array<SmsOptions>,
-		batch: { concurrency?: number } = {}
-	): Promise<SendResponse | Array<BatchResult<SendResponse>>> {
-		if (Array.isArray(options)) {
-			return this.run_batch(options, (one) => this.send(one), batch)
-		}
-		return this.with_hooks(
-			() => this.prepare_sms(options),
-			async (message) =>
-				this.#recorder.capture({
-					to: message.to,
-					from: message.from,
-					message: message.message,
-					segments: segments(message.message),
-					scheduled_at: message.scheduled_at,
-				})
-		)
+	// Capture instead of sending. Overriding `deliver` (not `send`) keeps the base class's
+	// overload handling, hooks and batching — the parts that would otherwise drift.
+	protected override async deliver(message: PreparedSms): Promise<SendResponse> {
+		return this.#recorder.capture({
+			to: message.to,
+			from: message.from,
+			message: message.message,
+			segments: segments(message.message),
+			scheduled_at: message.scheduled_at,
+		})
 	}
 
-	// Never reached — `send` is overridden and nothing calls through to the HTTP path.
+	// Never reached — `deliver` is overridden and nothing calls through to the HTTP path.
 	protected build_request(_message: PreparedSms): RequestSpec {
 		throw new PostboiError({
 			provider: "mock",

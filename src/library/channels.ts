@@ -1,5 +1,6 @@
 /**
- * The zero-config provider resolution shared by `sms()`, `chat()` and `push()`.
+ * The zero-config provider resolution shared by `sms()`, `whatsapp()`, `push()` and the
+ * chat platform functions (`slack()` and friends).
  *
  * One implementation on purpose: the credential-precedence rule (env, then committed
  * config options, then the field default) and the errors it produces are behaviour users
@@ -11,7 +12,7 @@
  * Internal: not part of the public surface.
  */
 import { PostboiError, type Channel } from "./errors.js"
-import { find_channel_provider } from "./registry.js"
+import { find_channel_provider, type ProviderField } from "./registry.js"
 import { inbox_sink } from "./channel_inbox.js"
 import { load_config, type PostboiConfig } from "./config.js"
 import { ensure_env_loaded, is_development, read_env } from "./env.js"
@@ -33,9 +34,50 @@ export interface ChannelResolution<TProvider> {
 	init_flag: string
 	/** Printed once when nothing is configured in development. */
 	dev_fallback_warning: string
+	/**
+	 * Development interception — for channels where a stray dev message costs money and
+	 * reaches a real handset (SMS, WhatsApp). When set, every development send is captured
+	 * regardless of configuration, unless explicitly opted out; checked before any
+	 * credential is looked at, so a configured provider is outranked, not consulted.
+	 */
+	dev_intercept?: {
+		/** Env switch that re-enables real sends when set to "send", e.g. "POSTBOI_SMS_DEV". */
+		env_key: string
+		/** The channel's `dev` flag in the config file — `false` means "send for real". */
+		configured: (config: PostboiConfig) => boolean | undefined
+		/** Printed once when interception first engages. */
+		warning: string
+	}
 }
 
 const warned_dev_fallback = new Set<Channel>()
+const announced_intercept = new Set<Channel>()
+
+/** Construct the channel's logging mock, sinking captures to the dev inbox when one runs. */
+async function dev_mock<TProvider>(spec: ChannelResolution<TProvider>): Promise<TProvider> {
+	const Mock = await spec.loaders.mock()
+	return new Mock({ log: true, sink: inbox_sink(spec.channel), default: spec.env_defaults() })
+}
+
+/**
+ * Resolve one provider's credential fields into constructor options: env first, then a
+ * non-secret value committed to the channel's config section, then the field default.
+ * Returns the first missing required field instead of throwing — what "missing" means
+ * differs by caller (an error for a configured provider, the dev mock for a platform
+ * function), but the precedence rule must not.
+ */
+export function resolve_fields(
+	fields: ReadonlyArray<ProviderField>,
+	section: { options?: Record<string, string> } | undefined,
+	options: Record<string, unknown>
+): ProviderField | undefined {
+	for (const field of fields) {
+		const value = read_env(field.env) ?? section?.options?.[field.arg] ?? field.default
+		if (value === undefined) return field
+		options[field.arg] = value
+	}
+	return undefined
+}
 
 /**
  * Construct the configured provider for a channel, or the logging mock in development
@@ -49,6 +91,23 @@ export async function resolve_channel_provider<TProvider>(
 	const config = await load_config()
 	await ensure_env_loaded()
 
+	// Development interception, and deliberately stricter than email's dev inbox: it
+	// engages whenever NODE_ENV=development, because the failure modes aren't comparable —
+	// a stray email is embarrassing, a stray text costs money, reaches a real handset, and
+	// cannot be recalled. The way back out is explicit (the channel's `dev` config flag or
+	// its POSTBOI_*_DEV=send switch).
+	const intercept = spec.dev_intercept
+	if (intercept && is_development()) {
+		const allowed = read_env(intercept.env_key) === "send" || intercept.configured(config) === false
+		if (!allowed) {
+			if (!announced_intercept.has(spec.channel)) {
+				announced_intercept.add(spec.channel)
+				console.warn(intercept.warning)
+			}
+			return dev_mock(spec)
+		}
+	}
+
 	const section = spec.section(config)
 	const key = read_env(spec.env_key) ?? section?.provider
 
@@ -61,13 +120,8 @@ export async function resolve_channel_provider<TProvider>(
 				warned_dev_fallback.add(spec.channel)
 				console.warn(spec.dev_fallback_warning)
 			}
-			const Mock = await spec.loaders.mock()
 			// Captures land in the dev inbox when one is running, console otherwise.
-			return new Mock({
-				log: true,
-				sink: inbox_sink(spec.channel),
-				default: spec.env_defaults(),
-			})
+			return dev_mock(spec)
 		}
 		throw new PostboiError({
 			provider: "postboi",
@@ -93,23 +147,19 @@ export async function resolve_channel_provider<TProvider>(
 	const options: Record<string, unknown> = { default: spec.env_defaults() }
 	// `meta` is undefined for credential-free providers (the mock) with no registry entry.
 	const meta = find_channel_provider(spec.channel, key)
-	for (const field of meta?.fields ?? []) {
-		// env wins, then a non-secret value committed to the config file, then the default.
-		const value = read_env(field.env) ?? section?.options?.[field.arg] ?? field.default
-		if (value === undefined) {
-			throw new PostboiError({
-				provider: key,
-				channel: spec.channel,
-				code: "missing_env",
-				message:
-					`${spec.channel} provider "${key}" needs ${field.env} — set it in the environment` +
-					(field.secret
-						? ""
-						: ` or as \`${spec.channel}.options.${field.arg}\` in postboi.config.ts`) +
-					(spec.init_flag ? `. Run \`bunx postboi init ${spec.init_flag}\`.` : "."),
-			})
-		}
-		options[field.arg] = value
+	const missing = resolve_fields(meta?.fields ?? [], section, options)
+	if (missing) {
+		throw new PostboiError({
+			provider: key,
+			channel: spec.channel,
+			code: "missing_env",
+			message:
+				`${spec.channel} provider "${key}" needs ${missing.env} — set it in the environment` +
+				(missing.secret
+					? ""
+					: ` or as \`${spec.channel}.options.${missing.arg}\` in postboi.config.ts`) +
+				(spec.init_flag ? `. Run \`bunx postboi init ${spec.init_flag}\`.` : "."),
+		})
 	}
 
 	// A mock reached through configuration is there for a human to read, so it logs.

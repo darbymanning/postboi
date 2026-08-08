@@ -7,6 +7,21 @@ import { encrypt_payload, vapid_header, MAX_PAYLOAD_BYTES } from "./crypto.js"
 type SendResponse = { ok: true; endpoint: string }
 
 /**
+ * Signed VAPID headers, cached per signing key and push-service origin. The JWT's audience
+ * is the origin, not the endpoint, so one signature covers every subscription on the same
+ * service — and in practice that's nearly all of them (a user base concentrates on a
+ * handful of browser push services). Module-level like FCM's token cache, and for the same
+ * reason: the zero-config `push()` constructs a fresh provider per call, so an
+ * instance-level cache would never hit and every message would pay an ECDSA signature.
+ */
+const vapid_cache = new Map<string, { header: string; signed_at: number }>()
+
+/** Forget every cached VAPID header — for tests, which share the module-level cache. */
+export function clear_vapid_cache(): void {
+	vapid_cache.clear()
+}
+
+/**
  * Web Push — VAPID (RFC 8292) plus `aes128gcm` payload encryption (RFC 8291).
  *
  * Works in every browser worth naming, and unusually for this library there is **no
@@ -31,12 +46,6 @@ export default class WebPush extends PushProvider<SendResponse> {
 	#public_key: string
 	#private_key: string
 	#subject: string
-	// Signed VAPID headers, cached per push-service origin. The JWT's audience is the
-	// origin, not the endpoint, so one signature covers every subscription on the same
-	// service — and in practice that's nearly all of them (a user base concentrates on a
-	// handful of browser push services). Signing per send would do an ECDSA operation per
-	// message for an identical result.
-	#vapid_cache = new Map<string, { header: string; signed_at: number }>()
 
 	constructor({ public_key, private_key, subject, ...options }: WebPushOptions) {
 		super(options)
@@ -48,8 +57,9 @@ export default class WebPush extends PushProvider<SendResponse> {
 	/** The cached VAPID header for this endpoint's origin, re-signed when near expiry. */
 	async #vapid_for(endpoint: string): Promise<string> {
 		const origin = new URL(endpoint).origin
+		const key = `${this.#public_key}|${origin}`
 		const now = Date.now()
-		const cached = this.#vapid_cache.get(origin)
+		const cached = vapid_cache.get(key)
 		// The JWT expires 12 hours after signing; refresh an hour early so a send never
 		// carries a token that lapses mid-flight.
 		if (cached && now - cached.signed_at < 11 * 60 * 60 * 1000) return cached.header
@@ -60,7 +70,7 @@ export default class WebPush extends PushProvider<SendResponse> {
 			this.#subject,
 			now
 		)
-		this.#vapid_cache.set(origin, { header, signed_at: now })
+		vapid_cache.set(key, { header, signed_at: now })
 		return header
 	}
 

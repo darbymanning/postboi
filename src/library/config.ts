@@ -82,8 +82,8 @@ export interface PostboiConfig {
 		options?: Record<string, string>
 	}
 	/**
-	 * Chat channel settings for the zero-config `chat()` — Slack, Discord, Teams, Telegram.
-	 * `POSTBOI_CHAT_*` env vars win over anything here.
+	 * Chat channel settings for the platform functions (`slack()`, `discord()`, `teams()`,
+	 * `telegram()`) and `send()`'s chat leg. `POSTBOI_CHAT_*` env vars win over anything here.
 	 */
 	chat?: {
 		/** Provider key (`slack`, `discord`, `teams`, `telegram`). */

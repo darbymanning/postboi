@@ -38,6 +38,8 @@ describe("package exports", () => {
 			"env.ts",
 			"workers_env.ts", // Cloudflare binding reader, used by env.ts
 			"mail.ts",
+			"encoding.ts", // shared base64/base64url codecs, used by webhooks, push and FCM
+			"twilio_common.ts", // Twilio plumbing shared by the SMS and WhatsApp providers
 			"channels.ts", // shared zero-config resolution, used by each channel send.ts
 			"send.ts", // the multi-channel fan-out, re-exported from the root
 			"mock_recorder.ts", // shared mock capture machinery, used by each channel mock
@@ -64,7 +66,7 @@ describe("package exports", () => {
 			"sms/send.ts", // the zero-config sms(), re-exported from the root
 			"chat/types.ts", // pure types, re-exported from the root
 			"chat/provider.ts", // the chat base class, reached via each provider
-			"chat/send.ts", // the zero-config chat(), re-exported from the root
+			"chat/send.ts", // the platform functions (slack() and friends), re-exported from the root
 			"push/types.ts", // pure types, re-exported from the root
 			"push/provider.ts", // the push base class, reached via each provider
 			"push/crypto.ts", // VAPID + aes128gcm, used by push/webpush.ts
