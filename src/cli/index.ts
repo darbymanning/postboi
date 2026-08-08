@@ -54,8 +54,11 @@ import {
 	poll_device_auth,
 	open_browser,
 	fetch_domains,
+	fetch_env_vars,
+	push_env_vars,
 	type PostboiDomain,
 } from "./postboi.js"
+import { credential_env_keys } from "../library/registry.js"
 import {
 	write_types,
 	write_runtime,
@@ -94,7 +97,8 @@ ${dim(`  v${version()}`)}
 
 ${bold("Usage")}
   ${cyan("bunx postboi init")}     Set up the Postboi provider or a provider of your own
-  ${cyan("bunx postboi sync")}     Refresh the generated from types from your Postboi domains
+  ${cyan("bunx postboi sync")}     Pull synced team credentials and refresh the generated from types
+  ${cyan("bunx postboi env")}      The synced credentials ${dim("· push · pull [--force] · remove <KEY>")}
   ${cyan("bunx postboi dev")}      Local inbox for mail sent in development
   ${dim("                          · --port <n> --demo --no-sound --no-intro")}
   ${dim("                          (Vite projects already serve it at /__postboi)")}
@@ -193,6 +197,50 @@ function write_env_values(targets: Array<EnvTarget>, values: Record<string, stri
 		}
 		if (target.note) console.log(`  ${yellow("!")} ${target.note}`)
 	}
+}
+
+/**
+ * Push freshly-collected credentials to the account, so teammates (and this developer's
+ * next machine) get them from `postboi sync` with no ceremony. Quiet no-op without a
+ * token — nothing to sync to — and `POSTBOI_*` vars never sync: the token is per
+ * developer, and the rest derive from the account already.
+ */
+async function sync_credentials_up(values: Record<string, string>): Promise<void> {
+	const syncable = Object.fromEntries(
+		Object.entries(values).filter(([key]) => !key.startsWith("POSTBOI_"))
+	)
+	if (Object.keys(syncable).length === 0) return
+	await ensure_env_loaded()
+	const token = read_env("POSTBOI_TOKEN")
+	if (!token) return
+	if (await push_env_vars(cloud_base(), token, syncable)) {
+		console.log(
+			`${green("✓")} synced ${Object.keys(syncable).length} credential(s) to your Postboi account ${dim("(teammates get them with `postboi sync`)")}`
+		)
+	}
+}
+
+/**
+ * Write vars pulled from the account into the project's env file(s) — every one that
+ * already exists, or a fresh `.env`. Existing local values are left alone unless `force`:
+ * a local override is a decision, and sync doesn't overrule decisions.
+ */
+function write_pulled_vars(vars: Record<string, string>, force = false): Array<string> {
+	const keys = Object.keys(vars).filter((key) => force || read_env(key) === undefined)
+	if (keys.length === 0) return []
+	const targets = detect_env_targets(readdirSync("."))
+	for (const target of targets) {
+		let content = existsSync(target.file) ? readFileSync(target.file, "utf8") : ""
+		for (const key of keys) content = upsert_env(content, key, vars[key], target.format)
+		writeFileSync(target.file, content)
+	}
+	const gitignore = existsSync(".gitignore") ? readFileSync(".gitignore", "utf8") : ""
+	for (const target of targets) {
+		if (target.file !== ".envrc" && !is_gitignored(gitignore, target.file)) {
+			console.log(`  ${yellow("!")} ${bold(target.file)} isn't gitignored — it holds secrets now`)
+		}
+	}
+	return keys
 }
 
 /** Offer to gitignore any env file that isn't covered yet. */
@@ -518,6 +566,101 @@ function warn_unbundled_config(): void {
 	)
 }
 
+/**
+ * `postboi env` — the team's synced channel credentials, explicitly.
+ *
+ * `init` pushes what it collects and `sync` pulls what's missing, so most projects never
+ * run this. It exists for the edges: seeing what's synced, pushing a credential that was
+ * set by hand, or deliberately taking the team's values over local ones.
+ */
+async function env_command(args: Array<string>): Promise<void> {
+	await ensure_env_loaded()
+	const token = read_env("POSTBOI_TOKEN")
+	if (!token) {
+		console.log(red("postboi env needs a POSTBOI_TOKEN — run `bunx postboi init` first."))
+		return exit(1)
+	}
+	const base = cloud_base()
+	const action = args[0] ?? "list"
+
+	if (action === "list") {
+		const synced = await fetch_env_vars(base, token)
+		if (!synced) return void console.log(red("Could not reach the Postboi API."))
+		const keys = Object.keys(synced.vars)
+		if (keys.length === 0) {
+			console.log(
+				dim(
+					"Nothing synced yet. `postboi init` pushes credentials as it collects them, or push by hand: `postboi env push`."
+				)
+			)
+			return
+		}
+		console.log(`${bold("Synced credentials")} ${dim(`(${keys.length})`)}`)
+		for (const key of keys) {
+			const value = synced.vars[key]
+			// Enough to recognise a value, never enough to use one.
+			const masked = value.length > 8 ? `${value.slice(0, 4)}…${value.slice(-2)}` : "•••"
+			console.log(`  ${green("✓")} ${bold(key)} ${dim(masked)}`)
+		}
+		console.log(dim("\nPull into this machine: `postboi sync` (or `postboi env pull --force`)"))
+		return
+	}
+
+	if (action === "push") {
+		// Explicit KEY=value args win; otherwise push every registry-known credential the
+		// local environment holds. POSTBOI_* never syncs — the token is per developer.
+		const explicit = args.slice(1).filter((arg) => arg.includes("="))
+		const vars: Record<string, string> = {}
+		if (explicit.length > 0) {
+			for (const pair of explicit) {
+				const at = pair.indexOf("=")
+				vars[pair.slice(0, at)] = pair.slice(at + 1)
+			}
+		} else {
+			for (const key of credential_env_keys()) {
+				const value = read_env(key)
+				if (value !== undefined && value !== "") vars[key] = value
+			}
+		}
+		const keys = Object.keys(vars).filter((key) => !key.startsWith("POSTBOI_"))
+		if (keys.length === 0) {
+			console.log(dim("No credentials found in the local environment to push."))
+			return
+		}
+		const payload = Object.fromEntries(keys.map((key) => [key, vars[key]]))
+		if (!(await push_env_vars(base, token, payload))) {
+			console.log(red("Push failed — could not reach the Postboi API."))
+			return exit(1)
+		}
+		console.log(`${green("✓")} pushed ${keys.length} credential(s): ${bold(keys.join(", "))}`)
+		return
+	}
+
+	if (action === "pull") {
+		const synced = await fetch_env_vars(base, token)
+		if (!synced) return void console.log(red("Could not reach the Postboi API."))
+		const written = write_pulled_vars(synced.vars, args.includes("--force"))
+		if (written.length === 0) {
+			console.log(dim("Nothing to pull — every synced credential already has a local value."))
+			return
+		}
+		console.log(`${green("✓")} pulled ${written.length} credential(s): ${bold(written.join(", "))}`)
+		return
+	}
+
+	if (action === "remove" && args[1]) {
+		if (!(await push_env_vars(base, token, { [args[1]]: null }))) {
+			console.log(red("Remove failed — could not reach the Postboi API."))
+			return exit(1)
+		}
+		console.log(`${green("✓")} removed ${bold(args[1])} from the synced credentials`)
+		return
+	}
+
+	console.log(red(`Unknown env action: ${action}. Try list, push, pull or remove <KEY>.`))
+	exit(1)
+}
+
 async function sync(): Promise<void> {
 	await ensure_env_loaded()
 	if (!existsSync(TYPES_TARGET)) {
@@ -568,6 +711,19 @@ async function sync(): Promise<void> {
 				wrote = true
 			}
 			if (wrote) console.log(`${green("✓")} synced ${bold("POSTBOI_WEBHOOK_SECRET")}`)
+		}
+	}
+
+	// Pull the team's synced channel credentials into the local env. Only keys with no
+	// local value — a deliberate local override always wins; `postboi env pull --force`
+	// is the explicit way to take the team's values wholesale.
+	const synced = await fetch_env_vars(cloud_base(), token)
+	if (synced && Object.keys(synced.vars).length > 0) {
+		const written = write_pulled_vars(synced.vars)
+		if (written.length > 0) {
+			console.log(
+				`${green("✓")} pulled ${written.length} synced credential(s): ${bold(written.join(", "))}`
+			)
 		}
 	}
 
@@ -760,6 +916,7 @@ async function byo_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	write_env_values(targets, values)
 	await offer_gitignore(prompts, targets)
 	await offer_host_push(prompts, files, values)
+	await sync_credentials_up(values)
 
 	// 7. Make sure postboi itself is installed
 	ensure_install(files)
@@ -860,6 +1017,7 @@ async function sms_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	write_env_values(targets, values)
 	await offer_gitignore(prompts, targets)
 	await offer_host_push(prompts, files, values)
+	await sync_credentials_up(values)
 
 	ensure_install(files)
 	write_channel_config("sms", provider.key, config_defaults, config_options)
@@ -964,6 +1122,7 @@ async function channel_init(
 	write_env_values(targets, values)
 	await offer_gitignore(prompts, targets)
 	await offer_host_push(prompts, files, values)
+	await sync_credentials_up(values)
 
 	ensure_install(files)
 	write_channel_config(channel, provider.key, config_defaults, config_options)
@@ -1087,6 +1246,7 @@ async function main(): Promise<void> {
 		return init(channel)
 	}
 	if (command === "sync") return sync()
+	if (command === "env") return env_command(argv.slice(3))
 	if (command === "dev") return dev_command(argv.slice(3))
 	if (command && (await api_command(command, argv.slice(3)))) return
 	help()

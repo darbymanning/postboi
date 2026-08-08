@@ -35,8 +35,11 @@ import {
 	start_device_auth,
 	poll_device_auth,
 	fetch_domains,
+	fetch_env_vars,
+	push_env_vars,
 	PostboiAuthError,
 } from "./postboi.js"
+import { credential_env_keys } from "../library/registry.js"
 import {
 	render_types,
 	render_runtime,
@@ -727,5 +730,64 @@ describe("add_vite_plugin", () => {
 		// balanced brackets is a cheap proxy for "didn't mangle the array"
 		expect((result.match(/\[/g) ?? []).length).toBe((result.match(/\]/g) ?? []).length)
 		expect((result.match(/\{/g) ?? []).length).toBe((result.match(/\}/g) ?? []).length)
+	})
+})
+
+describe("synced credentials (postboi env)", () => {
+	const json = (body: unknown, status = 200) =>
+		({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response
+
+	it("fetch_env_vars parses the vars and drops non-string values", async () => {
+		const synced = await fetch_env_vars("https://postboi.email", "pb_secret", async (url, init) => {
+			expect(url).toBe("https://postboi.email/v1/env")
+			expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer pb_secret")
+			return json({
+				vars: { RESEND_API_KEY: "re_123", BROKEN: 42 },
+				updated_at: "2026-08-08T00:00:00Z",
+			})
+		})
+		expect(synced?.vars).toEqual({ RESEND_API_KEY: "re_123" })
+		expect(synced?.updated_at).toBe("2026-08-08T00:00:00Z")
+	})
+
+	it("fetch_env_vars returns undefined on an API that predates the endpoint", async () => {
+		expect(
+			await fetch_env_vars("https://postboi.email", "pb_secret", async () => json({}, 404))
+		).toBeUndefined()
+	})
+
+	it("push_env_vars PUTs a merge, null deleting", async () => {
+		let sent: unknown
+		const ok = await push_env_vars(
+			"https://postboi.email",
+			"pb_secret",
+			{ SLACK_WEBHOOK_URL: "https://hooks.slack.com/x", OLD_KEY: null },
+			async (url, init) => {
+				expect(url).toBe("https://postboi.email/v1/env")
+				expect(init?.method).toBe("PUT")
+				sent = JSON.parse(String(init?.body))
+				return json({ stored: 1, removed: 1 })
+			}
+		)
+		expect(ok).toBe(true)
+		expect(sent).toEqual({
+			vars: { SLACK_WEBHOOK_URL: "https://hooks.slack.com/x", OLD_KEY: null },
+		})
+	})
+
+	it("credential_env_keys spans every channel and never includes POSTBOI_TOKEN", () => {
+		const keys = credential_env_keys()
+		// One representative per channel: the registry is the allowlist, so a new
+		// provider's credentials sync without anyone remembering to say so.
+		for (const expected of [
+			"RESEND_API_KEY",
+			"TWILIO_AUTH_TOKEN",
+			"SLACK_WEBHOOK_URL",
+			"VAPID_PRIVATE_KEY",
+			"WHATSAPP_ACCESS_TOKEN",
+		]) {
+			expect(keys).toContain(expected)
+		}
+		expect(keys).not.toContain("POSTBOI_TOKEN")
 	})
 })
