@@ -207,6 +207,19 @@ function write_env_values(targets: Array<EnvTarget>, values: Record<string, stri
 	}
 }
 
+/**
+ * The team's synced credentials, when signed in — `{}` otherwise. Fetched once per init
+ * flow so a teammate is never asked to paste a key the team already holds: a synced value
+ * answers the prompt, silently landing in the env file like a typed one would.
+ */
+async function synced_credentials(): Promise<Record<string, string>> {
+	await ensure_env_loaded()
+	const token = read_env("POSTBOI_TOKEN")
+	if (!token) return {}
+	const synced = await fetch_env_vars(cloud_base(), token)
+	return synced?.vars ?? {}
+}
+
 /** Every assignment in the project's env file(s) — what the bare `env push` sweep reads. */
 function read_project_env(): Record<string, string> {
 	const out: Record<string, string> = {}
@@ -934,11 +947,20 @@ async function byo_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	)
 
 	// 2. Collect credentials. Secrets go to the env file; everything non-secret is committed
-	// to postboi.config.ts — so the best case is a single env var (the API key).
+	// to postboi.config.ts — so the best case is a single env var (the API key). A value
+	// the team already synced answers its prompt: type it once, on one machine, ever.
+	const team = await synced_credentials()
 	console.log(`\n${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
 	const values: Record<string, string> = {} // secrets → env file
 	const config_options: Record<string, string> = {} // non-secrets → config file
 	for (const field of provider.fields) {
+		const from_team = team[field.env]
+		if (from_team !== undefined) {
+			console.log(`${green("✓")} ${bold(field.env)} — using your team's synced credential`)
+			if (field.secret) values[field.env] = from_team
+			else config_options[field.arg] = from_team
+			continue
+		}
 		const value = await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
 			required: field.default === undefined,
 			default: field.default,
@@ -1025,11 +1047,20 @@ async function sms_init(prompts: Prompts, files: Array<string>): Promise<void> {
 		)
 	}
 
-	// 3. Credentials. Same split as email: secrets to env, everything else committed.
+	// 3. Credentials. Same split as email: secrets to env, everything else committed —
+	// and a value the team already synced answers its prompt.
+	const team = await synced_credentials()
 	console.log(`${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
 	const values: Record<string, string> = {}
 	const config_options: Record<string, string> = {}
 	for (const field of provider.fields) {
+		const from_team = team[field.env]
+		if (from_team !== undefined) {
+			console.log(`${green("✓")} ${bold(field.env)} — using your team's synced credential`)
+			if (field.secret) values[field.env] = from_team
+			else config_options[field.arg] = from_team
+			continue
+		}
 		const value = await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
 			required: field.default === undefined,
 			default: field.default,
@@ -1160,13 +1191,27 @@ async function channel_init(
 		spec.registry.map((p) => ({ label: p.name, value: p, hint: p.note }))
 	)
 
+	const team = await synced_credentials()
 	console.log(`\n${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
 	const values: Record<string, string> = {}
 	const config_options: Record<string, string> = {}
+	// Values the team already synced answer their prompts — type it once, on one machine.
+	const prefilled: Record<string, string> = {}
+	for (const field of provider.fields) {
+		if (team[field.env] !== undefined) {
+			console.log(`${green("✓")} ${bold(field.env)} — using your team's synced credential`)
+			prefilled[field.env] = team[field.env]
+		}
+	}
 	// Web Push's "credential" is a VAPID key pair you mint yourself — no dashboard hands
 	// one out, so mint it here rather than dead-ending the prompt on keys nobody has.
-	const prefilled: Record<string, string> = {}
-	if (provider.key === "webpush" && (await prompts.confirm("Generate a fresh VAPID key pair?"))) {
+	// Skipped when the team's synced pair just covered it: a second pair would orphan
+	// every subscription collected under the first.
+	if (
+		provider.key === "webpush" &&
+		(prefilled.VAPID_PUBLIC_KEY === undefined || prefilled.VAPID_PRIVATE_KEY === undefined) &&
+		(await prompts.confirm("Generate a fresh VAPID key pair?"))
+	) {
 		const pair = await generate_vapid_keys()
 		prefilled.VAPID_PUBLIC_KEY = pair.public_key
 		prefilled.VAPID_PRIVATE_KEY = pair.private_key

@@ -990,6 +990,42 @@ the "heavy lifting" exists, but the secrets only ever live with the user and the
   token exists; `postboi sync` pulls whatever the local env is missing — local values
   always win. `postboi env` (list/push/pull `--force`/remove) is the explicit surface.
 - The hard line held: CLI-time sync only. Nothing in the send path reads the store.
+- **Init pulls too**: every init flow fetches the team's synced credentials before
+  prompting, and a prompt whose value the team already holds answers itself. A credential
+  is typed once, on one machine, ever. (Web Push goes one further: `init --push` skips
+  the generate-a-key-pair offer when the team's VAPID pair is already synced — a second
+  pair would orphan every subscription collected under the first.)
+
+## Considered: minting credentials via provider OAuth apps
+
+The sweep: for every provider in the registry, can Postboi register an "app" with them so
+`init` gets a token via OAuth instead of asking the user to paste one?
+
+| Provider                            | Mechanism                                                                     | Verdict                                                                                                                       |
+| ----------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Slack**                           | OAuth v2, `incoming-webhook` scope                                             | **Yes, and it's ideal** — the OAuth callback hands back a ready-made webhook URL for a channel the user picks on Slack's own consent screen. No token to find, no URL to paste. |
+| **Discord**                         | OAuth2, `webhook.incoming` scope                                               | **Yes, same shape** — the token exchange response contains a freshly-created webhook with its URL.                             |
+| Twilio (SMS + WhatsApp)             | [Twilio Connect](https://www.twilio.com/docs/iam/connect)                      | Real but medium-weight: user authorises our Connect app, we get their Account SID and act on their behalf — which changes the custody story (requests run through our credentials). Park. |
+| Meta (WhatsApp Cloud API)           | Embedded Signup                                                                | Exists, but needs a Meta Business app, app review, and a hosted signup flow. The heaviest option for the nichest channel. Park. |
+| Resend / Postmark / SendGrid / Mailgun / Mailjet / Elastic Email / Zepto | none                                                     | No third-party OAuth for API-key minting — dashboard-issued keys only.                                                         |
+| SES / SNS (AWS)                     | IAM only                                                                       | No sane delegated flow for long-lived keys; anything workable would ask for far more account access than an SMS sender should. |
+| Teams                               | none for Workflows webhooks                                                    | The webhook URL comes out of Power Automate by hand.                                                                           |
+| Telegram                            | none                                                                           | BotFather is a chat conversation; there is no API that creates bots.                                                           |
+| Web Push                            | n/a                                                                            | Already solved locally — `init --push` mints the VAPID pair itself, no vendor involved.                                        |
+
+**Recommendation: build Slack and Discord OAuth, park the rest.** The two that work are
+also the two with the friendliest consent UX, and the flow reuses plumbing that already
+exists for `POSTBOI_TOKEN` device auth: `init --chat` → browser opens
+`postboi.email/connect/slack?device=…` → the app (holding the client id/secret
+server-side) forwards to the provider's consent screen → callback stores the webhook URL
+against the device code → the CLI polls, writes `SLACK_WEBHOOK_URL`, and team-syncs it.
+Needs from an operator before any code: register the Slack app (redirect URL
+`postboi.email/connect/slack/callback`, scope `incoming-webhook`) and the Discord
+application (scope `webhook.incoming`), then set the client ids/secrets in the app's env.
+
+Until then, every flow does the next-best thing already: it prints the provider's exact
+credential page (`resend.com/api-keys`, `console.twilio.com`, BotFather, …) before
+prompting, and the prompt names the env var it's filling.
 
 ## Upstream things to track
 
