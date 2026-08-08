@@ -170,6 +170,54 @@ export async function fetch_domains(
 	}
 }
 
+/**
+ * The account's synced channel credentials, or undefined when unreachable (or on an API
+ * that predates them). An empty object is a real answer: nothing synced yet.
+ */
+export async function fetch_env_vars(
+	base: string,
+	token: string,
+	fetch_fn: FetchLike = fetch
+): Promise<{ vars: Record<string, string>; updated_at?: string } | undefined> {
+	try {
+		const response = await fetch_fn(`${base}/v1/env`, {
+			headers: { Authorization: `Bearer ${token}` },
+		})
+		if (!response.ok) return undefined
+		const data = (await response.json()) as { vars?: unknown; updated_at?: unknown }
+		if (data.vars === null || typeof data.vars !== "object") return undefined
+		const vars: Record<string, string> = {}
+		for (const [key, value] of Object.entries(data.vars as Record<string, unknown>)) {
+			if (typeof value === "string") vars[key] = value
+		}
+		return {
+			vars,
+			updated_at: typeof data.updated_at === "string" ? data.updated_at : undefined,
+		}
+	} catch {
+		return undefined
+	}
+}
+
+/** Merge vars into the account's synced set. A null value deletes. False on any failure. */
+export async function push_env_vars(
+	base: string,
+	token: string,
+	vars: Record<string, string | null>,
+	fetch_fn: FetchLike = fetch
+): Promise<boolean> {
+	try {
+		const response = await fetch_fn(`${base}/v1/env`, {
+			method: "PUT",
+			headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+			body: JSON.stringify({ vars }),
+		})
+		return response.ok
+	} catch {
+		return false
+	}
+}
+
 /** Best-effort: open `url` in the default browser. The URL is always printed anyway. */
 export function open_browser(url: string, os: string = platform): boolean {
 	const spec =

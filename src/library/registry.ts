@@ -660,3 +660,18 @@ export const CHANNEL_PROVIDERS = {
 export function find_channel_provider(channel: Channel, key: string): ProviderMeta | undefined {
 	return CHANNEL_PROVIDERS[channel].find((p) => p.key === key)
 }
+
+/**
+ * Every credential env var across every channel's providers — the set `postboi env push`
+ * collects from the local environment and `postboi sync` pulls back down. Derived from
+ * the registry so a new provider's credentials sync without anyone remembering to say so.
+ */
+export function credential_env_keys(): Array<string> {
+	const keys = new Set<string>()
+	for (const providers of Object.values(CHANNEL_PROVIDERS)) {
+		for (const provider of providers) {
+			for (const field of provider.fields) keys.add(field.env)
+		}
+	}
+	return [...keys]
+}

@@ -115,6 +115,10 @@ and each channel's call works exactly the way `mail()` does. Start with
 [Multi-channel send()](/send), or jump straight to [SMS](/sms),
 [WhatsApp](/whatsapp), [Push](/push) or [Chat](/chat).
 
+Signed in to the Postboi provider, `init` also **syncs the credentials it collects to
+your account**, so a teammate's `postboi sync` fills in their env file with no ceremony —
+see [Team credentials](/provider#team-credentials).
+
 ## Prefer to do it yourself?
 
 Skip the CLI and write the config file plus the credential env vars by hand, or

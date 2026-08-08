@@ -954,7 +954,7 @@ have since **all landed**:
   to `Channel` refused to compile until the registry, `send()` and the hooks union all
   acknowledged the new channel.
 
-## Considered: holding channel credentials (team sync)
+## Considered: holding channel credentials (team sync) ✅ **shipped**
 
 The question: `postboi init` already does the heavy lifting for the Postboi token
 (device auth, written to env, pushed to your host). For the other channels it collects
@@ -981,8 +981,15 @@ the "heavy lifting" exists, but the secrets only ever live with the user and the
   surface. Worth it only bundled with the team features that already exist around
   accounts/members — not as a standalone.
 
-**Status: not built.** Park until the member/roles surface next needs work, then build
-`env push`/`pull` alongside it.
+**Status: shipped**, ahead of the parked plan, on a direct call to go zero-ceremony:
+
+- `PUT/GET /v1/env` on the Postboi provider, values AES-GCM sealed at rest (key derived
+  from the app secret), merge semantics so two teammates pushing different channels never
+  clobber each other, `POSTBOI_TOKEN` rejected as a key.
+- `postboi init` pushes the credentials it collects (any channel, email included) when a
+  token exists; `postboi sync` pulls whatever the local env is missing — local values
+  always win. `postboi env` (list/push/pull `--force`/remove) is the explicit surface.
+- The hard line held: CLI-time sync only. Nothing in the send path reads the store.
 
 ## Upstream things to track
 
