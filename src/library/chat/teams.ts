@@ -1,21 +1,22 @@
-import { ChatProvider, type PreparedChat, type WebhookChatOptions } from "./provider.js"
+import {
+	ChatProvider,
+	type ChatOptions,
+	type PreparedChat,
+	type WebhookChatOptions,
+} from "./provider.js"
 import type { RequestSpec } from "../transport.js"
-import type { ProviderError } from "../errors.js"
+import { PostboiError, type ProviderError } from "../errors.js"
 
 type SendResponse = { ok: true }
 
 /**
- * Microsoft Teams, via a **Power Automate Workflows** webhook.
+ * Microsoft Teams, via a **Power Automate Workflows** webhook (its URL lives on
+ * `logic.azure.com` / `powerplatform.com`) posting an Adaptive Card.
  *
- * ⚠️ Not the old Office 365 connector. Microsoft blocked new connectors in August 2024 and
- * **disabled existing ones in May 2026**, so a legacy `office.com/webhook/…` URL no longer
- * delivers. The replacement is a Workflows webhook, created from the *Post to a channel
- * when a webhook request is received* template — its URL lives on
- * `logic.azure.com` / `powerplatform.com`.
- *
- * We post an Adaptive Card rather than the legacy MessageCard: Workflows still accepts
- * MessageCard for migration compatibility, but Microsoft's guidance is Adaptive Cards, and
- * MessageCard drops interactive elements.
+ * Legacy Office 365 connector URLs (`outlook.office.com/webhook/…`,
+ * `….webhook.office.com/…`) are recognised and **rejected with an error**: Microsoft
+ * disabled them in May 2026, and they fail by delivering nothing — silently — which is
+ * the one failure mode worse than an exception.
  *
  * @example
  * ```ts
@@ -30,6 +31,25 @@ export default class Teams extends ChatProvider<SendResponse> {
 
 	constructor({ webhook_url, ...options }: WebhookChatOptions) {
 		super({ ...options, default: { to: webhook_url, ...options.default } })
+	}
+
+	/**
+	 * Checked at prepare time rather than construction, because the URL can also arrive as
+	 * a per-send `to` override — and a dead webhook that answers 200 would otherwise look
+	 * exactly like a delivered message.
+	 */
+	protected override async prepare_chat(options: ChatOptions): Promise<PreparedChat> {
+		const message = await super.prepare_chat(options)
+		if (/outlook\.office\.com\/webhook|\.webhook\.office\.com/i.test(message.to)) {
+			throw new PostboiError({
+				provider: this.provider,
+				channel: "chat",
+				code: "legacy_webhook",
+				message:
+					"This is an Office 365 connector URL — Microsoft disabled those in May 2026, and posts to them vanish silently. Create a Power Automate Workflows webhook instead (template: “Post to a channel when a webhook request is received”) and use its logic.azure.com URL.",
+			})
+		}
+		return message
 	}
 
 	protected build_request(message: PreparedChat): RequestSpec {

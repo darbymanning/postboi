@@ -22,27 +22,38 @@ your channel.
 
 ```bash
 # .env
-POSTBOI_CHAT_PROVIDER=slack
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/…
 ```
 
-| Provider | Import | Credential |
+| Platform | Zero-config call | Credential |
 | --- | --- | --- |
-| Slack | `postboi/slack` | `SLACK_WEBHOOK_URL` |
-| Discord | `postboi/discord` | `DISCORD_WEBHOOK_URL` |
-| Microsoft Teams | `postboi/teams` | `TEAMS_WEBHOOK_URL` |
-| Telegram | `postboi/telegram` | `TELEGRAM_BOT_TOKEN` + a `chat_id` |
+| Slack | `slack()` | `SLACK_WEBHOOK_URL` |
+| Discord | `discord()` | `DISCORD_WEBHOOK_URL` |
+| Microsoft Teams | `teams()` | `TEAMS_WEBHOOK_URL` — a Power Automate Workflows URL¹ |
+| Telegram | `telegram()` | `TELEGRAM_BOT_TOKEN` + a `chat_id` |
 
-## Microsoft Teams needs a Workflows URL
+¹ In Teams: pick a channel → **Workflows** → *Post to a channel when a webhook request is
+received*. Postboi posts an [Adaptive Card](https://adaptivecards.io), and rejects retired
+Office 365 connector URLs with a clear error rather than letting them fail silently.
 
-⚠️ **Office 365 connectors were disabled in May 2026.** If you have an old
-`…office.com/webhook/…` URL, it no longer delivers — silently.
+## One platform, or several
 
-The replacement is a **Power Automate Workflows** webhook: in Teams, pick a channel →
-**Workflows** → *Post to a channel when a webhook request is received*. Its URL lives on
-`logic.azure.com`. We post an [Adaptive Card](https://adaptivecards.io), which is
-Microsoft's current guidance — Workflows still accepts the legacy MessageCard shape for
-migration, but it drops interactive elements.
+`chat()` posts to whichever platform `POSTBOI_CHAT_PROVIDER` (or `chat.provider` in your
+config) names — the right call when "the team chat" is one place, and the one
+[`send()`](/send) fans out through.
+
+The **per-platform functions** skip the provider question entirely. Each reads its own
+credential, so posting to two platforms is two imports, not a configuration choice:
+
+```typescript
+import { slack, discord } from "postboi"
+
+await slack({ title: "Deploy", message: "Finished in 42s" })
+await discord({ message: "New release is live 🎉" })
+```
+
+There's no comma-separated provider list to maintain — a platform is configured the moment
+its env var exists.
 
 ## Telegram is a registered identity, not an address
 
@@ -51,14 +62,15 @@ people by `chat_id` — a number you capture from an inbound update, not somethi
 know in advance.
 
 ```typescript
-import Telegram from "postboi/telegram"
+import { telegram } from "postboi"
 
-const bot = new Telegram({ bot_token: process.env.TELEGRAM_BOT_TOKEN })
-await bot.send({ to: "987654321", message: "Deploy finished" })
+await telegram({ to: "987654321", message: "Deploy finished" })
 ```
 
-That's the same shape as a push subscription token, so it needs somewhere to be stored.
-Slack, Discord and Teams have no equivalent problem — the URL *is* the destination.
+Commit a default chat id as `chat.default.to` in [postboi.config.ts](/config) and the
+`to` can be omitted too. That id is the same shape as a push subscription token, so it
+needs somewhere to be stored — Slack, Discord and Teams have no equivalent problem, since
+the URL *is* the destination.
 
 ## Titles
 
@@ -78,13 +90,12 @@ can't be recalled — neither applies here.
 
 With no provider configured at all, messages are logged instead.
 
-## Posting to more than one place
+## Posting to more than one room
 
-`to` overrides the configured destination per message, so one provider can serve several
-channels:
+`to` overrides the destination per message, so one platform can serve several rooms:
 
 ```typescript
-await chat([
+await slack([
 	{ to: process.env.SLACK_ALERTS, message: "🔴 Down" },
 	{ to: process.env.SLACK_DEPLOYS, message: "Deployed abc123" },
 ])

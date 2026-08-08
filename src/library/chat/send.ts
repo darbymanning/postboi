@@ -1,5 +1,8 @@
 /**
- * The zero-config `chat()`, on the shared channel resolution in `channels.ts`.
+ * The zero-config `chat()`, on the shared channel resolution in `channels.ts` — plus the
+ * per-platform `slack()`, `discord()`, `teams()` and `telegram()`, which skip the
+ * which-provider question entirely: each reads its own platform's credential from the
+ * environment, so an app can post to several platforms side by side.
  *
  * Note there is **no development interception** here, unlike SMS. Posting to your own
  * Slack channel while developing is normally the point — it costs nothing, reaches only
@@ -10,7 +13,11 @@ import type { BatchResult } from "../transport.js"
 import type { ChatDefaults, ChatOptions } from "./types.js"
 import type { ChatProvider } from "./provider.js"
 import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
-import { read_env } from "../env.js"
+import { inbox_sink } from "../channel_inbox.js"
+import { find_chat_provider, type ChatProviderKey } from "../registry.js"
+import { load_config } from "../config.js"
+import { PostboiError } from "../errors.js"
+import { ensure_env_loaded, is_development, read_env } from "../env.js"
 
 type ChatConstructor = new (options: Record<string, unknown>) => ChatProvider<unknown>
 
@@ -69,3 +76,94 @@ export async function chat(
 	if (Array.isArray(options)) return provider.send(options, batch)
 	return provider.send(options)
 }
+
+/** The zero-config shape shared by `chat()` and the per-platform functions. */
+interface PlatformSend {
+	(options: ChatOptions): Promise<unknown>
+	(
+		options: Array<ChatOptions>,
+		batch?: { concurrency?: number }
+	): Promise<Array<BatchResult<unknown>>>
+}
+
+const warned_platform = new Set<ChatProviderKey>()
+
+/** Construct one platform's provider from its own env credential (or the config file). */
+async function resolve_platform(key: ChatProviderKey): Promise<ChatProvider<unknown>> {
+	const config = await load_config()
+	await ensure_env_loaded()
+
+	// The platform is fixed, so only its credentials need resolving: env first, then a
+	// non-secret value committed to the chat section of the config file.
+	const meta = find_chat_provider(key)!
+	const options: Record<string, unknown> = { default: chat_env_defaults() }
+	for (const field of meta.fields) {
+		const value = read_env(field.env) ?? config.chat?.options?.[field.arg] ?? field.default
+		if (value === undefined) {
+			// Unconfigured in development is a fresh clone: capture to the inbox/console
+			// rather than fail, the same fallback chat() itself has.
+			if (is_development()) {
+				if (!warned_platform.has(key)) {
+					warned_platform.add(key)
+					console.warn(`postboi: no ${field.env} set — logging ${key} messages instead of posting.`)
+				}
+				const Mock = await LOADERS.mock()
+				return new Mock({ log: true, sink: inbox_sink("chat"), default: chat_env_defaults() })
+			}
+			throw new PostboiError({
+				provider: key,
+				channel: "chat",
+				code: "missing_env",
+				message: `${key}() needs ${field.env} — set it in the environment.`,
+			})
+		}
+		options[field.arg] = value
+	}
+	const Provider = await LOADERS[key]()
+	return new Provider(options)
+}
+
+function platform(key: ChatProviderKey): PlatformSend {
+	async function send(
+		options: ChatOptions | Array<ChatOptions>,
+		batch: { concurrency?: number } = {}
+	): Promise<unknown> {
+		const provider = await resolve_platform(key)
+		if (Array.isArray(options)) return provider.send(options, batch)
+		return provider.send(options)
+	}
+	return send as PlatformSend
+}
+
+/**
+ * Post to Slack without constructing anything — `SLACK_WEBHOOK_URL` is the whole setup.
+ * Unlike `chat()`, the platform is in the name, so an app can post to several: `slack()`
+ * for alerts and `discord()` for the community are two imports, not a provider choice.
+ *
+ * @example
+ * ```ts
+ * import { slack } from "postboi"
+ *
+ * await slack({ title: "Deploy", message: "Finished in 42s" })
+ * ```
+ */
+export const slack: PlatformSend = platform("slack")
+
+/** Post to Discord without constructing anything — `DISCORD_WEBHOOK_URL` is the setup. */
+export const discord: PlatformSend = platform("discord")
+
+/** Post to Teams without constructing anything — `TEAMS_WEBHOOK_URL` (a Workflows URL). */
+export const teams: PlatformSend = platform("teams")
+
+/**
+ * Message Telegram without constructing anything — `TELEGRAM_BOT_TOKEN`, plus the chat id
+ * the bot should post to (per send, or committed as `chat.default.to`).
+ *
+ * @example
+ * ```ts
+ * import { telegram } from "postboi"
+ *
+ * await telegram({ to: "987654321", message: "Deploy finished" })
+ * ```
+ */
+export const telegram: PlatformSend = platform("telegram")

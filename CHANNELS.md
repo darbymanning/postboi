@@ -951,6 +951,36 @@ have since **all landed**:
   to `Channel` refused to compile until the registry, `send()` and the hooks union all
   acknowledged the new channel.
 
+## Considered: holding channel credentials (team sync)
+
+The question: `postboi init` already does the heavy lifting for the Postboi token
+(device auth, written to env, pushed to your host). For the other channels it collects
+credentials and writes them locally, but every teammate repeats the dance. Should the
+Postboi provider store these secrets so teams share/sync them?
+
+**Where init stands today:** identical UX up to the point of custody. It prompts, writes
+env files, offers gitignore, and offers a push to Vercel/Cloudflare/Netlify/Railway — so
+the "heavy lifting" exists, but the secrets only ever live with the user and their host.
+
+**Recommendation: yes, but as CLI-time sync, never runtime fetch.**
+
+- A `postboi env push` / `postboi env pull` pair (or `init --team`) that stores channel
+  env vars encrypted against the account, so a teammate's `postboi init` offers
+  "pull the team's channel credentials" instead of re-prompting. Dotenv-vault/Doppler
+  ergonomics without the extra vendor.
+- **Not** a runtime secret fetch. "The fan-out runs in your process, no server in the
+  send path" is load-bearing positioning (and uptime maths) — a credential fetch at send
+  time would put us back in the path we deliberately left. Sync at CLI time keeps custody
+  convenience without touching the send path.
+- Costs to accept before building: we become a custodian of third-party secrets
+  (encryption at rest, scoped team roles, revocation, audit log, and a story for "Postboi
+  got breached" that doesn't include "and so did your Twilio account"). That's real
+  surface. Worth it only bundled with the team features that already exist around
+  accounts/members — not as a standalone.
+
+**Status: not built.** Park until the member/roles surface next needs work, then build
+`env push`/`pull` alongside it.
+
 ## Upstream things to track
 
 None block shipping — this is the "has it got better yet?" list.
