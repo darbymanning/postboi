@@ -6,10 +6,9 @@
  * way to recall it. The way back out is explicit — `dev: { whatsapp: false }` or
  * `POSTBOI_WHATSAPP_DEV=send`.
  */
-import type { BatchResult } from "../transport.js"
 import type { WhatsappDefaults, WhatsappOptions } from "./types.js"
 import { WhatsappProvider } from "./provider.js"
-import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
+import { channel_send, type ChannelResolution } from "../channels.js"
 import { read_env } from "../env.js"
 
 type WhatsappConstructor = new (options: Record<string, unknown>) => WhatsappProvider<unknown>
@@ -57,38 +56,15 @@ const RESOLUTION: ChannelResolution<WhatsappProvider<unknown>> = {
  * `POSTBOI_WHATSAPP_PROVIDER` names; its credentials and the `POSTBOI_WHATSAPP_*`
  * defaults are read from the environment on each call. Pass an array to send many.
  *
+ * `whatsapp.closed(error)` answers the routine WhatsApp failure — is this the 24-hour
+ * customer service window being closed? — which is the signal to send a pre-approved
+ * template instead. It hangs off `whatsapp` itself so the send and its routine failure
+ * check are one import.
+ *
  * @example
  * ```ts
  * import { whatsapp } from "postboi"
  *
- * await whatsapp({
- * 	to: "+447788223344",
- * 	template: "order_shipped",
- * 	variables: { name: "Ada", tracking: "AB123" },
- * })
- * ```
- */
-export function whatsapp(options: WhatsappOptions): Promise<unknown>
-export function whatsapp(
-	options: Array<WhatsappOptions>,
-	batch?: { concurrency?: number }
-): Promise<Array<BatchResult<unknown>>>
-export async function whatsapp(
-	options: WhatsappOptions | Array<WhatsappOptions>,
-	batch: { concurrency?: number } = {}
-): Promise<unknown> {
-	const provider = await resolve_channel_provider(RESOLUTION)
-	if (Array.isArray(options)) return provider.send(options, batch)
-	return provider.send(options)
-}
-
-/**
- * Is this failure the 24-hour customer service window being closed? The routine WhatsApp
- * failure, and the signal to send a pre-approved template instead. Hangs off `whatsapp`
- * itself so the send and its routine failure check are one import.
- *
- * @example
- * ```ts
  * try {
  * 	await whatsapp({ to, message })
  * } catch (error) {
@@ -97,4 +73,6 @@ export async function whatsapp(
  * }
  * ```
  */
-whatsapp.closed = WhatsappProvider.is_outside_window
+export const whatsapp = Object.assign(channel_send<WhatsappOptions>(RESOLUTION), {
+	closed: WhatsappProvider.is_outside_window,
+})

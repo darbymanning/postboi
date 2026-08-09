@@ -4,7 +4,7 @@ import Slack from "./slack.js"
 import Discord from "./discord.js"
 import Teams from "./teams.js"
 import Telegram from "./telegram.js"
-import { chat, slack, discord, telegram } from "./send.js"
+import { chat, platform_for_webhook, slack, discord, telegram } from "./send.js"
 import { configure, reset_config } from "../config.js"
 import type { Channel, PostboiError } from "../errors.js"
 
@@ -269,6 +269,14 @@ describe("teams legacy connector URLs", () => {
 		await expect(tenant.send({ message: "hi" })).rejects.toMatchObject({
 			code: "legacy_webhook",
 		})
+
+		// The other common legacy host shape — office365.com path-style URLs.
+		const office365 = new Teams({
+			webhook_url: "https://outlook.office365.com/webhook/abc/IncomingWebhook/def",
+		})
+		await expect(office365.send({ message: "hi" })).rejects.toMatchObject({
+			code: "legacy_webhook",
+		})
 	})
 
 	it("accepts a Workflows URL", async () => {
@@ -279,5 +287,16 @@ describe("teams legacy connector URLs", () => {
 		})
 		await flow.send({ message: "hi" })
 		expect(fetch.mock.calls[0][0]).toContain("logic.azure.com")
+	})
+})
+
+describe("platform_for_webhook", () => {
+	it("recognises the vendor-branded webhook hosts and nothing else", () => {
+		expect(platform_for_webhook("https://hooks.slack.com/services/T/B/x")).toBe("slack")
+		expect(platform_for_webhook("https://discord.com/api/webhooks/1/t")).toBe("discord")
+		expect(platform_for_webhook("https://discordapp.com/api/webhooks/1/t")).toBe("discord")
+		expect(platform_for_webhook("https://canary.discord.com/api/webhooks/1/t")).toBe("discord")
+		expect(platform_for_webhook("https://hooks.example.test/T/B/x")).toBeUndefined()
+		expect(platform_for_webhook("987654321")).toBeUndefined()
 	})
 })

@@ -3,10 +3,9 @@
  * intercept in development, send. Both live in the shared channel machinery in
  * `channels.ts` — interception included, so its semantics can't drift from WhatsApp's.
  */
-import type { BatchResult } from "../transport.js"
 import type { SmsOptions, SmsDefaults } from "./types.js"
 import type { SmsProvider } from "./provider.js"
-import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
+import { channel_send, type ChannelResolution, type ChannelSend } from "../channels.js"
 import { read_env } from "../env.js"
 
 type SmsConstructor = new (options: Record<string, unknown>) => SmsProvider<unknown>
@@ -61,16 +60,4 @@ const RESOLUTION: ChannelResolution<SmsProvider<unknown>> = {
  * await sms({ to: "+447788223344", message: "Your code is 4291" })
  * ```
  */
-export function sms(options: SmsOptions): Promise<unknown>
-export function sms(
-	options: Array<SmsOptions>,
-	batch?: { concurrency?: number }
-): Promise<Array<BatchResult<unknown>>>
-export async function sms(
-	options: SmsOptions | Array<SmsOptions>,
-	batch: { concurrency?: number } = {}
-): Promise<unknown> {
-	const provider = await resolve_channel_provider(RESOLUTION)
-	if (Array.isArray(options)) return provider.send(options, batch)
-	return provider.send(options)
-}
+export const sms: ChannelSend<SmsOptions> = channel_send(RESOLUTION)

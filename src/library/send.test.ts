@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { send } from "./send.js"
 import { configure, reset_config } from "./config.js"
-import type { PostboiError } from "./errors.js"
+import { SkipSendError, type PostboiError } from "./errors.js"
 
 const HOOK = "https://hooks.example.test/T000/B000/xxx"
 
@@ -181,6 +181,35 @@ describe("fallback chain", () => {
 		expect(result.ok).toBe(false)
 		expect(result.results).toHaveLength(2)
 	})
+
+	// A skip is the sender saying "don't contact this person" — routing around it would
+	// deliver the suppressed message anyway, on a channel that costs money.
+	it("stops the chain on a SkipSendError instead of advancing", async () => {
+		configure_all()
+		const fetch = stub_channels()
+		configure({
+			hooks: {
+				before: {
+					send: () => {
+						throw new SkipSendError("suppressed recipient")
+					},
+				},
+			},
+		})
+
+		const result = await send({
+			to: { chat: HOOK, sms: "+447788223344" },
+			channels: ["chat", "sms"],
+			message: "hi",
+		})
+
+		expect(result.ok).toBe(false)
+		expect(result.results).toHaveLength(1)
+		// The skip keeps its identity and gains its leg — no re-wrap, no instanceof loss.
+		expect(result.results[0].error).toBeInstanceOf(SkipSendError)
+		expect(result.results[0].error?.channel).toBe("chat")
+		expect(fetch).not.toHaveBeenCalled()
+	})
 })
 
 describe("content mapping", () => {
@@ -232,5 +261,32 @@ describe("content mapping", () => {
 		await send({ to: { email: "ada@test.com" }, subject: "hi", message: "plain only" })
 		const body = JSON.parse(fetch.mock.calls[0][1].body as string)
 		expect(body.html).toBe("plain only")
+	})
+})
+
+describe("misuse", () => {
+	it("throws no_recipient, not a raw TypeError, when `to` is missing entirely", async () => {
+		configure_all()
+		stub_channels()
+		const error = (await send({ message: "hi" } as never).catch((e) => e)) as PostboiError
+		expect(error.code).toBe("no_recipient")
+	})
+})
+
+describe("chat leg webhook inference", () => {
+	it("posts to a recognisable webhook with no chat provider configured", async () => {
+		// Only email configured — no chat section, no POSTBOI_CHAT_PROVIDER. The docs
+		// promise `to.chat` with a real webhook URL is setup enough, so it must be.
+		process.env.RESEND_API_KEY = "k"
+		configure({ provider: "resend", default: { from: "f@test.com" } })
+		const fetch = stub_channels()
+
+		const result = await send({
+			to: { chat: "https://hooks.slack.com/services/T000/B000/xxx" },
+			message: "hi",
+		})
+
+		expect(result.delivered).toBe("chat")
+		expect(String(fetch.mock.calls[0][0])).toContain("hooks.slack.com")
 	})
 })

@@ -46,13 +46,7 @@ export abstract class PushProvider<TResponse = unknown> extends Transport<TRespo
 		options: PushOptions | Array<PushOptions>,
 		batch: { concurrency?: number } = {}
 	): Promise<TResponse | Array<BatchResult<TResponse>>> {
-		if (Array.isArray(options)) {
-			return this.run_batch(options, (one) => this.send(one), batch)
-		}
-		return this.with_hooks(
-			() => this.prepare_push(options),
-			(message) => this.deliver(message)
-		)
+		return this.dispatch(options, batch, (one) => this.prepare_push(one))
 	}
 
 	/** Apply defaults and check there's a target and something to say. */

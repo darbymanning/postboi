@@ -25,9 +25,11 @@ export class PostboiError extends Error {
 	 * The channel the failure happened on. Undefined only for errors raised before a channel
 	 * is known (an unresolvable provider, say). The reason it's here rather than inferred
 	 * from `provider`: a fan-out reports one error per channel, and "which leg failed" is the
-	 * first thing you need and the most annoying to reconstruct.
+	 * first thing you need and the most annoying to reconstruct. Writable (unlike the rest)
+	 * so `send()` can annotate the leg onto a subclass — a {@link SkipSendError} in
+	 * particular — without re-wrapping it and destroying its `instanceof` identity.
 	 */
-	readonly channel?: Channel
+	channel?: Channel
 	/** HTTP status code, when the failure came from a response. */
 	readonly status?: number
 	/** Provider-specific error code, when available. */

@@ -71,7 +71,9 @@ async function poll_code<T>(
 			// transient network blip — keep polling until the deadline
 		}
 		if (response) {
-			if (response.status === 404 || response.status === 410) return "dead"
+			// Any 4xx is terminal: the code is gone, denied, or the request itself is
+			// malformed — none of which another identical poll can fix. 5xx stays retryable.
+			if (response.status >= 400 && response.status < 500) return "dead"
 			if (response.ok) {
 				const data = (await response.json().catch(() => undefined)) as
 					| Record<string, unknown>

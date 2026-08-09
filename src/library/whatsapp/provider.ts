@@ -70,13 +70,7 @@ export abstract class WhatsappProvider<TResponse = unknown> extends Transport<
 		options: WhatsappOptions | Array<WhatsappOptions>,
 		batch: { concurrency?: number } = {}
 	): Promise<TResponse | Array<BatchResult<TResponse>>> {
-		if (Array.isArray(options)) {
-			return this.run_batch(options, (one) => this.send(one), batch)
-		}
-		return this.with_hooks(
-			() => this.prepare_whatsapp(options),
-			(message) => this.deliver(message)
-		)
+		return this.dispatch(options, batch, (one) => this.prepare_whatsapp(one))
 	}
 
 	/** Apply defaults, normalise the recipient and settle the message-or-template choice. */

@@ -49,7 +49,7 @@ const NORMALISERS = {
 	whatsapp(captured: unknown): ChannelCapture {
 		const wa = captured as SentWhatsapp
 		const meta: Array<[string, string]> = []
-		if (wa.template) meta.push(["Template", wa.template], ["Language", wa.language])
+		if (wa.template) meta.push(["Language", wa.language])
 		if (wa.variables) meta.push(["Variables", JSON.stringify(wa.variables)])
 		return {
 			channel: "whatsapp",
@@ -57,6 +57,9 @@ const NORMALISERS = {
 			from: wa.from ? { address: wa.from } : undefined,
 			subject: wa.template ? `Template: ${wa.template}` : undefined,
 			text: wa.message,
+			// A first-class field, not a meta row: the UI branches on it, and a display
+			// string doubling as a discriminant is how renames silently break rendering.
+			template: wa.template,
 			meta,
 		}
 	},

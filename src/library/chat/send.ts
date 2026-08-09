@@ -52,11 +52,25 @@ const RESOLUTION: ChannelResolution<ChatProvider<unknown>> = {
 }
 
 /**
+ * Recognise a chat platform from a full webhook URL. The URL shapes are stable, vendor
+ * branded, and the whole credential — so a `to` that matches one is configuration enough
+ * for `send()`'s chat leg, no `POSTBOI_CHAT_PROVIDER` required.
+ */
+export function platform_for_webhook(to: string): "slack" | "discord" | undefined {
+	if (/^https:\/\/hooks\.slack\.com\//.test(to)) return "slack"
+	if (/^https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\//.test(to))
+		return "discord"
+	return undefined
+}
+
+/**
  * The channel-generic chat send: the provider comes from `POSTBOI_CHAT_PROVIDER` /
- * `chat.provider`. **Not exported from the package root** — you always know which
- * platform you're posting to, so the public surface is `slack()`, `discord()`, `teams()`
- * and `telegram()`. This exists as `send()`'s chat leg, where "the team chat, whichever
- * platform that is" is a real question because the caller is channel-generic.
+ * `chat.provider` — or, when `to` is a recognisable webhook URL, from the URL itself,
+ * which is how the documented `send({ to: { chat: hook } })` works with nothing but
+ * `SLACK_WEBHOOK_URL`-style setup. **Not exported from the package root** — you always
+ * know which platform you're posting to, so the public surface is `slack()`, `discord()`,
+ * `teams()` and `telegram()`. This exists as `send()`'s chat leg, where "the team chat,
+ * whichever platform that is" is a real question because the caller is channel-generic.
  *
  * @internal
  */
@@ -69,6 +83,16 @@ export async function chat(
 	options: ChatOptions | Array<ChatOptions>,
 	batch: { concurrency?: number } = {}
 ): Promise<unknown> {
+	// The webhook in `to` is definitive when it names a platform — a configured provider
+	// of a different platform could never post to it anyway. send()'s chat leg always
+	// passes a single options object, which is why the array path doesn't infer.
+	if (!Array.isArray(options) && typeof options.to === "string") {
+		const key = platform_for_webhook(options.to)
+		if (key) {
+			const Provider = await LOADERS[key]()
+			return new Provider({ webhook_url: options.to, default: chat_env_defaults() }).send(options)
+		}
+	}
 	const provider = await resolve_channel_provider(RESOLUTION)
 	if (Array.isArray(options)) return provider.send(options, batch)
 	return provider.send(options)

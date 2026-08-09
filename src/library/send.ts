@@ -11,7 +11,7 @@ import type { SmsOptions, Phone } from "./sms/types.js"
 import type { ChatOptions } from "./chat/types.js"
 import type { PushOptions, PushTarget } from "./push/types.js"
 import type { WhatsappOptions } from "./whatsapp/types.js"
-import { PostboiError, type Channel } from "./errors.js"
+import { PostboiError, SkipSendError, type Channel } from "./errors.js"
 
 /**
  * Default channel order for `channels: "cheapest"`.
@@ -176,6 +176,9 @@ async function deliver(channel: Channel, options: FanOutOptions): Promise<unknow
 
 /** Which channels to attempt, in order. */
 function resolve_channels(options: FanOutOptions): Array<Channel> {
+	// A JS caller can omit `to` entirely; without this guard Object.keys throws a raw
+	// TypeError before the friendly no_recipient error below ever gets a chance.
+	if (!options.to || typeof options.to !== "object") return []
 	const addressed = (Object.keys(options.to) as Array<Channel>).filter(
 		(c) => options.to[c as keyof Recipients] !== undefined
 	)
@@ -239,6 +242,10 @@ export async function send(options: FanOutOptions): Promise<SendResult> {
 				return { ok: true, results, delivered: channel }
 			} catch (error) {
 				results.push({ channel, ok: false, error: normalize(error, channel) })
+				// A skip is not a failure to route around: a before.send hook said *don't
+				// contact this person*, and advancing to the next channel would deliver the
+				// suppressed message anyway — on a channel that costs money, no less.
+				if (error instanceof SkipSendError) return { ok: false, results }
 			}
 		}
 		return { ok: false, results }
@@ -265,8 +272,14 @@ function normalize(error: unknown, channel: Channel): PostboiError {
 	if (error instanceof PostboiError) {
 		// A channel entry point can throw before a provider exists (nothing configured), in
 		// which case the error has no channel yet — fill it in so a caller reading results
-		// never has to guess which leg this came from.
+		// never has to guess which leg this came from. Skips (and their subclasses) keep
+		// their identity: a caller checking `instanceof SkipSendError` must still see one,
+		// so annotate in place rather than re-wrapping.
 		if (error.channel) return error
+		if (error instanceof SkipSendError) {
+			error.channel = channel
+			return error
+		}
 		return new PostboiError({
 			provider: error.provider,
 			channel,

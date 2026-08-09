@@ -977,6 +977,56 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 	console.log(dim(`${from_note} — set reply_to to receive replies.${domain_hint}`) + "\n")
 }
 
+/**
+ * Ask for a provider's credential fields, a team-synced value answering its own prompt.
+ * Secrets route to the env file, everything else to the committed config — one copy of
+ * the loop for every init flow.
+ */
+async function collect_credentials(
+	prompts: Prompts,
+	fields: ReadonlyArray<{
+		env: string
+		arg: string
+		label: string
+		secret?: boolean
+		default?: string
+	}>,
+	prefilled: Record<string, string>
+): Promise<{ values: Record<string, string>; config_options: Record<string, string> }> {
+	const values: Record<string, string> = {} // secrets → env file
+	const config_options: Record<string, string> = {} // non-secrets → config file
+	for (const field of fields) {
+		const value =
+			prefilled[field.env] ??
+			(await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
+				required: field.default === undefined,
+				default: field.default,
+			}))
+		if (field.secret) {
+			// Optional secrets (default "") left blank are omitted, not written empty.
+			if (value) values[field.env] = value
+		} else if (value) config_options[field.arg] = value
+	}
+	return { values, config_options }
+}
+
+/**
+ * The persistence epilogue every init flow shares: write the env file(s), offer to
+ * gitignore them and push to a host, and sync anything newly typed up to the team.
+ */
+async function persist_credentials(
+	prompts: Prompts,
+	files: Array<string>,
+	values: Record<string, string>,
+	team: Record<string, string>
+): Promise<void> {
+	const targets = await choose_env_targets(prompts, files)
+	write_env_values(targets, values)
+	await offer_gitignore(prompts, targets)
+	await offer_host_push(prompts, files, values)
+	await sync_credentials_up(values, team)
+}
+
 /** Bring-your-own-provider onboarding: pick a provider, collect creds, write config. */
 async function byo_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	// The team-credentials fetch doesn't depend on the pick, so it overlaps think-time.
@@ -993,31 +1043,14 @@ async function byo_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	// the team already synced answers its prompt: type it once, on one machine, ever.
 	const team = await team_promise
 	console.log(`\n${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
-	const values: Record<string, string> = {} // secrets → env file
-	const config_options: Record<string, string> = {} // non-secrets → config file
 	const prefilled = prefill_from_team(team, provider.fields)
-	for (const field of provider.fields) {
-		const value =
-			prefilled[field.env] ??
-			(await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
-				required: field.default === undefined,
-				default: field.default,
-			}))
-		if (field.secret) {
-			// Optional secrets (default "") left blank are omitted, not written empty.
-			if (value) values[field.env] = value
-		} else if (value) config_options[field.arg] = value
-	}
+	const { values, config_options } = await collect_credentials(prompts, provider.fields, prefilled)
 
 	// 2b. Optional default fields (committed to config, not env)
 	const config_defaults = await ask_defaults(prompts)
 
-	// 3–6. Write env vars, gitignore them, offer a host push
-	const targets = await choose_env_targets(prompts, files)
-	write_env_values(targets, values)
-	await offer_gitignore(prompts, targets)
-	await offer_host_push(prompts, files, values)
-	await sync_credentials_up(values, team)
+	// 3–6. Write env vars, gitignore them, offer a host push, sync new values up
+	await persist_credentials(prompts, files, values, team)
 
 	// 7. Make sure postboi itself is installed
 	ensure_install(files)
@@ -1092,20 +1125,8 @@ async function sms_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	// and a value the team already synced answers its prompt.
 	const team = await team_promise
 	console.log(`${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
-	const values: Record<string, string> = {}
-	const config_options: Record<string, string> = {}
 	const prefilled = prefill_from_team(team, provider.fields)
-	for (const field of provider.fields) {
-		const value =
-			prefilled[field.env] ??
-			(await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
-				required: field.default === undefined,
-				default: field.default,
-			}))
-		if (field.secret) {
-			if (value) values[field.env] = value
-		} else if (value) config_options[field.arg] = value
-	}
+	const { values, config_options } = await collect_credentials(prompts, provider.fields, prefilled)
 
 	// 4. Defaults. The country is pre-filled from step 1, so it's usually just Enter.
 	const config_defaults: Record<string, string> = {}
@@ -1121,12 +1142,8 @@ async function sms_init(prompts: Prompts, files: Array<string>): Promise<void> {
 		if (value) config_defaults[field.arg] = value
 	}
 
-	// 5–6. Write env vars, gitignore them, offer a host push
-	const targets = await choose_env_targets(prompts, files)
-	write_env_values(targets, values)
-	await offer_gitignore(prompts, targets)
-	await offer_host_push(prompts, files, values)
-	await sync_credentials_up(values, team)
+	// 5–6. Write env vars, gitignore them, offer a host push, sync new values up
+	await persist_credentials(prompts, files, values, team)
 
 	ensure_install(files)
 	write_channel_config("sms", provider.key, config_defaults, config_options)
@@ -1190,14 +1207,27 @@ export async function generate_vapid_keys(): Promise<{ public_key: string; priva
 }
 
 /**
- * What makes one channel's init its own: the registry, the picker prompt, and the
- * done-snippet. A compile-checked map instead of per-call ternary chains, so a new
- * channel can't silently fall through to another channel's branch.
+ * What makes one channel's init its own: the registry, the picker prompt, the channel
+ * defaults worth asking for, and the done-snippet. A compile-checked map instead of
+ * per-call ternary chains, so a new channel can't silently fall through to another
+ * channel's branch — and provider-key matching (the "twilio" key exists in two
+ * registries) stays inside the channel that owns it.
  */
 const CHANNEL_INIT = {
 	chat: {
 		registry: CHAT_PROVIDERS as ReadonlyArray<ChannelProvider>,
 		picker: "Which chat platform?",
+		// Only Telegram has a default worth asking for: its destination is a chat id you
+		// can't know until the bot hears from the user, where the webhook providers carry
+		// the destination inside the (secret) URL.
+		async defaults(prompts: Prompts, provider: ChannelProvider): Promise<Record<string, string>> {
+			if (provider.key !== "telegram") return {}
+			const chat_id = await prompts.ask(
+				`\nDefault chat id ${dim("(optional — the id your bot should post to)")}`,
+				{ required: false }
+			)
+			return chat_id ? { to: chat_id } : {}
+		},
 		// The public surface is the platform function, so the snippet names the one just
 		// configured — there is no generic chat() import.
 		done: (provider: ChannelProvider) => [
@@ -1207,6 +1237,10 @@ const CHANNEL_INIT = {
 	push: {
 		registry: PUSH_PROVIDERS as ReadonlyArray<ChannelProvider>,
 		picker: "Which push service?",
+		async defaults(): Promise<Record<string, string>> {
+			// A push target is per-device, so there is no global default worth committing.
+			return {}
+		},
 		done: () => [
 			'import { push } from "postboi"\n\nawait push({ to: subscription, message: "…" })',
 			// The half people forget: a push target has to be registered before it exists.
@@ -1216,6 +1250,24 @@ const CHANNEL_INIT = {
 	whatsapp: {
 		registry: WHATSAPP_PROVIDERS as ReadonlyArray<ChannelProvider>,
 		picker: "WhatsApp via which provider?",
+		async defaults(prompts: Prompts, provider: ChannelProvider): Promise<Record<string, string>> {
+			const defaults: Record<string, string> = {}
+			// Twilio addresses the sender by number; Meta's sender is the phone_number_id
+			// already collected with the credentials, so `from` would be dead config there.
+			if (provider.key === "twilio") {
+				const from = await prompts.ask(
+					`\nSender number ${dim("(optional — your WhatsApp-enabled number, e.g. +14155238886)")}`,
+					{ required: false }
+				)
+				if (from) defaults.from = from
+			}
+			const country = await prompts.ask(
+				`\nDefault country ${dim('(optional — resolves national numbers; an ISO code like "GB")')}`,
+				{ required: false }
+			)
+			if (country) defaults.country = country
+			return defaults
+		},
 		done: () => [
 			'import { whatsapp } from "postboi"\n\nawait whatsapp({ to: "+447788223344", template: "…", variables: { name: "Ada" } })',
 			// The constraint that shapes everything: free-form only works in-window.
@@ -1236,6 +1288,9 @@ async function channel_init(
 	files: Array<string>,
 	channel: "chat" | "push" | "whatsapp"
 ): Promise<void> {
+	// The team-credentials fetch doesn't depend on the pick, so it overlaps think-time.
+	const team_promise = synced_credentials()
+
 	// The registries are separate const-narrowed tuples; the map widens each to the shared
 	// shape, which carries every field used here.
 	const spec = CHANNEL_INIT[channel]
@@ -1244,10 +1299,8 @@ async function channel_init(
 		spec.registry.map((p) => ({ label: p.name, value: p, hint: p.note }))
 	)
 
-	const team = await synced_credentials()
+	const team = await team_promise
 	console.log(`\n${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
-	const values: Record<string, string> = {}
-	const config_options: Record<string, string> = {}
 	// Values the team already synced answer their prompts — type it once, on one machine.
 	const prefilled = prefill_from_team(team, provider.fields)
 
@@ -1297,52 +1350,13 @@ async function channel_init(
 			`${green("✓")} generated — the public key also goes to the browser's \`subscribe_push({ key })\`:\n  ${dim(pair.public_key)}\n`
 		)
 	}
-	for (const field of provider.fields) {
-		const value =
-			prefilled[field.env] ??
-			(await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
-				required: field.default === undefined,
-				default: field.default,
-			}))
-		if (field.secret) {
-			if (value) values[field.env] = value
-		} else if (value) config_options[field.arg] = value
-	}
+	const { values, config_options } = await collect_credentials(prompts, provider.fields, prefilled)
 
-	// Channel defaults, committed to the config's `default:` block — not to `options`,
-	// which is strictly provider constructor arguments. Only Telegram has one worth asking
-	// for: its destination is a chat id you can't know until the bot hears from the user,
-	// where the webhook providers carry the destination inside the (secret) URL.
-	const config_defaults: Record<string, string> = {}
-	if (provider.key === "telegram") {
-		const chat_id = await prompts.ask(
-			`\nDefault chat id ${dim("(optional — the id your bot should post to)")}`,
-			{ required: false }
-		)
-		if (chat_id) config_defaults.to = chat_id
-	}
-	if (channel === "whatsapp") {
-		// Twilio addresses the sender by number; Meta's sender is the phone_number_id
-		// already collected above, so `from` would be dead config there.
-		if (provider.key === "twilio") {
-			const from = await prompts.ask(
-				`\nSender number ${dim("(optional — your WhatsApp-enabled number, e.g. +14155238886)")}`,
-				{ required: false }
-			)
-			if (from) config_defaults.from = from
-		}
-		const country = await prompts.ask(
-			`\nDefault country ${dim('(optional — resolves national numbers; an ISO code like "GB")')}`,
-			{ required: false }
-		)
-		if (country) config_defaults.country = country
-	}
+	// Channel defaults, committed to the config's `default:` block — asked by the
+	// channel's own spec, so provider-key matching lives with the channel that owns it.
+	const config_defaults = await spec.defaults(prompts, provider)
 
-	const targets = await choose_env_targets(prompts, files)
-	write_env_values(targets, values)
-	await offer_gitignore(prompts, targets)
-	await offer_host_push(prompts, files, values)
-	await sync_credentials_up(values, team)
+	await persist_credentials(prompts, files, values, team)
 
 	ensure_install(files)
 	write_channel_config(channel, provider.key, config_defaults, config_options)
