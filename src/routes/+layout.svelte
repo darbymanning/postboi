@@ -10,8 +10,8 @@
 		resolveRepositoryFileUrl,
 		resolveTocSelector,
 		siteConfig,
-	} from "$lib"
-	import ContentSectionLayout from "$lib/components/content/ContentSectionLayout.svelte"
+	} from "$site"
+	import ContentSectionLayout from "$site/components/content/ContentSectionLayout.svelte"
 	import {
 		getContentSectionBasePath,
 		getContentSectionConfig,
@@ -20,11 +20,11 @@
 		getContentSectionManifest,
 		getContentSectionRawHref,
 		getContentSectionUiConfig,
-	} from "$lib/content/sections"
-	import { contentSections } from "$lib/config/navigation"
+	} from "$site/content/sections"
+	import { contentSections } from "$site/config/navigation"
 	import { page } from "$app/state"
-	import versions from "$lib/config/versions.json"
-	import type { SectionUiConfig } from "$lib/config/content-ui"
+	import versions from "$site/config/versions.json"
+	import type { SectionUiConfig } from "$site/config/content-ui"
 	import type { LayoutData } from "./$types"
 	import type { Snippet } from "svelte"
 

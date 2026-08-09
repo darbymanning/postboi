@@ -5,8 +5,8 @@ import {
 	getContentSectionTocHeadings,
 	getContentSectionUiConfig,
 	resolveSection,
-} from "$lib/content/sections"
-import { resolveTocSelector } from "$lib/config/content-ui"
+} from "$site/content/sections"
+import { resolveTocSelector } from "$site/config/content-ui"
 
 export const prerender = true
 
