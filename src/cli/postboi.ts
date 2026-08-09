@@ -71,9 +71,10 @@ async function poll_code<T>(
 			// transient network blip — keep polling until the deadline
 		}
 		if (response) {
-			// Any 4xx is terminal: the code is gone, denied, or the request itself is
-			// malformed — none of which another identical poll can fix. 5xx stays retryable.
-			if (response.status >= 400 && response.status < 500) return "dead"
+			// Only the statuses the API actually uses for a dead code are terminal. Anything
+			// else — a 429 from an edge rate-limiter throttling the 2s polling, a WAF 403, a
+			// 5xx — is transient and must not abort a sign-in the user is mid-way through.
+			if (response.status === 404 || response.status === 410) return "dead"
 			if (response.ok) {
 				const data = (await response.json().catch(() => undefined)) as
 					| Record<string, unknown>

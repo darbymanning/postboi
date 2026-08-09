@@ -9,7 +9,7 @@ import { PostboiError, type Channel } from "../errors.js"
 import { Transport, type BatchResult } from "../transport.js"
 import { get_config } from "../config.js"
 import { ensure_env_loaded } from "../env.js"
-import { to_e164 } from "./phone.js"
+import { phone_e164 } from "./phone.js"
 import type { Phone, PreparedSms, SmsDefaults, SmsOptions, SmsProviderOptions } from "./types.js"
 
 export type {
@@ -71,23 +71,17 @@ export abstract class SmsProvider<TResponse = unknown> extends Transport<TRespon
 		return this.dispatch(options, batch, (one) => this.prepare_sms(one))
 	}
 
-	/** Normalise a single {@link Phone} into its E.164 string. */
-	protected parse_phone(phone: Phone, country?: string): string {
-		if (typeof phone === "object") return to_e164(phone.number, country)
-		return to_e164(phone, country)
-	}
-
 	/** Normalise one-or-many recipients, accepting a comma-separated string like `to` does. */
 	protected parse_phones(phones: Array<Phone> | Phone, country?: string): Array<string> {
-		if (Array.isArray(phones)) return phones.map((p) => this.parse_phone(p, country))
+		if (Array.isArray(phones)) return phones.map((p) => phone_e164(p, country))
 		if (typeof phones === "string" && phones.includes(",")) {
 			return phones
 				.split(",")
 				.map((s) => s.trim())
 				.filter(Boolean)
-				.map((p) => this.parse_phone(p, country))
+				.map((p) => phone_e164(p, country))
 		}
-		return [this.parse_phone(phones, country)]
+		return [phone_e164(phones, country)]
 	}
 
 	/**

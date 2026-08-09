@@ -238,6 +238,18 @@ describe("the Postboi provider — account API", () => {
 		vi.useRealTimers()
 	})
 
+	it("clamps month arithmetic to the target month's last day", async () => {
+		vi.useFakeTimers()
+		// Jan 31 + 1 month must land in February, not overflow setMonth into March 3.
+		vi.setSystemTime(new Date("2026-01-31T12:00:00Z"))
+		fetch.mockResolvedValue(respond({ json: { id: "m1", scheduled_at: "x" } }))
+
+		await provider().messages.reschedule("m1", { months: 1 })
+		const body = sent_json() as { scheduled_at: string }
+		expect(body.scheduled_at.startsWith("2026-02-28")).toBe(true)
+		vi.useRealTimers()
+	})
+
 	it("lists() unwraps the lists array", async () => {
 		fetch.mockResolvedValue(respond({ json: { lists: [{ id: "l1", name: "News" }] } }))
 		const lists = await provider().lists.all()

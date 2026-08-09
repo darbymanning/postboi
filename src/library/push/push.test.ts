@@ -46,9 +46,15 @@ afterEach(() => {
 describe("prepare", () => {
 	it("rejects an empty message, tagged with the push channel", async () => {
 		const notify = new MockPush()
-		const error = (await notify.send({ message: " " }).catch((e) => e)) as PostboiError
+		const error = (await notify.send({ to: "tok", message: " " }).catch((e) => e)) as PostboiError
 		expect(error.code).toBe("empty_message")
 		expect(error.channel).toBe<Channel>("push")
+	})
+
+	it("rejects a missing target like production would — the mock must not mask it", async () => {
+		const notify = new MockPush()
+		const error = (await notify.send({ message: "hi" }).catch((e) => e)) as PostboiError
+		expect(error.code).toBe("no_target")
 	})
 
 	it("defaults ttl and urgency", async () => {

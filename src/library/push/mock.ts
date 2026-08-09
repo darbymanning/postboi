@@ -43,8 +43,13 @@ export default class MockPush extends PushProvider<SendResponse> {
 	#expired: boolean
 	#recorder: MockRecorder<SentPush>
 
+	// No placeholder `to` default, on purpose: a push target is always supplied by code (the
+	// subscription the client registered), never by the environment — so a send missing it is
+	// a code bug that production would reject with no_target, and the dev fallback masking
+	// that would ship the bug. MockChat differs: chat destinations legitimately default from
+	// the environment, so its placeholder mirrors a configured production setup.
 	constructor({ fail, expired, log, sink, ...options }: Options = {}) {
-		super({ ...options, default: { to: "mock-token", ...options.default } })
+		super(options)
 		this.#expired = expired ?? false
 		this.#recorder = new MockRecorder("push", { fail, log, sink }, log_push)
 	}

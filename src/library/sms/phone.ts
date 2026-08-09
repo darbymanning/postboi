@@ -8,6 +8,7 @@
  * stranger, which is worse than an error.
  */
 import { PostboiError } from "../errors.js"
+import type { Phone } from "./types.js"
 
 /**
  * Dialling codes for the countries we can resolve by ISO 3166-1 alpha-2. Deliberately not
@@ -114,6 +115,16 @@ export function dialling_code(country: string): string {
 const TRUNK_ZERO_KEPT = new Set(["39"])
 
 /**
+ * Dialling codes with no trunk zero at all. NANP numbers (US/CA) never begin with 0 —
+ * area codes run 2–9 — so a leading zero under a NANP default country is a number in some
+ * *other* country's national format. Stripping the zero and prepending +1 would fabricate
+ * a real, wrong number (037788223344 under US → +1 778…, a British Columbia mobile), so
+ * this throws instead. The NANP international call prefix `011` is the exception: it is
+ * unambiguous precisely because no national number can start with 0.
+ */
+const NO_TRUNK_ZERO = new Set(["1"])
+
+/**
  * Dialling codes whose national numbers can legitimately *begin with the code's own
  * digits* — Italy again: mobile prefixes 390–393 open with "39". For these, "starts with
  * the code and enough digits remain" cannot distinguish national from international, so
@@ -139,8 +150,9 @@ function ambiguous(value: string): PostboiError {
  *
  * Definitive shapes need no country: a leading `+`, or a leading `00` international prefix.
  * A national number needs `country` — a single leading `0` is treated as a trunk prefix and
- * stripped, which is right for the UK and most of Europe and harmless where there isn't one.
- * Italy is the exception (its zero is part of the number) and is kept.
+ * stripped, which is right for the UK and most of Europe. Italy is the exception (its zero
+ * is part of the number) and is kept; NANP countries have no trunk zero, so a leading zero
+ * there throws (except `011`, the NANP international call prefix, which is stripped).
  *
  * **The ambiguous case**, and the one worth knowing about: bare digits with no `+` and no
  * leading `0` could be a national number *or* an international one someone forgot the `+`
@@ -166,9 +178,14 @@ export function to_e164(input: string | number, country?: string): string {
 	if (!country) throw ambiguous(String(input))
 	const code = dialling_code(country)
 
-	// National number with a trunk prefix — the common UK/EU shape. Italy is the exception:
-	// its leading zero is part of the subscriber number, not a prefix, so +39 keeps it.
+	// National number with a trunk prefix — the common UK/EU shape. Italy keeps its zero
+	// (it is part of the subscriber number); NANP has no trunk zero at all, so a leading
+	// zero there is either the 011 international prefix or a number from another country.
 	if (raw.startsWith("0")) {
+		if (NO_TRUNK_ZERO.has(code)) {
+			if (raw.startsWith("011")) return validate(raw.slice(3), input)
+			throw ambiguous(String(input))
+		}
 		if (TRUNK_ZERO_KEPT.has(code)) return validate(code + raw, input)
 		return validate(code + raw.slice(1), input)
 	}
@@ -185,6 +202,16 @@ export function to_e164(input: string | number, country?: string): string {
 		return validate(raw, input)
 	}
 	return validate(code + raw, input)
+}
+
+/**
+ * Normalise a {@link Phone} in any of its public shapes — bare string, bare number, or
+ * `{ number, name }` — into E.164. The one unwrapping step shared by every phone-based
+ * channel (SMS, WhatsApp), so a change to normalisation semantics cannot reach one
+ * channel and miss the other.
+ */
+export function phone_e164(phone: Phone, country?: string): string {
+	return to_e164(typeof phone === "object" ? phone.number : phone, country)
 }
 
 /** Check the digit count is plausible for E.164 and return the `+`-prefixed number. */

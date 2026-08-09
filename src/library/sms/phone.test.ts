@@ -33,6 +33,24 @@ describe("to_e164", () => {
 		expect(to_e164("347 1234567", "IT")).toBe("+393471234567")
 	})
 
+	it("throws rather than fabricating a NANP number from a leading zero", () => {
+		// NANP area codes run 2–9, so "07788223344" under US is a number in some other
+		// country's national format. Stripping the zero would text +1 778… — a real
+		// British Columbia mobile belonging to a stranger.
+		expect(() => to_e164("07788223344", "US")).toThrow(PostboiError)
+		try {
+			to_e164("07788223344", "CA")
+		} catch (error) {
+			expect((error as PostboiError).code).toBe("ambiguous_number")
+		}
+	})
+
+	it("strips the 011 international call prefix under a NANP default country", () => {
+		// No NANP national number starts with 0, so 011 is unambiguously the US/Canada
+		// international dialling prefix.
+		expect(to_e164("011 44 7788 223344", "US")).toBe("+447788223344")
+	})
+
 	it("accepts a dialling code as the country, with or without the plus", () => {
 		expect(to_e164("07788223344", "+44")).toBe("+447788223344")
 		expect(to_e164("07788223344", "44")).toBe("+447788223344")
