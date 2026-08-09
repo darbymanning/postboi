@@ -9,10 +9,20 @@ export interface SentChat {
 	message: string
 	title?: string
 	username?: string
+	/** The platform this send was bound for, when the mock stood in for one. */
+	platform?: string
 }
 
 /** Options for the chat mock constructor. */
-type Options = ChatProviderOptions & MockRecorderOptions<SentChat>
+type Options = ChatProviderOptions &
+	MockRecorderOptions<SentChat> & {
+		/**
+		 * Which platform this mock is standing in for (`slack()` unconfigured in dev). It
+		 * rides on every capture so the dev inbox can dress the conversation as that
+		 * platform rather than as a generic chat.
+		 */
+		platform?: string
+	}
 
 type SendResponse = { id: string; message: SentChat }
 
@@ -34,10 +44,12 @@ type SendResponse = { id: string; message: SentChat }
 export default class MockChat extends ChatProvider<SendResponse> {
 	protected readonly provider = "mock"
 	#recorder: MockRecorder<SentChat>
+	#platform?: string
 
-	constructor({ fail, log, sink, ...options }: Options = {}) {
+	constructor({ fail, log, sink, platform, ...options }: Options = {}) {
 		// A placeholder destination, so the mock is usable with no configuration at all.
 		super({ ...options, default: { to: "mock://chat", ...options.default } })
+		this.#platform = platform
 		this.#recorder = new MockRecorder("chat", { fail, log, sink }, log_chat)
 	}
 
@@ -64,6 +76,7 @@ export default class MockChat extends ChatProvider<SendResponse> {
 			message: message.message,
 			title: message.title,
 			username: message.username,
+			platform: this.#platform,
 		})
 	}
 

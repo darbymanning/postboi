@@ -7,6 +7,13 @@
  * Window chrome comes from XP.css (vendored in inbox_theme.ts); the AOL furniture on top of
  * it — the coloured toolbar bands, the mailbox header, the folder tabs — is ours, because no
  * OS framework ships those.
+ *
+ * Each channel opens as its own application on the desktop: mail in the AOL reader,
+ * WhatsApp in a WhatsApp-green window, Slack/Discord/Teams/Telegram in a chat window
+ * wearing that platform's colours, pushes in a notification shade — all inside the XP
+ * frame — and SMS on a Nokia handset that has no frame at all, the way Winamp had none.
+ * They are children of the desktop the app manages: minimising Postboi Local takes every
+ * one of them down with it, and restoring brings back exactly the set that was up.
  */
 
 import { THEME_CSS } from "./inbox_theme.js"
@@ -317,10 +324,11 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 /*
  * ---- The Messenger window ----
  *
- * Texts, WhatsApp messages, chat posts and pushes open here instead of the mail reader,
- * because they are conversations, not letters. It is dressed as MSN Messenger with the
- * same shamelessness the rest of this wears AOL: the To: banner, the display-picture
- * boxes down the right, the toolbar of things that never worked, and the nudge.
+ * The fallback conversation window: a chat whose platform the capture doesn't name opens
+ * here. (Slack, Discord, Teams and Telegram get their own skins; WhatsApp, push and SMS
+ * their own windows entirely.) It is dressed as MSN Messenger with the same shamelessness
+ * the rest of this wears AOL: the To: banner, the display-picture boxes down the right,
+ * the toolbar of things that never worked, and the nudge.
  */
 #messenger { display: none }
 #messenger.open { display: flex }
@@ -561,6 +569,253 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 #bsod .lead { font-size: 30px; line-height: 1.32; margin: 0 0 30px; max-width: 20em }
 #bsod .code { font-size: 14px; margin: 0; line-height: 1.6 }
 #bsod .hint { margin-top: 26px; color: rgba(255,255,255,.72) }
+
+/*
+ * ---- Channel windows ----
+ *
+ * Each channel opens in a window dressed as its own application — WhatsApp in WhatsApp
+ * green, Slack as Slack, Discord dark, and so on — while keeping the XP title bar and
+ * frame, so the desktop stays one machine running several apps rather than a costume
+ * change per click. SMS is the deliberate exception below: it isn't a window at all.
+ */
+.conv { display: none }
+.conv.open { display: flex }
+/* Same specificity dance as the reader: ".open" outranks a bare ".min". */
+.conv.open.min, .conv.open.closed { display: none }
+
+/* ---- WhatsApp ---- */
+#wahead {
+	display: flex; align-items: center; gap: 9px; padding: 7px 11px;
+	background: #075e54; color: #fff; font: 13px "Segoe UI", Tahoma, sans-serif;
+}
+#wahead .face {
+	width: 32px; height: 32px; border-radius: 50%; flex: none;
+	background: #cfd8d5; display: flex; align-items: center; justify-content: center;
+	font-size: 19px; color: #fff; overflow: hidden;
+}
+#wahead .face img { width: 100%; height: 100%; object-fit: cover }
+#wahead .who { min-width: 0 }
+#wahead .who b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+#wahead .who small { display: block; font-size: 11px; opacity: .82 }
+/* The doodle wallpaper, abstracted: WhatsApp's beige with a faint diagonal weave. */
+#wachat {
+	flex: 1; overflow: auto; padding: 10px 12px; min-height: 0;
+	background: #e5ddd5;
+	background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.017) 0 2px, transparent 2px 11px),
+		repeating-linear-gradient(-45deg, rgba(255,255,255,.05) 0 2px, transparent 2px 13px);
+	font: 12.5px "Segoe UI", Tahoma, sans-serif;
+}
+.wachip {
+	display: table; margin: 0 auto 9px; padding: 4px 10px; border-radius: 7px;
+	background: #e1f2fa; color: #54656f; font-size: 11px; text-align: center;
+	box-shadow: 0 1px 0 rgba(0,0,0,.08);
+}
+.wachip.crypt { background: #fdf4c5; color: #54655a }
+/* Every bubble is outgoing — this inbox only ever catches your app talking. */
+.wamsg {
+	position: relative; margin: 3px 0 3px auto; padding: 5px 8px 6px 9px; max-width: 82%;
+	width: fit-content; background: #dcf8c6; border-radius: 8px 0 8px 8px;
+	box-shadow: 0 1px 0 rgba(0,0,0,.12); word-wrap: break-word; white-space: pre-wrap;
+}
+.wamsg::after {
+	content: ""; position: absolute; top: 0; right: -7px;
+	border: 7px solid transparent; border-top-color: #dcf8c6; border-left-color: #dcf8c6;
+	border-width: 0 7px 7px 0;
+}
+.wamsg b.subj { display: block; margin-bottom: 1px }
+/* The template card: a little document, the way WhatsApp shows one it sent for you. */
+.watpl {
+	display: flex; align-items: center; gap: 7px; margin: 2px 0 3px; padding: 6px 8px;
+	background: #cfeeba; border-radius: 6px; color: #33691e;
+}
+.watpl small { display: block; color: #558b2f; font-size: 10px; letter-spacing: .06em }
+.wameta {
+	display: flex; justify-content: flex-end; align-items: center; gap: 3px;
+	margin: 2px -2px -2px 10px; font-size: 10.5px; color: #8696a0; float: right;
+}
+/* Two grey ticks, drawn — never blue: nobody has read this, and nobody ever will. */
+.waticks { display: inline-flex; width: 17px; height: 11px }
+.wasys { clear: both; text-align: center; color: #8696a0; font-size: 11px; margin: 7px 0 }
+#wafoot {
+	display: flex; align-items: center; gap: 7px; padding: 7px 9px;
+	background: #f0f2f5; border-top: 1px solid #d6dbdf;
+}
+#wafoot .wain {
+	flex: 1; display: flex; align-items: center; gap: 7px; padding: 6px 11px;
+	background: #fff; border-radius: 18px; border: 1px solid #e4e7ea;
+}
+#wafoot input {
+	flex: 1; border: 0; outline: 0; background: none; min-width: 0;
+	font: 12.5px "Segoe UI", Tahoma, sans-serif;
+}
+#wafoot .icobtn { border: 0; background: none; font-size: 17px; color: #54656f; padding: 0 2px; box-shadow: none; min-width: 0; min-height: 0 }
+
+/*
+ * ---- The chat platforms ----
+ *
+ * One window, four wardrobes: the platform the send was bound for arrives on the capture,
+ * and the skin follows it. A chat whose platform the capture doesn't name still opens in
+ * the Messenger window above — MSN is the fallback costume, not a fifth brand.
+ */
+#platwin .plathead {
+	display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+	font: bold 13px "Segoe UI", Tahoma, sans-serif;
+}
+#platwin .plathead small { font-weight: normal; font-size: 11px; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+#plathist { flex: 1; overflow: auto; min-height: 0; padding: 10px 12px; font: 12.5px "Segoe UI", Tahoma, sans-serif }
+#plathist .msg { display: flex; gap: 8px; margin-bottom: 10px }
+#plathist .pfp {
+	width: 30px; height: 30px; flex: none; background: #fff; padding: 2px;
+	display: flex; align-items: center; justify-content: center;
+}
+#plathist .pfp img { width: 100%; height: 100% }
+#plathist .m-body { min-width: 0; flex: 1 }
+#plathist .m-head b { margin-right: 6px }
+#plathist .m-head .t { font-size: 10.5px; opacity: .6 }
+#plathist .m-text { white-space: pre-wrap; word-wrap: break-word; margin-top: 1px }
+#plathist .m-sys { font-size: 11px; font-style: italic; opacity: .65; margin: 8px 0 }
+#platentry { display: flex; gap: 7px; padding: 8px 12px 10px; align-items: center }
+#platentry input { flex: 1; min-width: 0; padding: 7px 10px; font: 12.5px "Segoe UI", Tahoma, sans-serif; outline: 0 }
+
+/* Slack: white, workspace-purple accents, square avatars, sober. */
+#platwin.plat-slack #platbody { background: #fff; color: #1d1c1d }
+#platwin.plat-slack .plathead { background: #fff; color: #1d1c1d; border-bottom: 1px solid #ddd }
+#platwin.plat-slack .plathead .dot { color: #616061 }
+#platwin.plat-slack .pfp { border-radius: 4px; background: #4a154b }
+#platwin.plat-slack .m-head b { color: #1d1c1d }
+#platwin.plat-slack #platentry input { border: 1px solid #bbb; border-radius: 4px }
+#platwin.plat-slack #platentry input:focus { border-color: #4a154b; box-shadow: 0 0 0 1px #4a154b }
+/* Discord: the dark theme, because nobody has ever seen the light one. */
+#platwin.plat-discord #platbody { background: #313338; color: #dbdee1 }
+#platwin.plat-discord .plathead { background: #313338; color: #f2f3f5; border-bottom: 1px solid #26272b }
+#platwin.plat-discord .plathead .dot { color: #80848e }
+#platwin.plat-discord .pfp { border-radius: 50%; background: #5865f2 }
+#platwin.plat-discord .m-head b { color: #949cf7 }
+#platwin.plat-discord .m-sys { color: #80848e }
+#platwin.plat-discord #platentry { background: #313338 }
+#platwin.plat-discord #platentry input { background: #383a40; border: 0; border-radius: 8px; color: #dbdee1 }
+/* Teams: the purple bar and cards, meetings not included. */
+#platwin.plat-teams #platbody { background: #f0f0f0; color: #242424 }
+#platwin.plat-teams .plathead { background: #464775; color: #fff }
+#platwin.plat-teams .msg { background: #fff; border-radius: 4px; padding: 7px 9px; box-shadow: 0 1px 2px rgba(0,0,0,.12) }
+#platwin.plat-teams .pfp { border-radius: 50%; background: #6264a7 }
+#platwin.plat-teams #platentry input { border: 1px solid #d1d1d1; border-radius: 4px; background: #fff }
+/* Telegram: the blue bar and green outgoing bubbles. */
+#platwin.plat-telegram #platbody { background: #d2e3f0; color: #000 }
+#platwin.plat-telegram .plathead { background: #2aabee; color: #fff }
+#platwin.plat-telegram .msg { display: block; margin: 3px 0 3px auto; max-width: 82%; width: fit-content;
+	background: #effdde; border-radius: 8px 8px 0 8px; padding: 5px 9px; box-shadow: 0 1px 1px rgba(0,0,0,.15) }
+#platwin.plat-telegram .pfp, #platwin.plat-telegram .m-head b { display: none }
+#platwin.plat-telegram .m-head .t { float: right; margin: 4px 0 0 8px; color: #62a85e; opacity: 1 }
+#platwin.plat-telegram .m-sys { text-align: center }
+#platwin.plat-telegram #platentry { background: #fff }
+#platwin.plat-telegram #platentry input { border: 0 }
+#platbody { flex: 1; display: flex; flex-direction: column; min-height: 0 }
+
+/* ---- The push notification shade ---- */
+#pushbody {
+	flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: auto; gap: 8px;
+	padding: 10px; background: linear-gradient(180deg, #20242c 0%, #2a303c 100%);
+	font: 12px "Segoe UI", Tahoma, sans-serif;
+}
+#pushbody .shadehead {
+	display: flex; align-items: baseline; justify-content: space-between;
+	color: #e8ebf0; padding: 2px 4px 4px;
+}
+#pushbody .shadehead b { font-size: 14px; font-weight: 600 }
+#pushbody .shadehead button {
+	border: 0; background: none; color: #9fb3d1; font: 11px "Segoe UI", Tahoma, sans-serif;
+	box-shadow: none; min-width: 0; min-height: 0; text-decoration: underline;
+}
+.note { background: #fff; border-radius: 10px; padding: 8px 11px 9px; box-shadow: 0 2px 5px rgba(0,0,0,.35) }
+.note .app {
+	display: flex; align-items: center; gap: 5px; color: #667085;
+	font-size: 10px; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 3px;
+}
+.note .app img { width: 13px; height: 13px }
+.note .app .t { margin-left: auto; text-transform: none; letter-spacing: 0 }
+.note b.title { display: block; font-size: 12.5px }
+.note .body { color: #333; white-space: pre-wrap; word-wrap: break-word }
+.note .link { color: #1a6dc0; font-size: 11px; margin-top: 3px; word-break: break-all }
+.note .data { font: 10.5px ui-monospace, "Courier New", monospace; color: #667085; margin-top: 3px; word-break: break-all }
+.note .sched { display: block; margin-top: 3px }
+.pushfoot { text-align: center; color: #9fb3d1; font-size: 11px; padding: 2px 0 4px }
+
+/*
+ * ---- The Nokia ----
+ *
+ * SMS doesn't get a window: a text lands on a handset, so a handset is what opens — a
+ * skinned, shaped thing sitting on the desktop the way Winamp sat on one, draggable by
+ * its body, no XP frame anywhere. It still registers with the window manager, so it has
+ * a taskbar button and minimises with the rest when the app is taken down.
+ */
+#nokia { width: 246px; height: 536px; background: none }
+.nk-shell {
+	position: relative; width: 100%; height: 100%;
+	border-radius: 42px 42px 58px 58px / 34px 34px 72px 72px;
+	background: linear-gradient(160deg, #37538c 0%, #24386b 42%, #17264e 100%);
+	box-shadow: inset 0 2px 4px rgba(255,255,255,.35), inset 0 -6px 12px rgba(0,0,0,.45),
+		4px 8px 18px rgba(0,0,0,.55);
+	padding: 14px 16px 0; display: flex; flex-direction: column; align-items: center;
+	font: 11px Tahoma, Arial, sans-serif;
+}
+/* The power button on the crown — the only way a 3310 was ever turned off. */
+.nk-power {
+	position: absolute; top: -7px; left: 50%; translate: -50%;
+	width: 54px; height: 12px; border: 0; border-radius: 6px 6px 2px 2px;
+	background: linear-gradient(180deg, #10182e, #2c3f6e);
+	box-shadow: inset 0 1px 1px rgba(255,255,255,.25); min-width: 0; min-height: 0;
+}
+.nk-power:active { translate: -50% 1px }
+.nk-ear { display: flex; gap: 5px; margin: 2px 0 5px }
+.nk-ear i { width: 5px; height: 5px; border-radius: 50%; background: #0d1530; box-shadow: inset 0 1px 1px rgba(0,0,0,.9) }
+.nk-brand { color: #cdd6ea; font: bold 13px Arial, sans-serif; letter-spacing: 3px; margin-bottom: 6px }
+.nk-bezel {
+	width: 196px; padding: 9px; border-radius: 12px 12px 26px 26px;
+	background: linear-gradient(180deg, #0e1428, #1a2547);
+	box-shadow: inset 0 2px 5px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.14);
+}
+/*
+ * The screen: 84×48 pixels of green-grey LCD, upscaled. Monospace, hard edges, no
+ * anti-aliasing worth speaking of, and everything on it drawn by the phone script.
+ */
+.nk-lcd {
+	position: relative; height: 152px; overflow: hidden; padding: 4px 5px;
+	background: linear-gradient(180deg, #aec437 0%, #9cb52c 60%, #90a828 100%);
+	box-shadow: inset 0 0 7px rgba(30,40,0,.45);
+	font: bold 12px "Lucida Console", "Courier New", monospace; color: #22300a;
+	line-height: 1.25; letter-spacing: .3px;
+}
+.nk-lcd .stat { display: flex; justify-content: space-between; align-items: flex-end; height: 13px; margin-bottom: 2px }
+/* Signal on the left, battery on the right, both as the stepped bars. */
+.nk-bars { display: flex; align-items: flex-end; gap: 1px }
+.nk-bars i { width: 3px; background: #22300a }
+.nk-title { text-align: center; border-bottom: 2px solid #22300a; padding-bottom: 1px; margin-bottom: 2px }
+.nk-rows { height: 96px; overflow: hidden }
+.nk-row { padding: 0 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.nk-row.on { background: #22300a; color: #aec437 }
+.nk-read { height: 96px; overflow: hidden; white-space: pre-wrap; word-wrap: break-word }
+.nk-soft { display: flex; justify-content: space-between; padding: 1px 2px 0; border-top: 1px dotted #22300a; margin-top: 2px }
+.nk-empty { text-align: center; padding-top: 30px }
+/* The navi row: C, the big centre key, the up/down rocker. */
+.nk-navi { display: flex; align-items: center; gap: 9px; margin: 10px 0 6px; width: 196px; justify-content: space-between }
+.nk-key {
+	border: 0; color: #16223f; font: bold 12px Tahoma, sans-serif;
+	background: linear-gradient(180deg, #e7ecf5 0%, #b9c4d8 55%, #94a3c0 100%);
+	box-shadow: inset 0 1px 1px rgba(255,255,255,.8), 0 2px 3px rgba(0,0,0,.5);
+	min-width: 0; min-height: 0;
+}
+.nk-key:active { box-shadow: inset 0 2px 3px rgba(0,0,0,.4); translate: 0 1px }
+.nk-c { width: 40px; height: 30px; border-radius: 6px 14px 14px 6px }
+.nk-mid { flex: 1; height: 34px; border-radius: 16px; font-size: 11px }
+.nk-updown { display: flex; flex-direction: column; gap: 2px }
+.nk-updown .nk-key { width: 40px; height: 15px; font-size: 9px; line-height: 1 }
+.nk-updown .nk-key.up { border-radius: 14px 14px 4px 4px }
+.nk-updown .nk-key.dn { border-radius: 4px 4px 14px 14px }
+/* The 3×4, in the 3310's slanted pill shape. */
+.nk-pad { width: 204px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px 7px; padding-bottom: 16px }
+.nk-pad .nk-key { height: 27px; border-radius: 9px 20px 9px 20px; position: relative; font-size: 12px }
+.nk-pad .nk-key small { position: absolute; right: 7px; bottom: 2px; font-size: 7px; letter-spacing: .5px; color: #3c4a68 }
 `
 
 const SCRIPT = `
@@ -775,14 +1030,47 @@ function sync_actions() {
 	$("t-read").disabled = !can_read
 }
 
+/*
+ * Where a message opens. Letters get the mail reader; every other channel gets a window
+ * dressed as its own application — and SMS gets the handset. A chat whose platform the
+ * capture doesn't name falls back to the MSN Messenger window: better a generic chat
+ * app than a Slack window claiming a message that wasn't Slack's.
+ */
 function open_message(m) {
 	selected = m
 	read[m.id] = true
-	// Letters open in the mail reader; everything else is a conversation, and opens in one.
-	if (channel_of(m) === "email") {
+	var chan = channel_of(m)
+	if (chan === "email") {
 		current = m
 		render_list()
 		render_reader()
+		return
+	}
+	if (chan === "sms") {
+		nk_open = true
+		nk_current = m
+		nk_view = "read"
+		nk_scroll = 0
+		render_list()
+		render_nokia()
+		return
+	}
+	if (chan === "whatsapp") {
+		wa_convo = m
+		render_list()
+		render_wa()
+		return
+	}
+	if (chan === "push") {
+		push_open = true
+		render_list()
+		render_push()
+		return
+	}
+	if (PLATFORMS[m.provider]) {
+		plat_convo = m
+		render_list()
+		render_plat()
 		return
 	}
 	convo = m
@@ -871,8 +1159,14 @@ function render_reader() {
 function load() {
 	return fetch(api + "/messages").then(function (r) { return r.json() }).then(function (data) {
 		messages = data.messages || []
-		if (current) current = messages.filter(function (m) { return m.id === current.id })[0] || null
-		if (convo) convo = messages.filter(function (m) { return m.id === convo.id })[0] || null
+		var refresh = function (m) {
+			return m && (messages.filter(function (x) { return x.id === m.id })[0] || null)
+		}
+		current = refresh(current)
+		convo = refresh(convo)
+		wa_convo = refresh(wa_convo)
+		plat_convo = refresh(plat_convo)
+		nk_current = refresh(nk_current)
 		// Gated on having loaded once rather than on having seen a message: an inbox that starts
 		// empty has seen zero, which is exactly when the next arrival is the first one to chime.
 		if (loaded && messages.length > seen) play("mail")
@@ -881,6 +1175,10 @@ function load() {
 		render_list()
 		render_reader()
 		render_messenger()
+		render_wa()
+		render_plat()
+		render_push()
+		render_nokia()
 	})
 }
 
@@ -978,6 +1276,382 @@ $("msnbar").addEventListener("click", function (event) {
 		button = button.parentNode
 	}
 	if (button && button.dataset && button.dataset.say) msn_sys(button.dataset.say)
+})
+
+/*
+ * ---- The channel windows ----
+ *
+ * Each of these mirrors the messenger's contract with the window manager: a state
+ * variable says whether it has anything to show, the renderer opens or closes the
+ * window to match, and closing the window clears the state. They are all children of
+ * the desktop like the mailbox is, so minimising Postboi Local stashes them too.
+ */
+
+/* ---- WhatsApp ---- */
+var wa_convo = null
+
+/* Two grey ticks, drawn inline. Never blue: nobody has read this, and nobody ever will. */
+var WA_TICKS =
+	'<svg class="waticks" viewBox="0 0 17 11" aria-hidden="true">' +
+	'<path d="M1 6l3 3 6-7M7 8.2 8.5 9.5l6-7" fill="none" stroke="#8696a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+	"</svg>"
+/* The pending clock, which is exactly what a scheduled send is. */
+var WA_CLOCK =
+	'<svg class="waticks" viewBox="0 0 17 11" aria-hidden="true">' +
+	'<circle cx="8.5" cy="5.5" r="4.6" fill="none" stroke="#8696a0"/>' +
+	'<path d="M8.5 3v2.8l2 1.2" fill="none" stroke="#8696a0" stroke-linecap="round"/>' +
+	"</svg>"
+
+function render_wa() {
+	var el = $("wawin")
+	var win = find("wawin")
+	if (!wa_convo) {
+		el.className = "child window conv"
+		if (win) {
+			win.open = false
+			if (focused === "wawin") focused = "mailbox"
+			paint()
+		}
+		return
+	}
+	var thread = thread_of(wa_convo)
+	thread.forEach(function (m) { read[m.id] = true })
+	var to = who(wa_convo.to)
+
+	el.className = "child window conv open" + (win && win.min ? " min" : "")
+	if (win) {
+		win.title = to + " - WhatsApp"
+		var reopened = !win.open
+		win.open = true
+		if (reopened) focus_window("wawin")
+		else paint()
+	}
+	$("wa-title").textContent = to
+	$("wa-to").textContent = to
+
+	var parts = [
+		'<div class="wachip crypt">\\u{1F512} Messages in this chat are end-to-end captured. ' +
+			"Nothing was sent, and nothing will be.</div>",
+		'<div class="wachip">TODAY</div>',
+	]
+	thread.forEach(function (m) {
+		var inner = ""
+		if (m.subject && !m.template) inner += '<b class="subj">' + esc(m.subject) + "</b>"
+		if (m.template) {
+			inner +=
+				'<span class="watpl">\\u{1F4C4} <span>' + esc(m.template) +
+				"<small>TEMPLATE \\u00B7 pre-approved</small></span></span>"
+		}
+		if (m.text) inner += esc(m.text)
+		inner +=
+			'<span class="wameta">' + stamp(m.received_at) +
+			(state_of(m) === "scheduled" ? WA_CLOCK : WA_TICKS) + "</span>"
+		parts.push('<div class="wamsg">' + inner + "</div>")
+		;(m.meta || []).forEach(function (pair) {
+			parts.push('<div class="wasys">' + esc(pair[0]) + ": " + esc(pair[1]) + "</div>")
+		})
+		if (m.cancelled_at) {
+			parts.push('<div class="wasys">This send was cancelled. It was never going out.</div>')
+		} else if (state_of(m) === "scheduled") {
+			parts.push('<div class="wasys">Scheduled \\u2014 sends ' + esc(when_full(m.scheduled_at)) + "</div>")
+		}
+	})
+	var chat = $("wachat")
+	chat.innerHTML = parts.join("")
+	chat.scrollTop = chat.scrollHeight
+	render_list()
+}
+
+function wa_sys(text) {
+	var chat = $("wachat")
+	chat.insertAdjacentHTML("beforeend", '<div class="wasys">' + text + "</div>")
+	chat.scrollTop = chat.scrollHeight
+}
+$("wa-text").addEventListener("keydown", function (event) {
+	if (event.key !== "Enter" || !this.value.trim()) return
+	this.value = ""
+	wa_sys("One-way glass \\u2014 your app does the talking here. Nothing was sent.")
+})
+$("wafoot").addEventListener("click", function (event) {
+	var button = event.target.closest("[data-wa]")
+	if (button) wa_sys(button.dataset.wa)
+})
+
+/* ---- The chat platforms ---- */
+var plat_convo = null
+
+/*
+ * The wardrobe rack. "room" is the fiction — a webhook doesn't know its channel's name,
+ * so the window shows a plausible one and puts the real destination in the small print.
+ */
+var PLATFORMS = {
+	slack: {
+		name: "Slack", glyph: "#", room: "postboi-dev",
+		sub: "Dev Workspace \\u00B7 nothing leaves this machine", ph: "Message #postboi-dev",
+	},
+	discord: {
+		name: "Discord", glyph: "#", room: "general",
+		sub: "Dev Server \\u00B7 0 members online", ph: "Message #general",
+	},
+	teams: {
+		name: "Microsoft Teams", glyph: "\\u{1F465}", room: "General",
+		sub: "Posts \\u00B7 the meeting never starts", ph: "Start a new conversation",
+	},
+	telegram: {
+		name: "Telegram", glyph: "\\u2708", room: "Dev Channel",
+		sub: "captured by the dev inbox", ph: "Write a message\\u2026",
+	},
+}
+
+/** The "Posts as" username a capture carried, if any — Slack and Discord webhooks take one. */
+function posts_as(m) {
+	var pair = (m.meta || []).filter(function (p) { return p[0] === "Posts as" })[0]
+	return pair ? pair[1] : null
+}
+
+function render_plat() {
+	var el = $("platwin")
+	var win = find("platwin")
+	if (!plat_convo) {
+		el.className = "child window conv"
+		if (win) {
+			win.open = false
+			if (focused === "platwin") focused = "mailbox"
+			paint()
+		}
+		return
+	}
+	var look = PLATFORMS[plat_convo.provider]
+	var thread = thread_of(plat_convo)
+	thread.forEach(function (m) { read[m.id] = true })
+
+	el.className = "child window conv open plat-" + plat_convo.provider + (win && win.min ? " min" : "")
+	if (win) {
+		win.title = look.glyph + look.room + " - " + look.name
+		var reopened = !win.open
+		win.open = true
+		if (reopened) focus_window("platwin")
+		else paint()
+	}
+	$("plat-title").textContent = look.glyph + look.room + " - " + look.name
+	$("plat-glyph").textContent = look.glyph
+	$("plat-name").textContent = look.room
+	$("plat-sub").textContent = look.sub + " \\u00B7 " + who(plat_convo.to)
+	$("plat-input").placeholder = look.ph
+
+	var parts = ['<div class="m-sys">Captured by the dev inbox \\u2014 nothing was posted.</div>']
+	thread.forEach(function (m) {
+		var text = ""
+		if (m.subject) text += "<b>" + esc(m.subject) + "</b>" + (m.text ? "\\n" : "")
+		if (m.text) text += esc(m.text)
+		parts.push(
+			'<div class="msg"><span class="pfp"><img src="' + FAVICON_URL + '" alt=""></span>' +
+				'<div class="m-body"><div class="m-head"><b>' + esc(posts_as(m) || "Your app") +
+				'</b><span class="t">' + stamp(m.received_at) + "</span></div>" +
+				'<div class="m-text">' + text + "</div></div></div>"
+		)
+		if (m.cancelled_at) {
+			parts.push('<div class="m-sys">This send was cancelled. It was never going out.</div>')
+		} else if (state_of(m) === "scheduled") {
+			parts.push('<div class="m-sys">Scheduled \\u2014 sends ' + esc(when_full(m.scheduled_at)) + "</div>")
+		}
+	})
+	var hist = $("plathist")
+	hist.innerHTML = parts.join("")
+	hist.scrollTop = hist.scrollHeight
+	render_list()
+}
+
+$("plat-input").addEventListener("keydown", function (event) {
+	if (event.key !== "Enter" || !this.value.trim()) return
+	this.value = ""
+	var hist = $("plathist")
+	hist.insertAdjacentHTML(
+		"beforeend",
+		'<div class="m-sys">One-way glass \\u2014 your app does the posting. Nothing was sent.</div>'
+	)
+	hist.scrollTop = hist.scrollHeight
+})
+
+/* ---- The push notification shade ---- */
+var push_open = false
+
+function render_push() {
+	var el = $("pushwin")
+	var win = find("pushwin")
+	var pushes = messages.filter(function (m) { return channel_of(m) === "push" })
+	if (!push_open) {
+		el.className = "child window conv"
+		if (win) {
+			win.open = false
+			if (focused === "pushwin") focused = "mailbox"
+			paint()
+		}
+		return
+	}
+	// The shade shows every notification at once, the way a shade does; opening it reads
+	// them all, because pulling the shade down is how you read notifications.
+	pushes.forEach(function (m) { read[m.id] = true })
+
+	el.className = "child window conv open" + (win && win.min ? " min" : "")
+	if (win) {
+		win.title = "Notifications"
+		var reopened = !win.open
+		win.open = true
+		if (reopened) focus_window("pushwin")
+		else paint()
+	}
+	var parts = [
+		'<div class="shadehead"><b>Notifications</b><button id="push-clear">Clear all</button></div>',
+	]
+	if (!pushes.length) {
+		parts.push('<div class="note"><b class="title">No notifications</b>' +
+			'<div class="body">Send with push() and it lands here.</div></div>')
+	}
+	pushes.forEach(function (m) {
+		var rows =
+			'<div class="app"><img src="' + FAVICON_URL + '" alt="">Postboi \\u00B7 your app' +
+			'<span class="t">' + stamp(m.received_at) + "</span></div>"
+		if (m.subject) rows += '<b class="title">' + esc(m.subject) + "</b>"
+		if (m.text) rows += '<div class="body">' + esc(m.text) + "</div>"
+		;(m.meta || []).forEach(function (pair) {
+			if (pair[0] === "Opens") rows += '<div class="link">\\u{1F517} ' + esc(pair[1]) + "</div>"
+			else rows += '<div class="data">' + esc(pair[0]) + ": " + esc(pair[1]) + "</div>"
+		})
+		if (m.cancelled_at) rows += '<span class="sched off">cancelled \\u2014 was never going out</span>'
+		else if (state_of(m) === "scheduled") {
+			rows += '<span class="sched">sends ' + esc(when_full(m.scheduled_at)) + "</span>"
+		}
+		parts.push('<div class="note">' + rows + "</div>")
+	})
+	parts.push('<div class="pushfoot">Delivered to 0 devices \\u2014 captured by the dev inbox.</div>')
+	$("pushbody").innerHTML = parts.join("")
+	$("push-clear").onclick = function () {
+		$("pushbody").lastChild.textContent =
+			"They were never delivered \\u2014 there is nothing to clear."
+	}
+	render_list()
+}
+
+/*
+ * ---- The Nokia ----
+ *
+ * The handset's whole screen is redrawn from state on every change, like the real
+ * firmware would: a view (the inbox list or a message), a selection, and a scroll
+ * offset. The phone shows every captured text — it is the recipient's pocket, not a
+ * window onto one conversation.
+ */
+var nk_open = false
+var nk_current = null
+var nk_view = "list"
+var nk_index = 0
+var nk_scroll = 0
+var NK_ROWS = 7
+var NK_LINE = 15
+
+function nk_messages() {
+	return messages.filter(function (m) { return channel_of(m) === "sms" })
+}
+
+var NK_SIGNAL =
+	'<span class="nk-bars"><i style="height:3px"></i><i style="height:5px"></i>' +
+	'<i style="height:7px"></i><i style="height:9px"></i></span>'
+var NK_BATTERY =
+	'<span class="nk-bars"><i style="height:9px"></i><i style="height:9px"></i><i style="height:9px"></i></span>'
+
+function render_nokia() {
+	var el = $("nokia")
+	var win = find("nokia")
+	if (!nk_open) {
+		el.className = "child conv"
+		if (win) {
+			win.open = false
+			if (focused === "nokia") focused = "mailbox"
+			paint()
+		}
+		return
+	}
+	el.className = "child conv open" + (win && win.min ? " min" : "")
+	if (win) {
+		win.title = "Nokia \\u00B7 Messages"
+		var reopened = !win.open
+		win.open = true
+		if (reopened) focus_window("nokia")
+		else paint()
+	}
+	var texts = nk_messages()
+	if (nk_current) {
+		var i = texts.indexOf(nk_current)
+		if (i >= 0) nk_index = i
+	}
+	nk_index = Math.max(0, Math.min(nk_index, texts.length - 1))
+	texts.forEach(function (m) { read[m.id] = true })
+
+	var lcd = $("nk-lcd")
+	var head = '<div class="stat">' + NK_SIGNAL + NK_BATTERY + "</div>"
+	if (!texts.length) {
+		lcd.innerHTML = head + '<div class="nk-title">Messages</div>' +
+			'<div class="nk-empty">No messages<br><br>Your app has not<br>texted yet</div>' +
+			'<div class="nk-soft"><span>&nbsp;</span><span>Back</span></div>'
+		return
+	}
+	if (nk_view === "list") {
+		// A window of rows around the selection, like the firmware scrolled its lists.
+		var first = Math.max(0, Math.min(nk_index - (NK_ROWS - 1), texts.length - NK_ROWS))
+		if (nk_index < first) first = nk_index
+		var rows = texts.slice(first, first + NK_ROWS).map(function (m, offset) {
+			var n = first + offset
+			var label = (m.from && m.from.address) || "Your app"
+			return '<div class="nk-row' + (n === nk_index ? " on" : "") + '">' +
+				esc(label) + " " + esc(snip(m.text || "", 24)) + "</div>"
+		})
+		lcd.innerHTML = head + '<div class="nk-title">Messages (' + texts.length + ')</div>' +
+			'<div class="nk-rows">' + rows.join("") + "</div>" +
+			'<div class="nk-soft"><span>Select</span><span>' + (nk_index + 1) + "/" + texts.length + "</span></div>"
+		$("nk-mid").textContent = "Select"
+		return
+	}
+	var m = texts[nk_index]
+	nk_current = m
+	var body = "From: " + ((m.from && m.from.address) || "Your app") + "\\n" + (m.text || "")
+	;(m.meta || []).forEach(function (pair) { body += "\\n" + pair[0] + ": " + pair[1] })
+	if (m.cancelled_at) body += "\\nCancelled \\u2014 never going out"
+	else if (state_of(m) === "scheduled") body += "\\nSends " + when_full(m.scheduled_at)
+	lcd.innerHTML = head + '<div class="nk-title">' + stamp(m.received_at) + "</div>" +
+		'<div class="nk-read" id="nk-read">' + esc(body) + "</div>" +
+		'<div class="nk-soft"><span>Back</span><span>\\u2195 scroll</span></div>'
+	$("nk-read").scrollTop = nk_scroll * NK_LINE
+	$("nk-mid").textContent = "Back"
+}
+
+$("nk-up").onclick = function () {
+	if (nk_view === "list") { nk_index = Math.max(0, nk_index - 1); nk_current = null }
+	else nk_scroll = Math.max(0, nk_scroll - 1)
+	render_nokia()
+}
+$("nk-dn").onclick = function () {
+	if (nk_view === "list") { nk_index = Math.min(nk_messages().length - 1, nk_index + 1); nk_current = null }
+	else nk_scroll += 1
+	render_nokia()
+}
+$("nk-mid").onclick = function () {
+	if (nk_view === "list" && nk_messages().length) { nk_view = "read"; nk_scroll = 0 }
+	else { nk_view = "list"; nk_current = null }
+	render_nokia()
+	render_list()
+}
+$("nk-c").onclick = function () {
+	if (nk_view === "read") { nk_view = "list"; nk_current = null; render_nokia() }
+}
+$("nokia").querySelector(".nk-power").onclick = function () {
+	var win = find("nokia")
+	if (win) close_window(win)
+}
+/* Dragged by the body, like Winamp — anywhere that isn't a key picks the phone up. */
+$("nokia").addEventListener("mousedown", function (event) {
+	if (event.target.closest("button")) return
+	var win = find("nokia")
+	if (win) drag(win, event)
 })
 
 /*
@@ -1097,24 +1771,31 @@ function register(id, title, rect) {
 	place(el, rect)
 
 	el.addEventListener("mousedown", function () { focus_window(id) })
+	// The Nokia has no XP chrome — no title bar to drag, no edges to pull — so each piece
+	// is wired only where it exists. Its own drag handle is registered by the phone code.
 	var bar = el.querySelector(".title-bar")
-	bar.addEventListener("mousedown", function (event) {
-		if (event.target.dataset && event.target.dataset.act) return
-		drag(win, event)
-	})
-	bar.addEventListener("dblclick", function (event) {
-		if (event.target.dataset && event.target.dataset.act) return
-		toggle_max(win)
-	})
-	bar.addEventListener("click", function (event) {
-		var act = event.target.dataset && event.target.dataset.act
-		if (act === "max") toggle_max(win)
-		if (act === "min") { win.min = true; el.classList.add("min"); paint() }
-		if (act === "close") close_window(win)
-	})
-	el.querySelector(".grip").addEventListener("mousedown", function (e) { resize(win, e, true, true) })
-	el.querySelector(".edge-r").addEventListener("mousedown", function (e) { resize(win, e, true, false) })
-	el.querySelector(".edge-b").addEventListener("mousedown", function (e) { resize(win, e, false, true) })
+	if (bar) {
+		bar.addEventListener("mousedown", function (event) {
+			if (event.target.dataset && event.target.dataset.act) return
+			drag(win, event)
+		})
+		bar.addEventListener("dblclick", function (event) {
+			if (event.target.dataset && event.target.dataset.act) return
+			toggle_max(win)
+		})
+		bar.addEventListener("click", function (event) {
+			var act = event.target.dataset && event.target.dataset.act
+			if (act === "max") toggle_max(win)
+			if (act === "min") { win.min = true; el.classList.add("min"); paint() }
+			if (act === "close") close_window(win)
+		})
+	}
+	var grip = el.querySelector(".grip")
+	if (grip) {
+		grip.addEventListener("mousedown", function (e) { resize(win, e, true, true) })
+		el.querySelector(".edge-r").addEventListener("mousedown", function (e) { resize(win, e, true, false) })
+		el.querySelector(".edge-b").addEventListener("mousedown", function (e) { resize(win, e, false, true) })
+	}
 	return win
 }
 
@@ -1175,11 +1856,38 @@ function close_window(win) {
 		render_reader()
 		return
 	}
-	// Same deal for the messenger: closing the conversation is leaving it.
+	// Same deal for the messenger and the channel windows: closing one is leaving its
+	// conversation, and the state variable drives the visibility.
 	if (win.id === "messenger") {
 		convo = null
 		render_list()
 		render_messenger()
+		return
+	}
+	if (win.id === "wawin") {
+		wa_convo = null
+		render_list()
+		render_wa()
+		return
+	}
+	if (win.id === "platwin") {
+		plat_convo = null
+		render_list()
+		render_plat()
+		return
+	}
+	if (win.id === "pushwin") {
+		push_open = false
+		render_list()
+		render_push()
+		return
+	}
+	if (win.id === "nokia") {
+		nk_open = false
+		nk_current = null
+		nk_view = "list"
+		render_list()
+		render_nokia()
 		return
 	}
 	win.el.classList.add("closed")
@@ -1204,8 +1912,8 @@ function paint() {
 	var tasks = $("tasks")
 	tasks.innerHTML = ""
 	wins.forEach(function (win) {
-		win.el.querySelector(".title-bar").className =
-			"title-bar" + (focused === win.id && !win.min ? "" : " dim")
+		var bar = win.el.querySelector(".title-bar")
+		if (bar) bar.className = "title-bar" + (focused === win.id && !win.min ? "" : " dim")
 		if (!win.open) return
 		var button = document.createElement("button")
 		button.className = "task" + (focused === win.id && !win.min ? " on" : "")
@@ -1766,6 +2474,41 @@ register("messenger", "Conversation", {
 	w: mg.w,
 	h: mg.h,
 })
+/* The channel apps, each offset its own way so opening several doesn't stack them. */
+var wa = { w: Math.min(430, box.w - 60), h: Math.min(520, box.h - 30) }
+register("wawin", "WhatsApp", {
+	x: Math.max(0, Math.round((box.w - wa.w) / 2) - 60),
+	y: Math.max(0, Math.round((box.h - wa.h) / 2) - 6),
+	w: wa.w,
+	h: wa.h,
+})
+var pl = { w: Math.min(560, box.w - 70), h: Math.min(460, box.h - 40) }
+register("platwin", "Chat", {
+	x: Math.min(box.w - pl.w, Math.round((box.w - pl.w) / 2) + 52),
+	y: Math.max(0, Math.round((box.h - pl.h) / 2) + 8),
+	w: pl.w,
+	h: pl.h,
+})
+var pu = { w: Math.min(380, box.w - 80), h: Math.min(480, box.h - 40) }
+register("pushwin", "Notifications", {
+	// A shade hangs off the tray, so it opens against the right edge.
+	x: Math.max(0, box.w - pu.w - 14),
+	y: Math.max(0, Math.round((box.h - pu.h) / 2) - 12),
+	w: pu.w,
+	h: pu.h,
+})
+/*
+ * The handset leans against the right edge, fixed-size — relayout() re-centres windows
+ * nobody has moved, and a phone snapping to the middle of the desk would break the
+ * Winamp-ness of it, so it counts as placed from the start.
+ */
+register("nokia", "Nokia \\u00B7 Messages", {
+	x: Math.max(6, box.w - 276),
+	y: Math.max(4, box.h - 552),
+	w: 246,
+	h: 536,
+})
+find("nokia").placed = true
 $("msn-them").src = api + "/desktop/avatar"
 $("aol").classList.add("maxed")
 focus_window("mailbox")
@@ -2059,6 +2802,96 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			</div>
 		</div>
 		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	</div>
+
+	<div id="wawin" class="child window conv">
+		<div class="title-bar">
+			<div class="title-bar-text">&#128994; <span id="wa-title">WhatsApp</span></div>
+			<div class="title-bar-controls">
+				<button aria-label="Minimize" data-act="min"></button>
+				<button aria-label="Maximize" data-act="max"></button>
+				<button aria-label="Close" data-act="close"></button>
+			</div>
+		</div>
+		<div id="wahead">
+			<span class="face">&#128100;</span>
+			<span class="who"><b id="wa-to"></b><small>last seen just now &#183; captured, never delivered</small></span>
+		</div>
+		<div id="wachat" class="selectable"></div>
+		<div id="wafoot">
+			<span class="wain">
+				<button class="icobtn" data-wa="The stickers never left 2003.">&#9786;</button>
+				<input id="wa-text" placeholder="Type a message" class="selectable">
+			</span>
+			<button class="icobtn" id="wa-mic" data-wa="Voice notes need a voice. Your app only types.">&#127908;</button>
+		</div>
+		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	</div>
+
+	<div id="platwin" class="child window conv">
+		<div class="title-bar">
+			<div class="title-bar-text">&#128172; <span id="plat-title">Chat</span></div>
+			<div class="title-bar-controls">
+				<button aria-label="Minimize" data-act="min"></button>
+				<button aria-label="Maximize" data-act="max"></button>
+				<button aria-label="Close" data-act="close"></button>
+			</div>
+		</div>
+		<div id="platbody">
+			<div class="plathead"><span class="dot" id="plat-glyph">#</span><span id="plat-name"></span><small id="plat-sub"></small></div>
+			<div id="plathist" class="selectable"></div>
+			<div id="platentry">
+				<input id="plat-input" placeholder="" class="selectable">
+			</div>
+		</div>
+		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	</div>
+
+	<div id="pushwin" class="child window conv">
+		<div class="title-bar">
+			<div class="title-bar-text">&#128276; <span>Notifications</span></div>
+			<div class="title-bar-controls">
+				<button aria-label="Minimize" data-act="min"></button>
+				<button aria-label="Maximize" data-act="max"></button>
+				<button aria-label="Close" data-act="close"></button>
+			</div>
+		</div>
+		<div id="pushbody" class="selectable"></div>
+		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	</div>
+
+	<!-- The handset. Not a .window on purpose: no XP frame, no title bar — the shell is
+	     the chrome, the way a Winamp skin was. Dragged by its body, powered off from the
+	     button on its crown, and still a citizen of the taskbar like everything else. -->
+	<div id="nokia" class="child conv">
+		<div class="nk-shell">
+			<button class="nk-power" aria-label="Power off"></button>
+			<div class="nk-ear"><i></i><i></i><i></i><i></i></div>
+			<div class="nk-brand">NOKIA</div>
+			<div class="nk-bezel"><div class="nk-lcd" id="nk-lcd"></div></div>
+			<div class="nk-navi">
+				<button class="nk-key nk-c" id="nk-c">C</button>
+				<button class="nk-key nk-mid" id="nk-mid">Select</button>
+				<span class="nk-updown">
+					<button class="nk-key up" id="nk-up" aria-label="Up">&#9650;</button>
+					<button class="nk-key dn" id="nk-dn" aria-label="Down">&#9660;</button>
+				</span>
+			</div>
+			<div class="nk-pad">
+				<button class="nk-key">1</button>
+				<button class="nk-key">2<small>abc</small></button>
+				<button class="nk-key">3<small>def</small></button>
+				<button class="nk-key">4<small>ghi</small></button>
+				<button class="nk-key">5<small>jkl</small></button>
+				<button class="nk-key">6<small>mno</small></button>
+				<button class="nk-key">7<small>pqrs</small></button>
+				<button class="nk-key">8<small>tuv</small></button>
+				<button class="nk-key">9<small>wxyz</small></button>
+				<button class="nk-key">*</button>
+				<button class="nk-key">0</button>
+				<button class="nk-key">#</button>
+			</div>
+		</div>
 	</div>
 
 	<div id="taskbar">

@@ -41,6 +41,12 @@ export interface ChannelCapture {
 	 * double as type discriminants.
 	 */
 	template?: string
+	/**
+	 * The chat platform the send was bound for (slack, discord, teams, telegram), when the
+	 * capturing mock stood in for one. First-class for the same reason as `template`: the
+	 * UI picks a whole window skin by it.
+	 */
+	provider?: string
 	/** Channel-specific details worth showing (segments, template language, …), in order. */
 	meta?: Array<[string, string]>
 	scheduled_at?: Date
@@ -59,6 +65,8 @@ export interface InboxMessage extends Omit<
 	channel?: Channel
 	/** The template name, for template-first channels — see {@link ChannelCapture.template}. */
 	template?: string
+	/** The chat platform the send was bound for — see {@link ChannelCapture.provider}. */
+	provider?: string
 	/** Channel-specific details, rendered as-is by the UI. */
 	meta?: Array<[string, string]>
 	/** Optional now that texts and chats — which have no sender address, subject line or

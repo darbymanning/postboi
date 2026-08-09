@@ -180,17 +180,30 @@ scheduled message crossing its time only moves folders while the page is open.
 > a send, so it doesn't pass through the inbox. A captured message keeps the time it was
 > captured with.
 
-### Conversations open in Messenger
+### Every channel opens as its own app
 
-Mail opens in the reader. Everything else is a conversation, and opens in one: texts,
-WhatsApp messages, chat posts and pushes get a Messenger window of a suspiciously
-familiar vintage, threaded by channel and destination — send three texts to the same
-number and you read them as one conversation.
+Mail opens in the reader. Everything else opens as the application it belongs to,
+each in its own window on the desktop:
 
-Channel details ride along as system lines: SMS shows its segment count and encoding
-(what your provider would have billed), WhatsApp shows the template, language and
-variables, push shows the click-through URL and data payload. The Send button will
-cheerfully explain why it can't, and yes, there is a Nudge.
+- **WhatsApp** gets a WhatsApp window — brand green, date chips, template cards, and
+  two grey ticks that will never turn blue.
+- **Slack, Discord, Teams and Telegram** share one chat window that dresses as
+  whichever platform the message was bound for. A chat whose platform isn't known
+  falls back to a Messenger window of a suspiciously familiar vintage — the Nudge
+  still works.
+- **Push** pulls down a notification shade, every notification on one panel,
+  delivered to 0 devices.
+- **SMS** is the exception to all of it: a text lands on a handset, so a handset is
+  what opens — a certain indestructible Nokia, no window frame at all, dragged around
+  by its body like Winamp. Read with the navi key, scroll with the rocker, power it
+  off from the button on its crown.
+
+Conversations thread by channel and destination — send three texts to the same number
+and the phone reads them as one inbox. Channel details ride along in each skin: SMS
+shows its segment count and encoding (what your provider would have billed), WhatsApp
+shows the template, language and variables, push shows the click-through URL and data
+payload. Every window is a child of the app: minimise Postboi Local and they all duck
+down with it to reveal the desktop, restore it and the same set comes back.
 
 ### Options
 

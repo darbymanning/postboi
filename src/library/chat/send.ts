@@ -129,7 +129,14 @@ async function resolve_platform(key: ChatProviderKey): Promise<ChatProvider<unkn
 				console.warn(`postboi: no ${missing.env} set — logging ${key} messages instead of posting.`)
 			}
 			const Mock = await LOADERS.mock()
-			return new Mock({ log: true, sink: inbox_sink("chat"), default: chat_env_defaults() })
+			// The platform rides on the mock so the dev inbox can dress the conversation as
+			// Slack, Discord, Teams or Telegram rather than as a generic chat.
+			return new Mock({
+				log: true,
+				sink: inbox_sink("chat"),
+				platform: key,
+				default: chat_env_defaults(),
+			})
 		}
 		throw new PostboiError({
 			provider: key,

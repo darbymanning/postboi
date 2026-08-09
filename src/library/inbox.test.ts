@@ -124,9 +124,11 @@ describe("inbox middleware", () => {
 		expect(html).toContain('aria-label="Close" data-act="close" id="reader-close"')
 		// The mailbox closes too, and the Start menu is how it comes back.
 		expect(html).toContain('id="m-mailbox"')
-		// Resize handles on the mailbox, the reader, the messenger and the app frame itself —
-		// the reading pane is only ever big enough because you can make it bigger.
-		expect(html.match(/class="grip"/g)).toHaveLength(4)
+		// Resize handles on the mailbox, the reader, the messenger, the three channel app
+		// windows (WhatsApp, chat, notifications) and the app frame itself — the reading
+		// pane is only ever big enough because you can make it bigger. The Nokia has none:
+		// a handset is not resizable, which is rather the point of it.
+		expect(html.match(/class="grip"/g)).toHaveLength(7)
 	})
 
 	it("is branded Postboi, not the client it's dressed as", async () => {
@@ -572,5 +574,31 @@ describe("channel captures", () => {
 		expect(html).toContain('id="messenger"')
 		expect(html).toContain('id="msn-nudge"')
 		expect(html).toContain("Conversation")
+	})
+
+	it("ships a window per channel — and the Nokia without an XP frame", () => {
+		const html = inbox_ui()
+		for (const id of ["wawin", "platwin", "pushwin", "nokia", "nk-lcd", "wachat", "pushbody"]) {
+			expect(html).toContain(`id="${id}"`)
+		}
+		// The handset is a child of the desktop but never a .window: no title bar, no
+		// frame — the shell is the chrome, the way a Winamp skin was.
+		expect(html).toContain('id="nokia" class="child conv"')
+		// The four chat wardrobes the platform picker can dress the window in.
+		for (const plat of ["plat-slack", "plat-discord", "plat-teams", "plat-telegram"]) {
+			expect(html).toContain(plat)
+		}
+	})
+
+	it("keeps the platform on a chat capture so the window can dress as it", async () => {
+		const inbox = await start_inbox()
+		set_inbox_port(inbox.port)
+
+		const chat = new MockChat({ sink: inbox_sink("chat"), platform: "slack" })
+		await chat.send({ message: "Deploy finished" })
+		await until(() => inbox.store.list().length === 1)
+
+		expect(inbox.store.list()[0]).toMatchObject({ channel: "chat", provider: "slack" })
+		await inbox.stop()
 	})
 })
