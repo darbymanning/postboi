@@ -992,9 +992,10 @@ the "heavy lifting" exists, but the secrets only ever live with the user and the
 - The hard line held: CLI-time sync only. Nothing in the send path reads the store.
 - **Init pulls too**: every init flow fetches the team's synced credentials before
   prompting, and a prompt whose value the team already holds answers itself. A credential
-  is typed once, on one machine, ever. (Web Push goes one further: `init --push` skips
-  the generate-a-key-pair offer when the team's VAPID pair is already synced — a second
-  pair would orphan every subscription collected under the first.)
+  is typed once, on one machine, ever. (Web Push goes one further: both VAPID halves are
+  env-routed in the registry so the _pair_ syncs, and `init --push` skips the
+  generate-a-key-pair offer when the team's private key is already synced — a second pair
+  would orphan every subscription collected under the first.)
 
 ## Considered: minting credentials via provider OAuth apps — Slack + Discord ✅ **shipped**
 
@@ -1016,13 +1017,19 @@ The sweep: for every provider in the registry, can Postboi register an "app" wit
 **Shipped for Slack and Discord** (the rest stay parked). Both apps are registered, with
 client ids/secrets in the postboi-app environment. The flow mirrors `POSTBOI_TOKEN`
 device auth: `init --chat` → **Connect in the browser** → `POST /api/connect/start` mints
-a one-time code (15 min TTL) → the browser hits `/connect/slack?code=…`, which validates
-the code and forwards to the provider's consent screen with the code as OAuth `state` →
-the callback exchanges the OAuth code server-side (client secret never leaves the app),
-stores the created webhook URL on the row, and shows a close-this-tab page → the CLI
-polls `/api/connect/poll`, collects the webhook exactly once (row deleted on read),
-writes `SLACK_WEBHOOK_URL` / `DISCORD_WEBHOOK_URL`, and team-syncs it. Every failure
-(older API, offline, tab closed, consent denied) degrades to the paste-a-webhook prompt.
+a one-time code (15 min TTL; expired rows are swept on the next start) → the browser hits
+`/connect/slack?code=…`, which shows an are-you-the-one-who-started-this interstitial
+(the code is anonymous, so without this a mailed link could harvest a webhook onto
+someone else's code — the same speed bump `/cli` has) and then forwards to the provider's
+consent screen with the code as OAuth `state` → the callback exchanges the OAuth code
+server-side (client secret never leaves the app), stores the created webhook URL on the
+row atomically, and shows a close-this-tab page → the CLI polls `/api/connect/poll`,
+collects the webhook exactly once (row deleted on read), writes `SLACK_WEBHOOK_URL` /
+`DISCORD_WEBHOOK_URL`, and — signed in — team-syncs it. Consent denial cancels the row so
+the CLI falls back immediately; every other failure (older API, offline, tab closed)
+degrades to the paste-a-webhook prompt. Which provider has a connect app lives in the
+registry (`connect: { env }`), so a new one is a registry field plus a server-side record,
+not a hunt through init's branches.
 
 For providers with no delegated flow, init does the next-best thing: it prints the exact
 credential page (`resend.com/api-keys`, `console.twilio.com`, BotFather, …) before

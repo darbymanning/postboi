@@ -28,6 +28,13 @@ export type ProviderMeta = {
 	/** Dashboard URL where the user gets their credentials. */
 	url: string
 	fields: Array<ProviderField>
+	/**
+	 * Present when Postboi has a registered OAuth app that can mint this provider's
+	 * credential in the browser — `init` offers "Connect in the browser" and the flow
+	 * fills `env`. The registry is the single place that knows this, so a new connect
+	 * provider is one field here, not a hunt through init's branches.
+	 */
+	connect?: { env: string }
 }
 
 /** The providers that can be configured by `postboi init` / driven by `mail()`. */
@@ -471,6 +478,7 @@ export const CHAT_PROVIDERS = [
 		class: "Slack",
 		url: "https://api.slack.com/messaging/webhooks",
 		note: "Incoming webhook — the channel is baked into the URL",
+		connect: { env: "SLACK_WEBHOOK_URL" },
 		fields: [
 			{
 				env: "SLACK_WEBHOOK_URL",
@@ -487,6 +495,7 @@ export const CHAT_PROVIDERS = [
 		class: "Discord",
 		url: "https://discord.com/developers/docs/resources/webhook",
 		note: "Channel webhook — same shape as Slack",
+		connect: { env: "DISCORD_WEBHOOK_URL" },
 		fields: [
 			{ env: "DISCORD_WEBHOOK_URL", arg: "webhook_url", label: "Webhook URL", secret: true },
 		],
@@ -534,7 +543,16 @@ export const PUSH_PROVIDERS = [
 		url: "https://developer.mozilla.org/en-US/docs/Web/API/Push_API",
 		note: "Browsers, via VAPID. No vendor and no per-message cost",
 		fields: [
-			{ env: "VAPID_PUBLIC_KEY", arg: "public_key", label: "VAPID public key" },
+			{
+				env: "VAPID_PUBLIC_KEY",
+				arg: "public_key",
+				label: "VAPID public key",
+				// Not sensitive, but env-routed (`secret`) on purpose: the pair must travel
+				// together through team sync. A synced private key without its public half
+				// leaves init offering to regenerate over the team's pair, orphaning every
+				// subscription collected under it.
+				secret: true,
+			},
 			{ env: "VAPID_PRIVATE_KEY", arg: "private_key", label: "VAPID private key", secret: true },
 			{
 				env: "VAPID_SUBJECT",

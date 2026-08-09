@@ -18,8 +18,8 @@ channel inside it, so there's usually nothing to pass but the message.
 
 The fast way: `bunx postboi init --chat`, pick Slack, choose **Connect in the browser**.
 Slack's own consent screen asks which channel to post to, and the webhook lands in your
-env file without you ever seeing it — then [syncs to your team](/provider#team-credentials),
-so nobody else sets it up at all.
+env file without you ever seeing it. Signed in to Postboi, it also
+[syncs to your team](/provider#team-credentials), so nobody else sets it up at all.
 
 Or create an [incoming webhook](https://api.slack.com/messaging/webhooks) yourself and
 paste it:

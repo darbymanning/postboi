@@ -18,7 +18,7 @@ env var is the whole setup.
 
 The fast way: `bunx postboi init --chat`, pick Discord, choose **Connect in the browser**.
 Discord's own consent screen asks which server and channel to post to, and the webhook
-lands in your env file without you ever seeing it — then
+lands in your env file without you ever seeing it. Signed in to Postboi, it also
 [syncs to your team](/provider#team-credentials), so nobody else sets it up at all.
 
 Or create a webhook yourself under **Server Settings → Integrations → Webhooks** (or a

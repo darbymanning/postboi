@@ -204,6 +204,9 @@ import { sms } from "postboi"
 await sms({ to: "+447788223344", message: "…" }) // RCS if the device can, SMS if not
 ```
 
+Constructing the provider yourself instead? Instances don't read the environment — pass
+`messaging_service_sid` to the `new Twilio({ … })` constructor.
+
 Worth knowing before you switch it on:
 
 - **Sender registration is console-side** — brand verification through your provider, with
