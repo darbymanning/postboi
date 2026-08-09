@@ -26,7 +26,15 @@ import {
 	is_gitignored,
 	parse_env,
 } from "./env.js"
-import { detect_hosts, detect_adapter_host, push_spec, manual_hint } from "./deploy.js"
+import {
+	detect_hosts,
+	detect_adapter_host,
+	host_invocation,
+	link_args,
+	link_state,
+	push_spec,
+	manual_hint,
+} from "./deploy.js"
 import {
 	add_remote_exclude,
 	add_vite_plugin,
@@ -233,25 +241,75 @@ describe("deploy detection", () => {
 		expect(detect_adapter_host([])).toBeNull()
 	})
 
-	it("builds push commands (secrets via stdin, netlify via arg)", () => {
-		expect(push_spec("vercel", "K", "v")).toEqual({
+	const direct = { cmd: "vercel", prefix: [] }
+
+	it("builds upserting push commands (secrets via stdin, netlify via arg)", () => {
+		// Every push overwrites: the user chose to push freshly-collected credentials, so
+		// a stale existing value winning would be the surprise. Vercel spells that --force.
+		expect(push_spec(direct, "vercel", "K", "v")).toEqual({
 			cmd: "vercel",
-			args: ["env", "add", "K", "production"],
+			args: ["env", "add", "K", "production", "--force"],
 			stdin: "v",
 		})
-		expect(push_spec("cloudflare", "K", "v")).toEqual({
+		expect(push_spec({ cmd: "wrangler", prefix: [] }, "cloudflare", "K", "v")).toEqual({
 			cmd: "wrangler",
 			args: ["secret", "put", "K"],
 			stdin: "v",
 		})
-		expect(push_spec("netlify", "K", "v")).toEqual({
+		expect(push_spec({ cmd: "netlify", prefix: [] }, "netlify", "K", "v")).toEqual({
 			cmd: "netlify",
 			args: ["env:set", "K", "v"],
 		})
-		expect(push_spec("railway", "K", "v")).toEqual({
+		expect(push_spec({ cmd: "railway", prefix: [] }, "railway", "K", "v")).toEqual({
 			cmd: "railway",
 			args: ["variables", "--set", "K=v"],
 		})
+	})
+
+	it("falls back to the package runner when the host CLI isn't installed", () => {
+		expect(host_invocation("cloudflare", "bun", () => true)).toEqual({
+			cmd: "wrangler",
+			prefix: [],
+			via_runner: false,
+		})
+		expect(host_invocation("cloudflare", "bun", () => false)).toEqual({
+			cmd: "bunx",
+			prefix: ["wrangler"],
+			via_runner: true,
+		})
+		// The netlify binary lives in the netlify-cli package; railway in @railway/cli.
+		expect(host_invocation("netlify", "npm", () => false)).toEqual({
+			cmd: "npx",
+			prefix: ["--yes", "netlify-cli"],
+			via_runner: true,
+		})
+		expect(host_invocation("railway", "pnpm", () => false)).toEqual({
+			cmd: "pnpm",
+			prefix: ["dlx", "@railway/cli"],
+			via_runner: true,
+		})
+		const runnered = push_spec(
+			host_invocation("cloudflare", "bun", () => false),
+			"cloudflare",
+			"K",
+			"v"
+		)
+		expect(runnered).toEqual({ cmd: "bunx", args: ["wrangler", "secret", "put", "K"], stdin: "v" })
+	})
+
+	it("knows each host's link state and link command", () => {
+		expect(link_state("vercel", [], (p) => p === ".vercel/project.json")).toBe("linked")
+		expect(link_state("vercel", [], () => false)).toBe("unlinked")
+		expect(link_state("netlify", [], (p) => p === ".netlify/state.json")).toBe("linked")
+		expect(link_state("cloudflare", ["wrangler.jsonc"], () => false)).toBe("linked")
+		expect(link_state("cloudflare", [".dev.vars"], () => false)).toBe("unlinked")
+		// Railway keeps link state in its global config — nothing local to check.
+		expect(link_state("railway", [], () => false)).toBe("unknown")
+
+		expect(link_args("vercel")).toEqual(["link"])
+		expect(link_args("railway")).toEqual(["link"])
+		// Cloudflare's link is the config file itself, not a CLI command.
+		expect(link_args("cloudflare")).toBeNull()
 	})
 
 	it("offers a manual hint per host", () => {

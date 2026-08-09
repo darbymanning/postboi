@@ -29,6 +29,9 @@ import {
 import {
 	detect_hosts,
 	detect_adapter_host,
+	host_invocation,
+	link_args,
+	link_state,
 	push_spec,
 	manual_hint,
 	HOST_LABEL,
@@ -144,6 +147,8 @@ function run_push(spec: ReturnType<typeof push_spec>): { ok: boolean; reason?: s
 		input: spec.stdin,
 		stdio: [spec.stdin !== undefined ? "pipe" : "inherit", "inherit", "inherit"],
 		encoding: "utf8",
+		// Windows resolves npx/bunx/vercel through .cmd shims, which need a shell to launch.
+		shell: platform === "win32",
 	})
 	if (result.error) {
 		const code = (result.error as NodeJS.ErrnoException).code
@@ -383,22 +388,64 @@ async function offer_host_push(
 		if (picked !== "skip") host = picked
 	}
 
-	if (host && !is_on_path(HOST_CLI[host])) {
-		// CLI isn't installed — warn once and print the manual commands rather than
-		// failing on every var.
-		console.log(`\n${yellow("!")} ${bold(HOST_CLI[host])} not found on PATH — skipping env push.`)
-		console.log(`  ${dim("install it, then run:")}`)
-		for (const key of Object.keys(values)) console.log(`    ${manual_hint(host, key)}`)
-	} else if (host) {
-		console.log(`\n${dim(`Pushing to ${HOST_LABEL[host]}…`)}`)
-		for (const [key, value] of Object.entries(values)) {
-			const result = run_push(push_spec(host, key, value))
-			if (result.ok) {
-				console.log(`${green("✓")} ${key}`)
-			} else {
-				console.log(`${red("✗")} ${key} — ${result.reason}`)
-				console.log(`  ${dim("run it yourself:")} ${manual_hint(host, key)}`)
+	if (!host) return
+
+	// A missing global install is not a dead end: the project's package runner fetches
+	// the host CLI on demand (bunx/npx/pnpm dlx), at the cost of a slower first run.
+	const invocation = host_invocation(host, detect_package_manager(files), is_on_path)
+	if (invocation.via_runner) {
+		console.log(
+			dim(
+				`\n(${HOST_CLI[host]} isn't installed — running it via ${[invocation.cmd, ...invocation.prefix].join(" ")})`
+			)
+		)
+	}
+
+	// Pushing into the void helps nobody: an unlinked project fails on every var with the
+	// host's own error. Offer the link first, interactively — it's the host CLI's own
+	// prompt flow — then push.
+	const state = link_state(host, files, existsSync)
+	if (state === "unlinked") {
+		const link = link_args(host)
+		if (!link) {
+			// Cloudflare's "link" is the config file: secrets push to the Worker it names.
+			console.log(
+				`\n${yellow("!")} no wrangler config found — add wrangler.jsonc (with your Worker's \`name\`), then run:`
+			)
+			for (const key of Object.keys(values)) console.log(`    ${manual_hint(host, key)}`)
+			return
+		}
+		if (
+			!(await prompts.confirm(
+				`\nThis directory isn't linked to a ${HOST_LABEL[host]} project yet — link it now?`
+			))
+		) {
+			console.log(`  ${dim(`link later (${HOST_CLI[host]} ${link.join(" ")}), then run:`)}`)
+			for (const key of Object.keys(values)) console.log(`    ${manual_hint(host, key)}`)
+			return
+		}
+		const linked = run_push({ cmd: invocation.cmd, args: [...invocation.prefix, ...link] })
+		if (!linked.ok) {
+			console.log(`${red("✗")} linking failed — ${linked.reason}`)
+			console.log(`  ${dim("link by hand, then run:")}`)
+			for (const key of Object.keys(values)) console.log(`    ${manual_hint(host, key)}`)
+			return
+		}
+	}
+
+	console.log(`\n${dim(`Pushing to ${HOST_LABEL[host]}…`)}`)
+	for (const [key, value] of Object.entries(values)) {
+		const result = run_push(push_spec(invocation, host, key, value))
+		if (result.ok) {
+			console.log(`${green("✓")} ${key}`)
+		} else {
+			console.log(`${red("✗")} ${key} — ${result.reason}`)
+			if (host === "railway") {
+				// Railway's link state lives in its global config, so this is the first
+				// place an unlinked project surfaces.
+				console.log(`  ${dim(`not linked? run \`${HOST_CLI.railway} link\` first`)}`)
 			}
+			console.log(`  ${dim("run it yourself:")} ${manual_hint(host, key)}`)
 		}
 	}
 }
