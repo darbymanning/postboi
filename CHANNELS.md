@@ -1184,7 +1184,7 @@ everyone quotes.
 | ----------------- | --------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | **The SMS Works** | **~2.82p** (3.1p less ~8.9% delivery refunds) | PAYG, no minimum, credits never expire, **50 free test credits** | Excellent — see below                                                         |
 | **PureSMS**       | **2.8p** flat                                 | PAYG, no minimum, no monthly                                     | Good, but white-labelled and error handling undocumented                      |
-| **ClickSend**     | ~3.5–4p (~$0.045)                             | PAYG, $20 minimum top-up, free inbound                           | Decent and global, but UK rate is unpublished and it's ~30% pricier           |
+| **ClickSend**     | ~~3.5–4p (~~$0.045)                           | PAYG, $20 minimum top-up, free inbound                           | Decent and global, but UK rate is unpublished and it's ~30% pricier           |
 | **Twilio**        | ~4.3p ($0.056)                                | PAYG                                                             | Already shipping as the global option                                         |
 | **FireText**      | 4.0p (1,000 tier)                             | Credits, no expiry                                               | Documented errors, webhooks, ISO 27001 + ICO registered. Simply too expensive |
 | **TextAnywhere**  | 4.9p                                          | Credits **that expire**                                          | Ruled out on price _and_ expiry                                               |
