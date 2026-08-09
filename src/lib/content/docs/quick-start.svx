@@ -106,8 +106,9 @@ sending code never names a provider, so swapping later is a one-line config chan
 - Optionally collects `from` / `to` and other defaults applied to every send, and writes
   them (with hooks, later) to the committed [`postboi.config.ts`](/config).
 - Installs `postboi` if it isn't installed yet.
-- Offers to push your env vars to your host (Vercel, Cloudflare, Netlify, Railway) and to
-  gitignore the env file if it isn't already.
+- Offers to push your env vars to your host (Vercel, Cloudflare, Netlify, Railway) — no
+  globally installed host CLI required, and it offers to link the project first when it
+  isn't yet — and to gitignore the env file if it isn't already.
 - Offers to install the **postboi agent skill** into `.claude/skills/`: a condensed
   cheat-sheet that teaches AI coding agents the library's conventions. It ships inside
   the package, and what's installed is a symlink to it — so upgrading postboi upgrades
