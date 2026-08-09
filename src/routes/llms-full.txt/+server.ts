@@ -1,7 +1,7 @@
 import type { RequestHandler } from "./$types"
-import { siteConfig } from "$lib"
-import { contentSections } from "$lib/config/navigation"
-import { getContentSectionManifest, getContentSectionRawSource } from "$lib/content/sections"
+import { siteConfig } from "$site"
+import { contentSections } from "$site/config/navigation"
+import { getContentSectionManifest, getContentSectionRawSource } from "$site/content/sections"
 
 export const GET: RequestHandler = () => {
 	const seen = new Set<string>()

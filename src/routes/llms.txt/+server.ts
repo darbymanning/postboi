@@ -1,13 +1,13 @@
 import type { RequestHandler } from "./$types"
-import { siteConfig } from "$lib"
-import { contentSections } from "$lib/config/navigation"
+import { siteConfig } from "$site"
+import { contentSections } from "$site/config/navigation"
 import {
 	getContentSectionHref,
 	getContentSectionManifest,
 	getContentSectionMetadata,
 	getContentSectionRawHref,
 	type ContentSectionId,
-} from "$lib/content/sections"
+} from "$site/content/sections"
 
 type ContentEntry = {
 	sectionId: ContentSectionId

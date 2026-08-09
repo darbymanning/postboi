@@ -4,7 +4,7 @@ import {
 	getAllContentEntries,
 	getContentSectionModule,
 	resolveSection,
-} from "$lib/content/sections"
+} from "$site/content/sections"
 
 export const prerender = true
 
