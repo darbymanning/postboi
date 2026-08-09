@@ -16,8 +16,13 @@ env var is the whole setup.
 
 ## Setup
 
-Create a webhook under **Server Settings → Integrations → Webhooks** (or a channel's own
-settings), and give it to Postboi:
+The fast way: `bunx postboi init --chat`, pick Discord, choose **Connect in the browser**.
+Discord's own consent screen asks which server and channel to post to, and the webhook
+lands in your env file without you ever seeing it — then
+[syncs to your team](/provider#team-credentials), so nobody else sets it up at all.
+
+Or create a webhook yourself under **Server Settings → Integrations → Webhooks** (or a
+channel's own settings), and paste it:
 
 ```bash
 # .env
@@ -25,7 +30,7 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/…
 ```
 
 **Treat the URL as a secret** — anyone holding it can post to your channel. It's exactly
-the kind of credential [team sync](/provider#team-credentials) exists for.
+the kind of credential team sync exists for.
 
 ## Titles
 
