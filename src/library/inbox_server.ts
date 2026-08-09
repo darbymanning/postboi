@@ -58,6 +58,8 @@ export type CapturedMessage = Omit<
 		channel?: InboxMessage["channel"]
 		/** The template name, for template-first channels. */
 		template?: string
+		/** The chat platform the send was bound for (slack, discord, …). */
+		provider?: string
 		/** Channel-specific details, rendered as-is by the UI. */
 		meta?: Array<[string, string]>
 	}

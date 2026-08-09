@@ -70,6 +70,8 @@ const NORMALISERS = {
 			to: [{ address: chat.to }],
 			subject: chat.title,
 			text: chat.message,
+			// First-class, not a meta row: the inbox UI picks a whole window skin by it.
+			provider: chat.platform,
 			meta: chat.username ? [["Posts as", chat.username]] : [],
 		}
 	},
