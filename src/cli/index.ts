@@ -65,6 +65,7 @@ import {
 	push_env_vars,
 	start_connect,
 	poll_connect,
+	type ConnectResult,
 	type PostboiDomain,
 } from "./postboi.js"
 import { credential_env_keys } from "../library/registry.js"
@@ -213,13 +214,36 @@ function write_env_values(targets: Array<EnvTarget>, values: Record<string, stri
  * The team's synced credentials, when signed in — `{}` otherwise. Fetched once per init
  * flow so a teammate is never asked to paste a key the team already holds: a synced value
  * answers the prompt, silently landing in the env file like a typed one would.
+ *
+ * Empty values are dropped: an empty string can be pushed (`postboi env push KEY=`) but
+ * is not a usable credential, and treating it as one would silently suppress the prompt
+ * *and* the browser connect while writing nothing to the env file.
  */
 async function synced_credentials(): Promise<Record<string, string>> {
 	await ensure_env_loaded()
 	const token = read_env("POSTBOI_TOKEN")
 	if (!token) return {}
 	const synced = await fetch_env_vars(cloud_base(), token)
-	return synced?.vars ?? {}
+	return Object.fromEntries(Object.entries(synced?.vars ?? {}).filter(([, value]) => value !== ""))
+}
+
+/**
+ * Fill provider fields from the team's synced credentials, announcing each one. The
+ * returned map answers prompts via `prefilled[field.env] ?? ask(…)` — one copy of the
+ * check, the message, and the routing for every init flow.
+ */
+function prefill_from_team(
+	team: Record<string, string>,
+	fields: ReadonlyArray<{ env: string }>
+): Record<string, string> {
+	const prefilled: Record<string, string> = {}
+	for (const field of fields) {
+		if (team[field.env] !== undefined) {
+			console.log(`${green("✓")} ${bold(field.env)} — using your team's synced credential`)
+			prefilled[field.env] = team[field.env]
+		}
+	}
+	return prefilled
 }
 
 /** Every assignment in the project's env file(s) — what the bare `env push` sweep reads. */
@@ -234,18 +258,31 @@ function read_project_env(): Record<string, string> {
 
 /**
  * Push freshly-collected credentials to the account, so teammates (and this developer's
- * next machine) get them from `postboi sync` with no ceremony. Quiet no-op without a
- * token — nothing to sync to — and `POSTBOI_*` vars never sync: the token is per
- * developer, and the rest derive from the account already.
+ * next machine) get them from `postboi sync` with no ceremony. `POSTBOI_*` vars never
+ * sync (the token is per developer, and the rest derive from the account already), and
+ * values that came *from* the team aren't echoed back up — pass what the team already
+ * holds as `already_synced` so a fully-prefilled init makes no request at all.
  */
-async function sync_credentials_up(values: Record<string, string>): Promise<void> {
+async function sync_credentials_up(
+	values: Record<string, string>,
+	already_synced: Record<string, string> = {}
+): Promise<void> {
 	const syncable = Object.fromEntries(
-		Object.entries(values).filter(([key]) => !key.startsWith("POSTBOI_"))
+		Object.entries(values).filter(
+			([key, value]) => !key.startsWith("POSTBOI_") && already_synced[key] !== value
+		)
 	)
 	if (Object.keys(syncable).length === 0) return
 	await ensure_env_loaded()
 	const token = read_env("POSTBOI_TOKEN")
-	if (!token) return
+	if (!token) {
+		// Say so: the docs promise team sync, and a silent skip reads as a broken promise
+		// when a teammate later finds nothing to pull.
+		console.log(
+			dim("(credentials not synced to a team — no POSTBOI_TOKEN; `bunx postboi init` signs in)")
+		)
+		return
+	}
 	const pushed = await push_env_vars(cloud_base(), token, syncable)
 	if (pushed.ok) {
 		console.log(
@@ -942,6 +979,9 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 
 /** Bring-your-own-provider onboarding: pick a provider, collect creds, write config. */
 async function byo_init(prompts: Prompts, files: Array<string>): Promise<void> {
+	// The team-credentials fetch doesn't depend on the pick, so it overlaps think-time.
+	const team_promise = synced_credentials()
+
 	// 1. Choose a provider
 	const provider = await prompts.select<CliProvider>(
 		bold("Which provider?"),
@@ -951,22 +991,18 @@ async function byo_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	// 2. Collect credentials. Secrets go to the env file; everything non-secret is committed
 	// to postboi.config.ts — so the best case is a single env var (the API key). A value
 	// the team already synced answers its prompt: type it once, on one machine, ever.
-	const team = await synced_credentials()
+	const team = await team_promise
 	console.log(`\n${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
 	const values: Record<string, string> = {} // secrets → env file
 	const config_options: Record<string, string> = {} // non-secrets → config file
+	const prefilled = prefill_from_team(team, provider.fields)
 	for (const field of provider.fields) {
-		const from_team = team[field.env]
-		if (from_team !== undefined) {
-			console.log(`${green("✓")} ${bold(field.env)} — using your team's synced credential`)
-			if (field.secret) values[field.env] = from_team
-			else config_options[field.arg] = from_team
-			continue
-		}
-		const value = await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
-			required: field.default === undefined,
-			default: field.default,
-		})
+		const value =
+			prefilled[field.env] ??
+			(await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
+				required: field.default === undefined,
+				default: field.default,
+			}))
 		if (field.secret) {
 			// Optional secrets (default "") left blank are omitted, not written empty.
 			if (value) values[field.env] = value
@@ -981,7 +1017,7 @@ async function byo_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	write_env_values(targets, values)
 	await offer_gitignore(prompts, targets)
 	await offer_host_push(prompts, files, values)
-	await sync_credentials_up(values)
+	await sync_credentials_up(values, team)
 
 	// 7. Make sure postboi itself is installed
 	ensure_install(files)
@@ -1022,6 +1058,9 @@ const SMS_COUNTRIES: Array<{ label: string; value: string }> = [
  * asks for a destination first and orders the list by it rather than presenting a flat menu.
  */
 async function sms_init(prompts: Prompts, files: Array<string>): Promise<void> {
+	// The team-credentials fetch doesn't depend on the picks, so it overlaps think-time.
+	const team_promise = synced_credentials()
+
 	// 1. Destination first: it decides the ordering, and it's also the default country used
 	// to resolve national numbers like "07788 223344".
 	const country = await prompts.select<string>(bold("Where are you sending?"), [
@@ -1051,22 +1090,18 @@ async function sms_init(prompts: Prompts, files: Array<string>): Promise<void> {
 
 	// 3. Credentials. Same split as email: secrets to env, everything else committed —
 	// and a value the team already synced answers its prompt.
-	const team = await synced_credentials()
+	const team = await team_promise
 	console.log(`${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
 	const values: Record<string, string> = {}
 	const config_options: Record<string, string> = {}
+	const prefilled = prefill_from_team(team, provider.fields)
 	for (const field of provider.fields) {
-		const from_team = team[field.env]
-		if (from_team !== undefined) {
-			console.log(`${green("✓")} ${bold(field.env)} — using your team's synced credential`)
-			if (field.secret) values[field.env] = from_team
-			else config_options[field.arg] = from_team
-			continue
-		}
-		const value = await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
-			required: field.default === undefined,
-			default: field.default,
-		})
+		const value =
+			prefilled[field.env] ??
+			(await prompts.ask(`${field.label} ${dim(`(${field.env})`)}`, {
+				required: field.default === undefined,
+				default: field.default,
+			}))
 		if (field.secret) {
 			if (value) values[field.env] = value
 		} else if (value) config_options[field.arg] = value
@@ -1091,7 +1126,7 @@ async function sms_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	write_env_values(targets, values)
 	await offer_gitignore(prompts, targets)
 	await offer_host_push(prompts, files, values)
-	await sync_credentials_up(values)
+	await sync_credentials_up(values, team)
 
 	ensure_install(files)
 	write_channel_config("sms", provider.key, config_defaults, config_options)
@@ -1114,6 +1149,7 @@ type ChannelProvider = {
 	name: string
 	url: string
 	note: string
+	connect?: { env: string }
 	fields: ReadonlyArray<{
 		env: string
 		arg: string
@@ -1121,6 +1157,21 @@ type ChannelProvider = {
 		secret?: boolean
 		default?: string
 	}>
+}
+
+/**
+ * Run the browser OAuth connect for a provider with a registered app: open the consent
+ * screen, wait for the created webhook to ride back on the one-time code. Undefined on
+ * any failure — the caller's paste prompt is always the fallback.
+ */
+async function browser_connect(provider: ChannelProvider): Promise<ConnectResult | undefined> {
+	const start = await start_connect(cloud_base(), provider.key)
+	if (!start) return undefined
+	console.log(`\n${bold(`Pick a channel in ${provider.name}:`)}\n`)
+	console.log(`  ${cyan(start.url)}\n`)
+	if (open_browser(start.url)) console.log(dim("  (opening in your default browser)"))
+	console.log(dim("\nWaiting for the browser…"))
+	return poll_connect(cloud_base(), start)
 }
 
 /**
@@ -1198,23 +1249,14 @@ async function channel_init(
 	const values: Record<string, string> = {}
 	const config_options: Record<string, string> = {}
 	// Values the team already synced answer their prompts — type it once, on one machine.
-	const prefilled: Record<string, string> = {}
-	for (const field of provider.fields) {
-		if (team[field.env] !== undefined) {
-			console.log(`${green("✓")} ${bold(field.env)} — using your team's synced credential`)
-			prefilled[field.env] = team[field.env]
-		}
-	}
-	// Slack and Discord have registered OAuth apps, so the webhook doesn't have to be
-	// found and pasted at all: the browser opens the provider's consent screen, the user
-	// picks a channel there, and the created webhook URL comes back on a one-time code.
-	// Skipped when the team already synced one; degrades to the paste prompt on any
-	// failure (older API, offline, user closes the tab).
-	if (
-		channel === "chat" &&
-		(provider.key === "slack" || provider.key === "discord") &&
-		prefilled[provider.fields[0].env] === undefined
-	) {
+	const prefilled = prefill_from_team(team, provider.fields)
+
+	// Providers with a registered OAuth app (`connect` in the registry) don't need their
+	// webhook found and pasted at all: the browser opens the provider's consent screen,
+	// the user picks a channel there, and the created webhook URL comes back on a
+	// one-time code. Skipped when the team already synced one; every failure (older API,
+	// offline, consent denied, tab closed) falls back to the paste prompt.
+	if (provider.connect && prefilled[provider.connect.env] === undefined) {
 		const method = await prompts.select<"connect" | "paste">(bold(`Set up ${provider.name}?`), [
 			{
 				label: "Connect in the browser",
@@ -1224,36 +1266,28 @@ async function channel_init(
 			{ label: "Paste a webhook URL", value: "paste" },
 		])
 		if (method === "connect") {
-			const start = await start_connect(cloud_base(), provider.key)
-			if (!start) {
-				console.log(yellow("! could not start the browser connect — paste the URL instead."))
+			const connected = await browser_connect(provider)
+			if (connected) {
+				prefilled[provider.connect.env] = connected.webhook_url
+				console.log(
+					`${green("✓")} connected${connected.label ? ` — posting to ${bold(connected.label)}` : ""}`
+				)
 			} else {
-				console.log(`\n${bold(`Pick a channel in ${provider.name}:`)}\n`)
-				console.log(`  ${cyan(start.url)}\n`)
-				if (open_browser(start.url)) console.log(dim("  (opening in your default browser)"))
-				console.log(dim("\nWaiting for the browser…"))
-				const connected = await poll_connect(cloud_base(), start)
-				if (connected) {
-					prefilled[provider.fields[0].env] = connected.webhook_url
-					console.log(
-						`${green("✓")} connected${connected.label ? ` — posting to ${bold(connected.label)}` : ""}`
-					)
-				} else {
-					console.log(
-						yellow("! the browser connect didn't complete — paste the webhook URL instead.")
-					)
-				}
+				console.log(
+					yellow("! the browser connect didn't complete — paste the webhook URL instead.")
+				)
 			}
 		}
 	}
 
 	// Web Push's "credential" is a VAPID key pair you mint yourself — no dashboard hands
 	// one out, so mint it here rather than dead-ending the prompt on keys nobody has.
-	// Skipped when the team's synced pair just covered it: a second pair would orphan
-	// every subscription collected under the first.
+	// Gated on the private key: when the team's synced pair covers it, a second pair
+	// would orphan every subscription collected under the first (both halves sync — the
+	// public key is env-routed in the registry for exactly this reason).
 	if (
 		provider.key === "webpush" &&
-		(prefilled.VAPID_PUBLIC_KEY === undefined || prefilled.VAPID_PRIVATE_KEY === undefined) &&
+		prefilled.VAPID_PRIVATE_KEY === undefined &&
 		(await prompts.confirm("Generate a fresh VAPID key pair?"))
 	) {
 		const pair = await generate_vapid_keys()
@@ -1308,7 +1342,7 @@ async function channel_init(
 	write_env_values(targets, values)
 	await offer_gitignore(prompts, targets)
 	await offer_host_push(prompts, files, values)
-	await sync_credentials_up(values)
+	await sync_credentials_up(values, team)
 
 	ensure_install(files)
 	write_channel_config(channel, provider.key, config_defaults, config_options)
