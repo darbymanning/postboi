@@ -376,7 +376,7 @@ dev-inbox interception.
    price gap turned out to be an illusion, so the choice fell to architecture fit.
 
 6. **Release cadence.** Six phases against a repo where every release snapshots the
-   versioned docs (`src/lib/content/v*/`) and `scripts/release.sh` is a single scripted path.
+   versioned docs (`src/site/content/v*/`) and `scripts/release.sh` is a single scripted path.
    _Proposed: ship each phase as its own minor — 0.24 the `Transport` split (no user-visible
    change, so the hooks break lands quietly and early), 0.25 SMS, and so on. Smaller blast
    radius and real feedback before `send()` locks the fan-out shape._
@@ -393,7 +393,7 @@ generated `Register` types narrow email `from` addresses only — extending them
 IDs is a later question, not a Phase 1 one.
 
 Rebranding is mechanical and can happen in one pass whenever: README opener, site tagline
-(`src/lib/config/navigation.ts:34`), docs section description, `package.json` keywords
+(`src/site/config/navigation.ts:34`), docs section description, `package.json` keywords
 (currently just `["svelte"]`), the shipped agent skill in `skills/`, and `llms.txt`.
 
 ---
@@ -539,7 +539,7 @@ Every new channel touches more than a provider file. This is the actual cost:
       email-shaped. Add a `kind` discriminant, extend `Inbox.deliver` (`inbox.ts:55`), give
       the UI a second tab. **The biggest non-provider chunk of Phase 1**
 - [ ] Mock provider per channel, for tests and the dev fallback
-- [ ] Docs page, `contentSections` entry (`src/lib/config/navigation.ts:34`), `llms.txt`
+- [ ] Docs page, `contentSections` entry (`src/site/config/navigation.ts:34`), `llms.txt`
 - [ ] `skills/` — the shipped agent skill describes email only
 
 **Shipped**, including the pieces the checklist called out:

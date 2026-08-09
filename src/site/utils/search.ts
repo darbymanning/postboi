@@ -73,7 +73,7 @@ function parseContentIndex() {
 		// Path example: /src/site/content/docs/changelog.svx → route: /docs/changelog
 		//              /src/site/content/examples/index.svx → route: /examples
 		const contentPath = path
-			.replace(/^\/src\/lib\/content\//, "/")
+			.replace(/^\/src\/site\/content\//, "/")
 			.replace(/\.svx$/, "")
 			.replace(/\/index$/, "")
 

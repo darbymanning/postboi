@@ -10,9 +10,8 @@ import { PostboiError, type Channel } from "../errors.js"
 import { Transport, type BatchResult } from "../transport.js"
 import { get_config } from "../config.js"
 import { ensure_env_loaded } from "../env.js"
-import { to_e164 } from "../sms/phone.js"
+import { phone_e164 } from "../sms/phone.js"
 import type {
-	Phone,
 	PreparedWhatsapp,
 	WhatsappDefaults,
 	WhatsappOptions,
@@ -122,19 +121,13 @@ export abstract class WhatsappProvider<TResponse = unknown> extends Transport<
 		}
 
 		return {
-			to: this.parse_phone(to, country),
+			to: phone_e164(to, country),
 			from,
 			message: has_message ? options.message : undefined,
 			template: has_template ? options.template : undefined,
 			variables: options.variables,
 			language: options.language ?? this.defaults.language ?? "en",
 		}
-	}
-
-	/** Normalise a single {@link Phone} into its E.164 string. */
-	protected parse_phone(phone: Phone, country?: string): string {
-		if (typeof phone === "object") return to_e164(phone.number, country)
-		return to_e164(phone, country)
 	}
 
 	/**

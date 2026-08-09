@@ -110,7 +110,7 @@
 	const rawUrl = $derived(rawPath && docOrigin ? new URL(rawPath, docOrigin).href : null)
 
 	const repoRelativePath = $derived(
-		metadata ? `/docs/src/lib/content/${sectionId}/${metadata.slug || "index"}.svx` : null
+		metadata ? `/src/site/content/${sectionId}/${metadata.slug || "index"}.svx` : null
 	)
 	const githubUrl = $derived(
 		repoRelativePath

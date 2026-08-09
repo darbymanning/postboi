@@ -30,7 +30,9 @@ export default class Teams extends ChatProvider<SendResponse> {
 	protected readonly provider = "teams"
 
 	constructor({ webhook_url, ...options }: WebhookChatOptions) {
-		super({ ...options, default: { to: webhook_url, ...options.default } })
+		// webhook_url wins over default.to: the generic POSTBOI_CHAT_TO default (a Telegram
+		// chat id, say) must never redirect a provider whose URL *is* the destination.
+		super({ ...options, default: { ...options.default, to: webhook_url } })
 	}
 
 	/**

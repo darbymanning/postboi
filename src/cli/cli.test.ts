@@ -204,6 +204,34 @@ describe("env file writing", () => {
 		).toEqual({ RESEND_API_KEY: "re_1", K: "v", BARE: "plain" })
 	})
 
+	it("parse_env accepts whitespace around =, like the library's own parse_dotenv", () => {
+		// A hand-written `KEY = value` loads fine at runtime, so the push sweep must see it
+		// too — otherwise the credential the project demonstrably uses is never synced.
+		expect(parse_env("TWILIO_AUTH_TOKEN = abc123\nexport K =  v\n")).toEqual({
+			TWILIO_AUTH_TOKEN: "abc123",
+			K: "v",
+		})
+	})
+
+	it("round-trips a value ending in a backslash — the writer's and parser's escapes agree", () => {
+		// quote() writes `KEY="…\\"`: the final quote is real, the backslash before it is
+		// escaped. Reading that as an unterminated string would swallow every line after
+		// it — including other secrets — into this value.
+		const line = format_line("dotenv", "A", "abc123\\")
+		expect(parse_env(`${line}\nRESEND_API_KEY="re_9"\n`)).toEqual({
+			A: "abc123\\",
+			RESEND_API_KEY: "re_9",
+		})
+	})
+
+	it("upsert_env replaces a multi-line quoted value whole, not just its first line", () => {
+		// A hand-pasted PEM spans lines legally; replacing only line one would leave the
+		// tail dangling, and its orphaned closing quote corrupts every assignment after it.
+		const content = 'FCM_KEY="-----BEGIN\nabc\ndef\n-----END"\nOTHER=1\n'
+		expect(upsert_env(content, "FCM_KEY", "new", "dotenv")).toBe('FCM_KEY="new"\nOTHER=1\n')
+		expect(remove_env(content, "FCM_KEY")).toBe("OTHER=1\n")
+	})
+
 	it("remove_env drops the key line (any flavour) and leaves everything else", () => {
 		expect(remove_env('POSTBOI_TOKEN="t"\nPOSTBOI_FROM="a@b.c"\n', "POSTBOI_FROM")).toBe(
 			'POSTBOI_TOKEN="t"\n'
@@ -259,11 +287,28 @@ describe("deploy detection", () => {
 		expect(push_spec({ cmd: "netlify", prefix: [] }, "netlify", "K", "v")).toEqual({
 			cmd: "netlify",
 			args: ["env:set", "K", "v"],
+			unsafe_on_windows: false,
 		})
 		expect(push_spec({ cmd: "railway", prefix: [] }, "railway", "K", "v")).toEqual({
 			cmd: "railway",
 			args: ["variables", "--set", "K=v"],
+			unsafe_on_windows: false,
 		})
+	})
+
+	it("flags argv-borne values cmd.exe would mangle, but never stdin-borne ones", () => {
+		// Windows runs these through a shell (the CLIs are .cmd shims) with no argv
+		// escaping — a JSON secret or a URL with query params must not be split or executed.
+		const json = '{"type": "service_account"}'
+		expect(push_spec({ cmd: "netlify", prefix: [] }, "netlify", "K", json).unsafe_on_windows).toBe(
+			true
+		)
+		expect(
+			push_spec({ cmd: "railway", prefix: [] }, "railway", "K", "https://h/x?a=1&b=2")
+				.unsafe_on_windows
+		).toBe(true)
+		// Vercel and Cloudflare take the value on stdin, so nothing rides through the shell.
+		expect(push_spec(direct, "vercel", "K", json).unsafe_on_windows).toBeUndefined()
 	})
 
 	it("falls back to the package runner when the host CLI isn't installed", () => {
@@ -968,18 +1013,38 @@ describe("multiline env values", () => {
 })
 
 describe("poll_connect terminal statuses", () => {
-	it("treats any 4xx as dead instead of polling out the TTL", async () => {
-		const json_response = (body: unknown, status: number) =>
-			({ ok: false, status, json: async () => body }) as Response
+	const json_response = (body: unknown, status: number) =>
+		({ ok: false, status, json: async () => body }) as Response
+
+	it("treats 404/410 as dead instead of polling out the TTL", async () => {
 		expect(
 			await poll_connect(
 				"https://postboi.email",
 				{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
 				{
-					fetch: async () => json_response({ error: "invalid_request" }, 400),
+					fetch: async () => json_response({ error: "not_found" }, 404),
 					sleep: async () => {},
 				}
 			)
 		).toBeUndefined()
+	})
+
+	it("keeps polling through a 429 rate limit until the code resolves", async () => {
+		let calls = 0
+		const responses: Array<Response> = [
+			json_response({ error: "rate_limited" }, 429),
+			{
+				ok: true,
+				status: 200,
+				json: async () => ({ status: "connected", webhook_url: "https://hooks.slack.com/x" }),
+			} as Response,
+		]
+		const result = await poll_connect(
+			"https://postboi.email",
+			{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
+			{ fetch: async () => responses[calls++], sleep: async () => {} }
+		)
+		expect(result?.webhook_url).toBe("https://hooks.slack.com/x")
+		expect(calls).toBe(2)
 	})
 })

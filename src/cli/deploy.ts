@@ -29,6 +29,21 @@ export type PushSpec = {
 	cmd: string
 	args: Array<string>
 	stdin?: string
+	/**
+	 * Set when a secret value rides in `args` (Netlify, Railway) and contains characters
+	 * cmd.exe would reinterpret. Windows spawns through a shell (the CLIs are `.cmd`
+	 * shims) which concatenates argv without escaping — so rather than store a garbled
+	 * secret or execute part of it, the caller skips the push and shows the manual hint.
+	 */
+	unsafe_on_windows?: boolean
+}
+
+/**
+ * Conservative safety check for a value that will ride in argv through cmd.exe: anything
+ * beyond this set (spaces, quotes, `&|<>^%!` …) risks being split, expanded, or executed.
+ */
+export function win32_argv_safe(value: string): boolean {
+	return /^[A-Za-z0-9_@+=:,./-]*$/.test(value)
 }
 
 /**
@@ -140,16 +155,19 @@ export function push_args(
 	host: Host,
 	key: string,
 	value: string
-): { args: Array<string>; stdin?: string } {
+): { args: Array<string>; stdin?: string; unsafe_on_windows?: boolean } {
 	switch (host) {
 		case "vercel":
 			return { args: ["env", "add", key, "production", "--force"], stdin: value }
 		case "cloudflare":
 			return { args: ["secret", "put", key], stdin: value }
 		case "netlify":
-			return { args: ["env:set", key, value] }
+			return { args: ["env:set", key, value], unsafe_on_windows: !win32_argv_safe(value) }
 		case "railway":
-			return { args: ["variables", "--set", `${key}=${value}`] }
+			return {
+				args: ["variables", "--set", `${key}=${value}`],
+				unsafe_on_windows: !win32_argv_safe(value),
+			}
 	}
 }
 
@@ -160,8 +178,8 @@ export function push_spec(
 	key: string,
 	value: string
 ): PushSpec {
-	const { args, stdin } = push_args(host, key, value)
-	return { cmd: invocation.cmd, args: [...invocation.prefix, ...args], stdin }
+	const { args, stdin, unsafe_on_windows } = push_args(host, key, value)
+	return { cmd: invocation.cmd, args: [...invocation.prefix, ...args], stdin, unsafe_on_windows }
 }
 
 /** The equivalent command to run by hand, shown when an automatic push fails or is skipped. */

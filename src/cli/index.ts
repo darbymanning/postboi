@@ -143,6 +143,11 @@ function is_on_path(cmd: string): boolean {
 }
 
 function run_push(spec: ReturnType<typeof push_spec>): { ok: boolean; reason?: string } {
+	// Windows spawns through cmd.exe (the host CLIs are .cmd shims), which joins argv with
+	// no escaping — a secret with spaces or metacharacters would be split or executed.
+	if (platform === "win32" && spec.unsafe_on_windows) {
+		return { ok: false, reason: "this value needs quoting cmd.exe can't do safely" }
+	}
 	const result = spawnSync(spec.cmd, spec.args, {
 		input: spec.stdin,
 		stdio: [spec.stdin !== undefined ? "pipe" : "inherit", "inherit", "inherit"],
@@ -825,6 +830,9 @@ async function sync(): Promise<void> {
 		console.log(dim("postboi sync: no POSTBOI_TOKEN — skipping the generated from types."))
 		return
 	}
+	// The two GETs are independent, and sync runs as the project's predev hook — start the
+	// env-vars fetch now so the network round trips overlap instead of stacking.
+	const vars_promise = fetch_env_vars(cloud_base(), token)
 	const account = await fetch_domains(cloud_base(), token)
 	if (!account) {
 		bake(config_key, config_file ?? "config")
@@ -857,7 +865,7 @@ async function sync(): Promise<void> {
 	// Pull the team's synced channel credentials into the local env. Only keys with no
 	// local value — a deliberate local override always wins; `postboi env pull --force`
 	// is the explicit way to take the team's values wholesale.
-	const synced = await fetch_env_vars(cloud_base(), token)
+	const synced = await vars_promise
 	if (synced && Object.keys(synced.vars).length > 0) {
 		const written = write_pulled_vars(synced.vars)
 		if (written.length > 0) {
@@ -1132,82 +1140,7 @@ const SMS_COUNTRIES: Array<{ label: string; value: string }> = [
 	{ label: "Australia", value: "AU" },
 ]
 
-/**
- * SMS onboarding. Unlike email, the right provider depends on **where you're sending** —
- * UK-native providers are materially cheaper into the UK and useless elsewhere — so this
- * asks for a destination first and orders the list by it rather than presenting a flat menu.
- */
-async function sms_init(prompts: Prompts, files: Array<string>): Promise<void> {
-	// The team-credentials fetch doesn't depend on the picks, so it overlaps think-time.
-	const team_promise = synced_credentials()
-
-	// 1. Destination first: it decides the ordering, and it's also the default country used
-	// to resolve national numbers like "07788 223344".
-	const country = await prompts.select<string>(bold("Where are you sending?"), [
-		...SMS_COUNTRIES,
-		{ label: "Somewhere else / several countries", value: "" },
-	])
-
-	// 2. Providers whose region matches come first — that's the whole point of asking.
-	const ranked = [...SMS_PROVIDERS].sort((a, b) => {
-		const score = (p: CliSmsProvider) =>
-			country && p.regions.includes(country) ? 0 : p.regions.includes("global") ? 1 : 2
-		return score(a) - score(b)
-	})
-	const provider = await prompts.select<CliSmsProvider>(
-		`\n${bold("Which provider?")}`,
-		ranked.map((p) => ({
-			label: p.name,
-			value: p,
-			hint: [p.price, p.note].filter(Boolean).join(" · "),
-		}))
-	)
-	if (provider.verified) {
-		console.log(
-			dim(`\nPrices move — ${provider.name} was last checked on ${provider.verified}.`) + "\n"
-		)
-	}
-
-	// 3. Credentials. Same split as email: secrets to env, everything else committed —
-	// and a value the team already synced answers its prompt.
-	const team = await team_promise
-	console.log(`${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
-	const prefilled = prefill_from_team(team, provider.fields)
-	const { values, config_options } = await collect_credentials(prompts, provider.fields, prefilled)
-
-	// 4. Defaults. The country is pre-filled from step 1, so it's usually just Enter.
-	const config_defaults: Record<string, string> = {}
-	if (country) config_defaults.country = country
-	for (const field of SMS_DEFAULT_FIELDS) {
-		if (field.arg === "country" && country) continue
-		const value = await prompts.ask(
-			`\n${field.label} ${dim("(optional)")}\n${dim(field.hint ?? "")}`,
-			{
-				required: false,
-			}
-		)
-		if (value) config_defaults[field.arg] = value
-	}
-
-	// 5–6. Write env vars, gitignore them, offer a host push, sync new values up
-	await persist_credentials(prompts, files, values, team)
-
-	ensure_install(files)
-	write_channel_config("sms", provider.key, config_defaults, config_options)
-
-	console.log(`\n${green(bold("Done!"))} Now just text:\n`)
-	console.log(
-		dim('import { sms } from "postboi"\n\nawait sms({ to: "+447788223344", message: "…" })') + "\n"
-	)
-	// Worth saying out loud: the safe default surprises people who expect a real send.
-	console.log(
-		dim(
-			"In development texts are logged, not sent — set POSTBOI_SMS_DEV=send when you want real delivery."
-		) + "\n"
-	)
-}
-
-/** The shape `channel_init` needs from either the chat or the push registry. */
+/** The shape `channel_init` needs from any channel registry. */
 type ChannelProvider = {
 	key: string
 	name: string
@@ -1255,12 +1188,93 @@ export async function generate_vapid_keys(): Promise<{ public_key: string; priva
 
 /**
  * What makes one channel's init its own: the registry, the picker prompt, the channel
- * defaults worth asking for, and the done-snippet. A compile-checked map instead of
- * per-call ternary chains, so a new channel can't silently fall through to another
- * channel's branch — and provider-key matching (the "twilio" key exists in two
- * registries) stays inside the channel that owns it.
+ * defaults worth asking for, and the done-snippet — plus two optional hooks for the
+ * channels that need them: `choose` (SMS ranks its provider list by destination before
+ * picking) and `mint` (Web Push generates its own VAPID credential). A compile-checked
+ * map instead of per-call ternary chains, so a new channel can't silently fall through
+ * to another channel's branch — and provider-key matching (the "twilio" key exists in
+ * two registries) stays inside the channel that owns it.
  */
+type InitSpec = {
+	registry: ReadonlyArray<ChannelProvider>
+	picker: string
+	/**
+	 * Channel-specific provider selection replacing the flat picker. Returns the pick plus
+	 * any config defaults learned on the way (the SMS destination country).
+	 */
+	choose?: (
+		prompts: Prompts
+	) => Promise<{ provider: ChannelProvider; seeded: Record<string, string> }>
+	/**
+	 * Self-minted credentials, filled into `prefilled` before the prompts run — a
+	 * capability the channel declares, not a provider-key branch in the shared flow.
+	 */
+	mint?: (
+		prompts: Prompts,
+		provider: ChannelProvider,
+		prefilled: Record<string, string>
+	) => Promise<void>
+	defaults: (
+		prompts: Prompts,
+		provider: ChannelProvider,
+		seeded: Record<string, string>
+	) => Promise<Record<string, string>>
+	done: (provider: ChannelProvider) => Array<string>
+}
+
 const CHANNEL_INIT = {
+	sms: {
+		registry: SMS_PROVIDERS as ReadonlyArray<ChannelProvider>,
+		picker: "Which provider?",
+		// Unlike the other channels, the right SMS provider depends on **where you're
+		// sending** — UK-native providers are materially cheaper into the UK and useless
+		// elsewhere — so ask for a destination first and order the list by it. The pick
+		// doubles as the default country used to resolve national numbers.
+		async choose(prompts: Prompts) {
+			const country = await prompts.select<string>(bold("Where are you sending?"), [
+				...SMS_COUNTRIES,
+				{ label: "Somewhere else / several countries", value: "" },
+			])
+			const ranked = [...SMS_PROVIDERS].sort((a, b) => {
+				const score = (p: CliSmsProvider) =>
+					country && p.regions.includes(country) ? 0 : p.regions.includes("global") ? 1 : 2
+				return score(a) - score(b)
+			})
+			const provider = await prompts.select<CliSmsProvider>(
+				`\n${bold("Which provider?")}`,
+				ranked.map((p) => ({
+					label: p.name,
+					value: p,
+					hint: [p.price, p.note].filter(Boolean).join(" · "),
+				}))
+			)
+			if (provider.verified) {
+				console.log(
+					dim(`\nPrices move — ${provider.name} was last checked on ${provider.verified}.`) + "\n"
+				)
+			}
+			const seeded: Record<string, string> = country ? { country } : {}
+			return { provider: provider as ChannelProvider, seeded }
+		},
+		// The country arrives seeded from choose(), so it's usually just Enter here.
+		async defaults(prompts: Prompts, _provider: ChannelProvider, seeded: Record<string, string>) {
+			const config_defaults: Record<string, string> = { ...seeded }
+			for (const field of SMS_DEFAULT_FIELDS) {
+				if (field.arg === "country" && seeded.country) continue
+				const value = await prompts.ask(
+					`\n${field.label} ${dim("(optional)")}\n${dim(field.hint ?? "")}`,
+					{ required: false }
+				)
+				if (value) config_defaults[field.arg] = value
+			}
+			return config_defaults
+		},
+		done: () => [
+			'import { sms } from "postboi"\n\nawait sms({ to: "+447788223344", message: "…" })',
+			// Worth saying out loud: the safe default surprises people who expect a real send.
+			"In development texts are logged, not sent — set POSTBOI_SMS_DEV=send when you want real delivery.",
+		],
+	},
 	chat: {
 		registry: CHAT_PROVIDERS as ReadonlyArray<ChannelProvider>,
 		picker: "Which chat platform?",
@@ -1284,6 +1298,21 @@ const CHANNEL_INIT = {
 	push: {
 		registry: PUSH_PROVIDERS as ReadonlyArray<ChannelProvider>,
 		picker: "Which push service?",
+		// Web Push's "credential" is a VAPID key pair you mint yourself — no dashboard
+		// hands one out, so mint it here rather than dead-ending the prompt on keys nobody
+		// has. Gated on the private key: when the team's synced pair covers it, a second
+		// pair would orphan every subscription collected under the first (both halves sync —
+		// the public key is env-routed in the registry for exactly this reason).
+		async mint(prompts: Prompts, provider: ChannelProvider, prefilled: Record<string, string>) {
+			if (provider.key !== "webpush" || prefilled.VAPID_PRIVATE_KEY !== undefined) return
+			if (!(await prompts.confirm("Generate a fresh VAPID key pair?"))) return
+			const pair = await generate_vapid_keys()
+			prefilled.VAPID_PUBLIC_KEY = pair.public_key
+			prefilled.VAPID_PRIVATE_KEY = pair.private_key
+			console.log(
+				`${green("✓")} generated — the public key also goes to the browser's \`subscribe_push({ key })\`:\n  ${dim(pair.public_key)}\n`
+			)
+		},
 		async defaults(): Promise<Record<string, string>> {
 			// A push target is per-device, so there is no global default worth committing.
 			return {}
@@ -1321,30 +1350,33 @@ const CHANNEL_INIT = {
 			"Free-form `message` only delivers within 24h of the user's last reply — templates deliver anytime.\nIn development messages are logged, not sent — set POSTBOI_WHATSAPP_DEV=send for real delivery.",
 		],
 	},
-} satisfies Record<"chat" | "push" | "whatsapp", unknown>
+} satisfies Record<"sms" | "chat" | "push" | "whatsapp", InitSpec>
 
 /**
- * Chat, push and WhatsApp onboarding.
- *
- * Simpler than SMS: none of these have destination-dependent pricing, so there's nothing
- * to ask before showing the provider list, and few defaults worth prompting for — a chat
- * webhook URL is the credential, and a push target is per-device rather than global.
+ * Channel onboarding — SMS, chat, push and WhatsApp all run this one skeleton, so a fix
+ * to any shared step (team prefill, browser connect, host push, credential sync) reaches
+ * every channel. What differs per channel lives in its {@link InitSpec} entry.
  */
 async function channel_init(
 	prompts: Prompts,
 	files: Array<string>,
-	channel: "chat" | "push" | "whatsapp"
+	channel: "sms" | "chat" | "push" | "whatsapp"
 ): Promise<void> {
 	// The team-credentials fetch doesn't depend on the pick, so it overlaps think-time.
 	const team_promise = synced_credentials()
 
 	// The registries are separate const-narrowed tuples; the map widens each to the shared
 	// shape, which carries every field used here.
-	const spec = CHANNEL_INIT[channel]
-	const provider = await prompts.select<ChannelProvider>(
-		bold(spec.picker),
-		spec.registry.map((p) => ({ label: p.name, value: p, hint: p.note }))
-	)
+	const spec: InitSpec = CHANNEL_INIT[channel]
+	const { provider, seeded } = spec.choose
+		? await spec.choose(prompts)
+		: {
+				provider: await prompts.select<ChannelProvider>(
+					bold(spec.picker),
+					spec.registry.map((p) => ({ label: p.name, value: p, hint: p.note }))
+				),
+				seeded: {} as Record<string, string>,
+			}
 
 	const team = await team_promise
 	console.log(`\n${dim("Get your credentials at")} ${cyan(provider.url)}\n`)
@@ -1380,28 +1412,13 @@ async function channel_init(
 		}
 	}
 
-	// Web Push's "credential" is a VAPID key pair you mint yourself — no dashboard hands
-	// one out, so mint it here rather than dead-ending the prompt on keys nobody has.
-	// Gated on the private key: when the team's synced pair covers it, a second pair
-	// would orphan every subscription collected under the first (both halves sync — the
-	// public key is env-routed in the registry for exactly this reason).
-	if (
-		provider.key === "webpush" &&
-		prefilled.VAPID_PRIVATE_KEY === undefined &&
-		(await prompts.confirm("Generate a fresh VAPID key pair?"))
-	) {
-		const pair = await generate_vapid_keys()
-		prefilled.VAPID_PUBLIC_KEY = pair.public_key
-		prefilled.VAPID_PRIVATE_KEY = pair.private_key
-		console.log(
-			`${green("✓")} generated — the public key also goes to the browser's \`subscribe_push({ key })\`:\n  ${dim(pair.public_key)}\n`
-		)
-	}
+	// Self-minted credentials (Web Push's VAPID pair) — the channel's own hook.
+	await spec.mint?.(prompts, provider, prefilled)
 	const { values, config_options } = await collect_credentials(prompts, provider.fields, prefilled)
 
 	// Channel defaults, committed to the config's `default:` block — asked by the
 	// channel's own spec, so provider-key matching lives with the channel that owns it.
-	const config_defaults = await spec.defaults(prompts, provider)
+	const config_defaults = await spec.defaults(prompts, provider, seeded)
 
 	await persist_credentials(prompts, files, values, team)
 
@@ -1446,7 +1463,6 @@ async function init(channel?: "sms" | "chat" | "push" | "whatsapp"): Promise<voi
 	const files = readdirSync(cwd())
 
 	try {
-		if (channel === "sms") return await sms_init(prompts, files)
 		if (channel) return await channel_init(prompts, files, channel)
 		const mode = await prompts.select<"cloud" | "byo" | "sms" | "chat" | "push" | "whatsapp">(
 			bold("What do you want to set up?"),
@@ -1484,8 +1500,7 @@ async function init(channel?: "sms" | "chat" | "push" | "whatsapp"): Promise<voi
 			]
 		)
 		if (mode === "cloud") await cloud_init(prompts, files)
-		else if (mode === "sms") await sms_init(prompts, files)
-		else if (mode === "chat" || mode === "push" || mode === "whatsapp")
+		else if (mode === "sms" || mode === "chat" || mode === "push" || mode === "whatsapp")
 			await channel_init(prompts, files, mode)
 		else await byo_init(prompts, files)
 	} finally {

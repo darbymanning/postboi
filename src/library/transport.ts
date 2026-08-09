@@ -425,8 +425,12 @@ export abstract class Transport<TResponse = unknown, TPrepared = unknown> {
 	}
 
 	#backoff(attempt: number, response?: Response): number {
+		// Honour a server-supplied Retry-After, but capped: send() awaits this sleep, and an
+		// intermediary answering 429 with Retry-After: 86400 must not hang the caller (or a
+		// serverless handler) for a day. Past the cap, the provider is telling us to come
+		// back much later — that's a failed attempt, not a pause.
 		const retry_after = response ? Number(response.headers.get("retry-after")) : NaN
-		if (!Number.isNaN(retry_after) && retry_after > 0) return retry_after * 1000
+		if (!Number.isNaN(retry_after) && retry_after > 0) return Math.min(retry_after, 60) * 1000
 		return this.#retry_delay * 2 ** (attempt - 1)
 	}
 
@@ -477,8 +481,16 @@ export abstract class Transport<TResponse = unknown, TPrepared = unknown> {
 		if (value instanceof Date) return value
 		if (typeof value === "string") return new Date(value)
 		const date = new Date()
-		if (value.years) date.setFullYear(date.getFullYear() + value.years)
-		if (value.months) date.setMonth(date.getMonth() + value.months)
+		// Month/year arithmetic clamps to the target month's last day instead of letting
+		// setMonth overflow: Jan 31 + 1 month is Feb 28/29, not Mar 3.
+		if (value.years || value.months) {
+			const months = (value.years ?? 0) * 12 + (value.months ?? 0)
+			const day = date.getDate()
+			date.setDate(1)
+			date.setMonth(date.getMonth() + months)
+			const last_day = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+			date.setDate(Math.min(day, last_day))
+		}
 		if (value.weeks) date.setDate(date.getDate() + value.weeks * 7)
 		if (value.days) date.setDate(date.getDate() + value.days)
 		if (value.hours) date.setHours(date.getHours() + value.hours)
