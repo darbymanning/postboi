@@ -63,6 +63,8 @@ import {
 	fetch_domains,
 	fetch_env_vars,
 	push_env_vars,
+	start_connect,
+	poll_connect,
 	type PostboiDomain,
 } from "./postboi.js"
 import { credential_env_keys } from "../library/registry.js"
@@ -1203,6 +1205,48 @@ async function channel_init(
 			prefilled[field.env] = team[field.env]
 		}
 	}
+	// Slack and Discord have registered OAuth apps, so the webhook doesn't have to be
+	// found and pasted at all: the browser opens the provider's consent screen, the user
+	// picks a channel there, and the created webhook URL comes back on a one-time code.
+	// Skipped when the team already synced one; degrades to the paste prompt on any
+	// failure (older API, offline, user closes the tab).
+	if (
+		channel === "chat" &&
+		(provider.key === "slack" || provider.key === "discord") &&
+		prefilled[provider.fields[0].env] === undefined
+	) {
+		const method = await prompts.select<"connect" | "paste">(bold(`Set up ${provider.name}?`), [
+			{
+				label: "Connect in the browser",
+				value: "connect",
+				hint: "pick a channel there — nothing to find or paste",
+			},
+			{ label: "Paste a webhook URL", value: "paste" },
+		])
+		if (method === "connect") {
+			const start = await start_connect(cloud_base(), provider.key)
+			if (!start) {
+				console.log(yellow("! could not start the browser connect — paste the URL instead."))
+			} else {
+				console.log(`\n${bold(`Pick a channel in ${provider.name}:`)}\n`)
+				console.log(`  ${cyan(start.url)}\n`)
+				if (open_browser(start.url)) console.log(dim("  (opening in your default browser)"))
+				console.log(dim("\nWaiting for the browser…"))
+				const connected = await poll_connect(cloud_base(), start)
+				if (connected) {
+					prefilled[provider.fields[0].env] = connected.webhook_url
+					console.log(
+						`${green("✓")} connected${connected.label ? ` — posting to ${bold(connected.label)}` : ""}`
+					)
+				} else {
+					console.log(
+						yellow("! the browser connect didn't complete — paste the webhook URL instead.")
+					)
+				}
+			}
+		}
+	}
+
 	// Web Push's "credential" is a VAPID key pair you mint yourself — no dashboard hands
 	// one out, so mint it here rather than dead-ending the prompt on keys nobody has.
 	// Skipped when the team's synced pair just covered it: a second pair would orphan

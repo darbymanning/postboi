@@ -114,6 +114,91 @@ export async function poll_device_auth(
 	throw new PostboiAuthError("Timed out waiting for the browser — run `postboi init` again.")
 }
 
+/**
+ * The OAuth webhook connect flow for chat platforms, mirroring device auth: `start`
+ * mints a code and a browser URL, the user picks a channel on the provider's own consent
+ * screen, `poll` collects the created webhook URL. Everything here degrades to
+ * `undefined` rather than throwing — the paste-a-webhook prompt is always the fallback.
+ */
+export interface ConnectStart {
+	code: string
+	url: string
+	expires_in: number
+	interval: number
+}
+
+export async function start_connect(
+	base: string,
+	provider: "slack" | "discord",
+	fetch_fn: FetchLike = fetch
+): Promise<ConnectStart | undefined> {
+	try {
+		const response = await fetch_fn(`${base}/api/connect/start`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ provider }),
+		})
+		if (!response.ok) return undefined
+		const data = (await response.json()) as Partial<ConnectStart>
+		if (typeof data.code !== "string" || typeof data.url !== "string") return undefined
+		return {
+			code: data.code,
+			url: data.url,
+			expires_in: typeof data.expires_in === "number" ? data.expires_in : 900,
+			interval: typeof data.interval === "number" ? data.interval : 2,
+		}
+	} catch {
+		return undefined
+	}
+}
+
+/** The connected webhook, plus the provider's label for it ("#alerts in Acme"). */
+export interface ConnectResult {
+	webhook_url: string
+	label?: string
+}
+
+/** Poll until the browser side connects, or the code dies — undefined means fall back. */
+export async function poll_connect(
+	base: string,
+	start: ConnectStart,
+	deps: { fetch?: FetchLike; sleep?: (ms: number) => Promise<unknown>; now?: () => number } = {}
+): Promise<ConnectResult | undefined> {
+	const { fetch: fetch_fn = fetch, sleep = delay, now = Date.now } = deps
+	const deadline = now() + start.expires_in * 1000
+
+	while (now() < deadline) {
+		let response: Response | undefined
+		try {
+			response = await fetch_fn(`${base}/api/connect/poll`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ code: start.code }),
+			})
+		} catch {
+			// transient network blip — keep polling until the deadline
+		}
+		if (response) {
+			if (response.status === 404 || response.status === 410) return undefined
+			if (response.ok) {
+				const data = (await response.json()) as {
+					status?: string
+					webhook_url?: string
+					label?: string
+				}
+				if (data.status === "connected" && typeof data.webhook_url === "string") {
+					return {
+						webhook_url: data.webhook_url,
+						label: typeof data.label === "string" ? data.label : undefined,
+					}
+				}
+			}
+		}
+		await sleep(start.interval * 1000)
+	}
+	return undefined
+}
+
 /** A domain on the account. `status` is `"verified"` when it can deliver; anything else
  * (`"pending"`, …) means DNS verification hasn't completed. */
 export interface PostboiDomain {

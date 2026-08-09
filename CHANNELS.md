@@ -996,7 +996,7 @@ the "heavy lifting" exists, but the secrets only ever live with the user and the
   the generate-a-key-pair offer when the team's VAPID pair is already synced — a second
   pair would orphan every subscription collected under the first.)
 
-## Considered: minting credentials via provider OAuth apps
+## Considered: minting credentials via provider OAuth apps — Slack + Discord ✅ **shipped**
 
 The sweep: for every provider in the registry, can Postboi register an "app" with them so
 `init` gets a token via OAuth instead of asking the user to paste one?
@@ -1013,17 +1013,18 @@ The sweep: for every provider in the registry, can Postboi register an "app" wit
 | Telegram                                                                 | none                                                      | BotFather is a chat conversation; there is no API that creates bots.                                                                                                                      |
 | Web Push                                                                 | n/a                                                       | Already solved locally — `init --push` mints the VAPID pair itself, no vendor involved.                                                                                                   |
 
-**Recommendation: build Slack and Discord OAuth, park the rest.** The two that work are
-also the two with the friendliest consent UX, and the flow reuses plumbing that already
-exists for `POSTBOI_TOKEN` device auth: `init --chat` → browser opens
-`postboi.email/connect/slack?device=…` → the app (holding the client id/secret
-server-side) forwards to the provider's consent screen → callback stores the webhook URL
-against the device code → the CLI polls, writes `SLACK_WEBHOOK_URL`, and team-syncs it.
-Needs from an operator before any code: register the Slack app (redirect URL
-`postboi.email/connect/slack/callback`, scope `incoming-webhook`) and the Discord
-application (scope `webhook.incoming`), then set the client ids/secrets in the app's env.
+**Shipped for Slack and Discord** (the rest stay parked). Both apps are registered, with
+client ids/secrets in the postboi-app environment. The flow mirrors `POSTBOI_TOKEN`
+device auth: `init --chat` → **Connect in the browser** → `POST /api/connect/start` mints
+a one-time code (15 min TTL) → the browser hits `/connect/slack?code=…`, which validates
+the code and forwards to the provider's consent screen with the code as OAuth `state` →
+the callback exchanges the OAuth code server-side (client secret never leaves the app),
+stores the created webhook URL on the row, and shows a close-this-tab page → the CLI
+polls `/api/connect/poll`, collects the webhook exactly once (row deleted on read),
+writes `SLACK_WEBHOOK_URL` / `DISCORD_WEBHOOK_URL`, and team-syncs it. Every failure
+(older API, offline, tab closed, consent denied) degrades to the paste-a-webhook prompt.
 
-Until then, every flow does the next-best thing already: it prints the provider's exact
+For providers with no delegated flow, init does the next-best thing: it prints the exact
 credential page (`resend.com/api-keys`, `console.twilio.com`, BotFather, …) before
 prompting, and the prompt names the env var it's filling.
 

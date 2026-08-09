@@ -44,6 +44,8 @@ import {
 	fetch_domains,
 	fetch_env_vars,
 	push_env_vars,
+	start_connect,
+	poll_connect,
 	PostboiAuthError,
 } from "./postboi.js"
 import { credential_env_keys } from "../library/registry.js"
@@ -813,6 +815,69 @@ describe("synced credentials (postboi env)", () => {
 			}
 		)
 		expect(failed).toEqual({ ok: false })
+	})
+
+	it("start_connect posts the provider and reads the browser URL", async () => {
+		const result = await start_connect("https://postboi.email", "slack", async (url, init) => {
+			expect(url).toBe("https://postboi.email/api/connect/start")
+			expect(JSON.parse(String(init?.body))).toEqual({ provider: "slack" })
+			return json({ code: "c0de", url: "https://postboi.email/connect/slack?code=c0de" })
+		})
+		expect(result).toEqual({
+			code: "c0de",
+			url: "https://postboi.email/connect/slack?code=c0de",
+			expires_in: 900,
+			interval: 2,
+		})
+	})
+
+	it("start_connect degrades to undefined instead of throwing — paste is the fallback", async () => {
+		expect(
+			await start_connect("https://postboi.email", "discord", async () => {
+				throw new Error("ECONNREFUSED")
+			})
+		).toBeUndefined()
+		expect(
+			await start_connect("https://postboi.email", "discord", async () => json({}, 404))
+		).toBeUndefined()
+	})
+
+	it("poll_connect polls until the webhook arrives", async () => {
+		const responses = [
+			json({ status: "pending", interval: 2 }),
+			json({ status: "connected", webhook_url: "https://hooks.slack.com/x", label: "#alerts" }),
+		]
+		const result = await poll_connect(
+			"https://postboi.email",
+			{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
+			{ fetch: async () => responses.shift()!, sleep: async () => {}, now: () => 0 }
+		)
+		expect(result).toEqual({ webhook_url: "https://hooks.slack.com/x", label: "#alerts" })
+	})
+
+	it("poll_connect returns undefined on an expired code or timeout", async () => {
+		expect(
+			await poll_connect(
+				"https://postboi.email",
+				{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
+				{ fetch: async () => json({ error: "expired" }, 410), sleep: async () => {} }
+			)
+		).toBeUndefined()
+
+		let clock = 0
+		expect(
+			await poll_connect(
+				"https://postboi.email",
+				{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
+				{
+					fetch: async () => json({ status: "pending", interval: 2 }),
+					sleep: async () => {
+						clock += 1_000_000
+					},
+					now: () => clock,
+				}
+			)
+		).toBeUndefined()
 	})
 
 	it("credential_env_keys spans every channel and never includes POSTBOI_TOKEN", () => {
