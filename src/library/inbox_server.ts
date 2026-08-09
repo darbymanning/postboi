@@ -56,6 +56,8 @@ export type CapturedMessage = Omit<
 		send_id?: string
 		/** Which channel captured this. Absent means email. */
 		channel?: InboxMessage["channel"]
+		/** The template name, for template-first channels. */
+		template?: string
 		/** Channel-specific details, rendered as-is by the UI. */
 		meta?: Array<[string, string]>
 	}

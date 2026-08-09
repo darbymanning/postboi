@@ -12,6 +12,7 @@
  * Internal: not part of the public surface.
  */
 import { PostboiError, type Channel } from "./errors.js"
+import type { BatchResult } from "./transport.js"
 import { find_channel_provider, type ProviderField } from "./registry.js"
 import { inbox_sink } from "./channel_inbox.js"
 import { load_config, type PostboiConfig } from "./config.js"
@@ -52,6 +53,34 @@ export interface ChannelResolution<TProvider> {
 
 const warned_dev_fallback = new Set<Channel>()
 const announced_intercept = new Set<Channel>()
+
+/** The overloaded one-or-many shape every zero-config channel function shares. */
+export interface ChannelSend<TOptions> {
+	(options: TOptions): Promise<unknown>
+	(options: Array<TOptions>, batch?: { concurrency?: number }): Promise<Array<BatchResult<unknown>>>
+}
+
+/**
+ * Build a channel's zero-config entry point from its resolution spec — resolve the
+ * provider afresh, then hand one-or-many to its send. One factory instead of a pasted
+ * wrapper per channel, so a change to the dispatch shape can't land on three channels
+ * and miss the fourth.
+ */
+export function channel_send<TOptions>(
+	spec: ChannelResolution<{
+		send(options: TOptions | Array<TOptions>, batch?: { concurrency?: number }): Promise<unknown>
+	}>
+): ChannelSend<TOptions> {
+	async function send_channel(
+		options: TOptions | Array<TOptions>,
+		batch: { concurrency?: number } = {}
+	): Promise<unknown> {
+		const provider = await resolve_channel_provider(spec)
+		if (Array.isArray(options)) return provider.send(options, batch)
+		return provider.send(options)
+	}
+	return send_channel as ChannelSend<TOptions>
+}
 
 /** Construct the channel's logging mock, sinking captures to the dev inbox when one runs. */
 async function dev_mock<TProvider>(spec: ChannelResolution<TProvider>): Promise<TProvider> {

@@ -40,7 +40,9 @@ export default class Teams extends ChatProvider<SendResponse> {
 	 */
 	protected override async prepare_chat(options: ChatOptions): Promise<PreparedChat> {
 		const message = await super.prepare_chat(options)
-		if (/outlook\.office\.com\/webhook|\.webhook\.office\.com/i.test(message.to)) {
+		// Both host shapes the legacy connectors used: outlook.office.com and
+		// outlook.office365.com path-style URLs, plus the *.webhook.office.com subdomain form.
+		if (/outlook\.office(?:365)?\.com\/webhook|\.webhook\.office\.com/i.test(message.to)) {
 			throw new PostboiError({
 				provider: this.provider,
 				channel: "chat",

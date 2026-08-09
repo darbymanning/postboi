@@ -53,13 +53,7 @@ export abstract class ChatProvider<TResponse = unknown> extends Transport<TRespo
 		options: ChatOptions | Array<ChatOptions>,
 		batch: { concurrency?: number } = {}
 	): Promise<TResponse | Array<BatchResult<TResponse>>> {
-		if (Array.isArray(options)) {
-			return this.run_batch(options, (one) => this.send(one), batch)
-		}
-		return this.with_hooks(
-			() => this.prepare_chat(options),
-			(message) => this.deliver(message)
-		)
+		return this.dispatch(options, batch, (one) => this.prepare_chat(one))
 	}
 
 	/** Apply defaults and check there's a destination and something to say. */

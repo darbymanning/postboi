@@ -589,14 +589,18 @@ function when(ms) {
 	var d = new Date(ms)
 	return (d.getMonth() + 1) + "/" + d.getDate() + "/" + String(d.getFullYear()).slice(2)
 }
-function clock() {
-	var d = new Date()
+/* One h:mm AM/PM formatter for the taskbar clock and the messenger stamps alike. */
+function stamp(ms) {
+	var d = new Date(ms)
 	var h = d.getHours()
 	var m = d.getMinutes()
 	var ampm = h >= 12 ? "PM" : "AM"
 	h = h % 12
 	if (!h) h = 12
-	$("clock").textContent = h + ":" + (m < 10 ? "0" : "") + m + " " + ampm
+	return h + ":" + (m < 10 ? "0" : "") + m + " " + ampm
+}
+function clock() {
+	$("clock").textContent = stamp(Date.now())
 }
 
 /*
@@ -891,16 +895,6 @@ function thread_of(m) {
 	// messages is newest first; a conversation reads downwards.
 	return messages.filter(function (x) { return thread_key(x) === key }).reverse()
 }
-function stamp(ms) {
-	var d = new Date(ms)
-	var h = d.getHours()
-	var min = d.getMinutes()
-	var ampm = h >= 12 ? "PM" : "AM"
-	h = h % 12
-	if (!h) h = 12
-	return h + ":" + (min < 10 ? "0" : "") + min + " " + ampm
-}
-
 function render_messenger() {
 	var el = $("messenger")
 	var win = find("messenger")
@@ -943,12 +937,10 @@ function render_messenger() {
 			'<div class="says"><b>Your app</b> says: <span class="stamp">(' +
 				stamp(m.received_at) + ")</span></div>"
 		)
-		var tpl = (m.meta || []).filter(function (pair) { return pair[0] === "Template" })[0]
-		if (m.subject && !tpl) parts.push('<div class="line"><b>' + esc(m.subject) + "</b></div>")
+		if (m.subject && !m.template) parts.push('<div class="line"><b>' + esc(m.subject) + "</b></div>")
 		if (m.text) parts.push('<div class="line">' + esc(m.text) + "</div>")
-		if (tpl) parts.push('<div class="tpl">\\u{1F4CB} ' + esc(tpl[1]) + "</div>")
+		if (m.template) parts.push('<div class="tpl">\\u{1F4CB} ' + esc(m.template) + "</div>")
 		;(m.meta || []).forEach(function (pair) {
-			if (pair[0] === "Template") return
 			parts.push('<div class="sysline">\\u2736 ' + esc(pair[0]) + ": " + esc(pair[1]) + "</div>")
 		})
 		if (m.cancelled_at) {

@@ -113,6 +113,14 @@ export function dialling_code(country: string): string {
  */
 const TRUNK_ZERO_KEPT = new Set(["39"])
 
+/**
+ * Dialling codes whose national numbers can legitimately *begin with the code's own
+ * digits* — Italy again: mobile prefixes 390–393 open with "39". For these, "starts with
+ * the code and enough digits remain" cannot distinguish national from international, so
+ * the resolver throws rather than guessing.
+ */
+const CODE_PREFIX_AMBIGUOUS = new Set(["39"])
+
 /** Message the ambiguous-number error carries, kept in one place so tests can assert on it. */
 function ambiguous(value: string): PostboiError {
 	return new PostboiError({
@@ -168,7 +176,14 @@ export function to_e164(input: string | number, country?: string): string {
 	// stops a short national number that happens to begin with the dialling code being read
 	// as international: seven digits is the floor for a plausible subscriber number, and the
 	// case this exists for (`447788223344` under GB) leaves ten.
-	if (raw.startsWith(code) && raw.length - code.length >= 7) return validate(raw, input)
+	if (raw.startsWith(code) && raw.length - code.length >= 7) {
+		// Except where national numbers legitimately begin with the code's digits: Italian
+		// mobiles include the 390–393 prefixes, so "3931234567" is a real national number
+		// that would be silently misread as international. Genuinely ambiguous — throw, per
+		// this module's whole premise, rather than text a stranger.
+		if (CODE_PREFIX_AMBIGUOUS.has(code)) throw ambiguous(String(input))
+		return validate(raw, input)
+	}
 	return validate(code + raw, input)
 }
 

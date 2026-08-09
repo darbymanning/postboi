@@ -56,17 +56,37 @@ function quote(value: string): string {
  * writes, plus unquoted values written by hand. Exists so the bare `postboi env push`
  * sweep can read the *project's* env files rather than the ambient shell environment,
  * where a developer's unrelated exported secrets live.
+ *
+ * Double-quoted values may span lines (dotenv and Bun both allow it, and a hand-pasted
+ * FCM key is the common case): an opening quote with no closing quote on its line
+ * consumes following lines until one ends the quote. Truncating such a value to its
+ * first line — quote included — and then *syncing that to the whole team* is the failure
+ * this exists to rule out.
  */
 export function parse_env(content: string): Record<string, string> {
 	const out: Record<string, string> = {}
-	for (const raw of content.split("\n")) {
-		const line = raw.trim()
+	const lines = content.split("\n")
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i].trim()
 		if (!line || line.startsWith("#")) continue
 		const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line)
 		if (!match) continue
-		out[match[1]] = unquote(match[2].trim())
+		let value = match[2].trim()
+		if (value.startsWith('"') && !closes_quote(value)) {
+			while (i + 1 < lines.length) {
+				value += `\n${lines[++i]}`
+				if (closes_quote(value.trimEnd())) break
+			}
+			value = value.trimEnd()
+		}
+		out[match[1]] = unquote(value)
 	}
 	return out
+}
+
+/** Does a `"`-opened value end with an unescaped closing quote? */
+function closes_quote(value: string): boolean {
+	return value.length >= 2 && value.endsWith('"') && !value.endsWith('\\"')
 }
 
 /** Undo `quote` (and accept single quotes / bare values from hand-written files). */

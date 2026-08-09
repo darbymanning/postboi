@@ -20,6 +20,7 @@
  * (edge/Workers), call {@link configure} explicitly at startup instead.
  */
 import type { Defaults, Hooks } from "./index.js"
+import type { Channel } from "./errors.js"
 import type { CaptchaOptions } from "./captcha.js"
 import type {
 	ChatProviderKey,
@@ -164,35 +165,43 @@ export function merge_hooks<T extends { before?: object; after?: object; on?: ob
 	} as T
 }
 
+/**
+ * The per-channel config sections merge() must walk, satisfies-checked so a new member of
+ * {@link Channel} can't ship a config section without a merge rule — the top-level spread
+ * would then silently clobber it for one channel only, discoverable at runtime. Email has
+ * no entry because its settings are the top-level fields.
+ */
+const CHANNEL_SECTIONS = {
+	sms: true,
+	chat: true,
+	push: true,
+	whatsapp: true,
+} satisfies Record<Exclude<Channel, "email">, true>
+
+/** Merge one channel section: override fields win, `default` objects combine. */
+function merge_section<T extends { default?: object }>(base?: T, override?: T): T {
+	return {
+		...base,
+		...defined(override ?? {}),
+		default: { ...base?.default, ...defined(override?.default ?? {}) },
+	} as T
+}
+
 /** Merge `override` over `base`, deep-merging the `default`, `hooks` and `captcha` objects. */
 function merge(base: PostboiConfig, override: PostboiConfig): PostboiConfig {
-	return {
+	const merged: PostboiConfig = {
 		...base,
 		...defined(override),
 		default: { ...base.default, ...defined(override.default ?? {}) },
 		hooks: merge_hooks(base.hooks, override.hooks),
 		captcha: { ...base.captcha, ...defined(override.captcha ?? {}) },
-		sms: {
-			...base.sms,
-			...defined(override.sms ?? {}),
-			default: { ...base.sms?.default, ...defined(override.sms?.default ?? {}) },
-		},
-		chat: {
-			...base.chat,
-			...defined(override.chat ?? {}),
-			default: { ...base.chat?.default, ...defined(override.chat?.default ?? {}) },
-		},
-		push: {
-			...base.push,
-			...defined(override.push ?? {}),
-			default: { ...base.push?.default, ...defined(override.push?.default ?? {}) },
-		},
-		whatsapp: {
-			...base.whatsapp,
-			...defined(override.whatsapp ?? {}),
-			default: { ...base.whatsapp?.default, ...defined(override.whatsapp?.default ?? {}) },
-		},
 	}
+	for (const section of Object.keys(CHANNEL_SECTIONS) as Array<keyof typeof CHANNEL_SECTIONS>) {
+		// The sections' value types differ per channel, which a keyed loop can't express —
+		// the cast is safe because base/override/merged agree on each key's type.
+		;(merged as Record<string, unknown>)[section] = merge_section(base[section], override[section])
+	}
+	return merged
 }
 
 let explicit: PostboiConfig = {}

@@ -77,3 +77,18 @@ describe("env fallback", () => {
 		expect(read_env("POSTBOI_TOKEN")).toBe("pb_from_binding")
 	})
 })
+
+describe("parse_dotenv", () => {
+	it("decodes the escapes the CLI's env writer produces", async () => {
+		const { parse_dotenv } = await import("./env.js")
+		const pem = "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----"
+		// What cli/env.ts format_line writes for that value.
+		const line = 'FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----"'
+		expect(parse_dotenv(line)).toEqual([["FCM_PRIVATE_KEY", pem]])
+		// Plain and single-quoted values stay untouched.
+		expect(parse_dotenv("A=plain\nB='lit\\neral'")).toEqual([
+			["A", "plain"],
+			["B", "lit\\neral"],
+		])
+	})
+})

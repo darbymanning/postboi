@@ -25,6 +25,14 @@ describe("to_e164", () => {
 		expect(to_e164("021234 5678", "+39")).toBe("+390212345678")
 	})
 
+	it("throws rather than guessing for Italian numbers that open with 39", () => {
+		// 390–393 are real Italian mobile prefixes, so "3931234567" could be a national
+		// mobile or an international number missing its "+". Guessing texts a stranger.
+		expect(() => to_e164("3931234567", "IT")).toThrow(PostboiError)
+		// Mobiles that don't collide with the dialling code still resolve nationally.
+		expect(to_e164("347 1234567", "IT")).toBe("+393471234567")
+	})
+
 	it("accepts a dialling code as the country, with or without the plus", () => {
 		expect(to_e164("07788223344", "+44")).toBe("+447788223344")
 		expect(to_e164("07788223344", "44")).toBe("+447788223344")

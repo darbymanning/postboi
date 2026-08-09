@@ -68,13 +68,7 @@ export abstract class SmsProvider<TResponse = unknown> extends Transport<TRespon
 		options: SmsOptions | Array<SmsOptions>,
 		batch: { concurrency?: number } = {}
 	): Promise<TResponse | Array<BatchResult<TResponse>>> {
-		if (Array.isArray(options)) {
-			return this.run_batch(options, (one) => this.send(one), batch)
-		}
-		return this.with_hooks(
-			() => this.prepare_sms(options),
-			(message) => this.deliver(message)
-		)
+		return this.dispatch(options, batch, (one) => this.prepare_sms(one))
 	}
 
 	/** Normalise a single {@link Phone} into its E.164 string. */

@@ -71,6 +71,14 @@ export function push_permission(): NotificationPermission | "unsupported" {
 	return push_supported() ? Notification.permission : "unsupported"
 }
 
+/** Does an existing subscription's server key match the one we're subscribing with? */
+function same_key(existing: ArrayBuffer | null, key: string): boolean {
+	if (!existing) return false
+	const a = new Uint8Array(existing)
+	const b = vapid_key_to_bytes(key)
+	return a.length === b.length && a.every((byte, i) => byte === b[i])
+}
+
 function to_json(subscription: PushSubscription): PushSubscriptionJSON {
 	const json = subscription.toJSON() as {
 		endpoint?: string
@@ -149,8 +157,17 @@ export async function subscribe_push(options: SubscribeOptions): Promise<PushSub
 		)
 	}
 
+	// Reuse an existing subscription only if it was created under *this* VAPID key. After
+	// a key rotation the old subscription still exists but the server can no longer sign
+	// for it — every send would be rejected with a VAPID mismatch — so it has to be
+	// dropped and remade rather than handed back as if valid.
 	const existing = await registration.pushManager.getSubscription()
-	if (existing) return to_json(existing)
+	if (existing) {
+		if (same_key(existing.options?.applicationServerKey ?? null, options.key)) {
+			return to_json(existing)
+		}
+		await existing.unsubscribe()
+	}
 
 	try {
 		const subscription = await registration.pushManager.subscribe({

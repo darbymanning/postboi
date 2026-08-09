@@ -896,3 +896,32 @@ describe("synced credentials (postboi env)", () => {
 		expect(keys).not.toContain("POSTBOI_TOKEN")
 	})
 })
+
+describe("multiline env values", () => {
+	it("parse_env reads a hand-pasted multiline quoted value instead of truncating it", () => {
+		// Real newlines inside quotes, the way dotenv and Bun allow — truncating this to
+		// its first line and team-syncing the fragment is the failure being ruled out.
+		const pem = "-----BEGIN PRIVATE KEY-----\nabc\ndef\n-----END PRIVATE KEY-----"
+		expect(parse_env(`FCM_PRIVATE_KEY="${pem}"\nOTHER=1\n`)).toEqual({
+			FCM_PRIVATE_KEY: pem,
+			OTHER: "1",
+		})
+	})
+})
+
+describe("poll_connect terminal statuses", () => {
+	it("treats any 4xx as dead instead of polling out the TTL", async () => {
+		const json_response = (body: unknown, status: number) =>
+			({ ok: false, status, json: async () => body }) as Response
+		expect(
+			await poll_connect(
+				"https://postboi.email",
+				{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
+				{
+					fetch: async () => json_response({ error: "invalid_request" }, 400),
+					sleep: async () => {},
+				}
+			)
+		).toBeUndefined()
+	})
+})

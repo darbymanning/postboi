@@ -1,10 +1,9 @@
 /**
  * The zero-config `push()`, on the shared channel resolution in `channels.ts`.
  */
-import type { BatchResult } from "../transport.js"
 import type { PushDefaults, PushOptions } from "./types.js"
 import { PushProvider } from "./provider.js"
-import { resolve_channel_provider, type ChannelResolution } from "../channels.js"
+import { channel_send, type ChannelResolution } from "../channels.js"
 import { read_env } from "../env.js"
 
 type PushConstructor = new (options: Record<string, unknown>) => PushProvider<unknown>
@@ -40,39 +39,21 @@ const RESOLUTION: ChannelResolution<PushProvider<unknown>> = {
 /**
  * Send a push notification without constructing anything.
  *
+ * `push.expired(error)` answers the routine push failure — did the service say this
+ * target is dead? Expiring subscriptions are the normal steady state of push, and the
+ * right response is to delete your stored copy — not to retry, and not to alert. It
+ * hangs off `push` itself so the send and its routine failure check are one import.
+ *
  * @example
  * ```ts
  * import { push } from "postboi"
  *
- * await push({ to: subscription, title: "Order shipped", message: "On its way" })
- * ```
- */
-export function push(options: PushOptions): Promise<unknown>
-export function push(
-	options: Array<PushOptions>,
-	batch?: { concurrency?: number }
-): Promise<Array<BatchResult<unknown>>>
-export async function push(
-	options: PushOptions | Array<PushOptions>,
-	batch: { concurrency?: number } = {}
-): Promise<unknown> {
-	const provider = await resolve_channel_provider(RESOLUTION)
-	if (Array.isArray(options)) return provider.send(options, batch)
-	return provider.send(options)
-}
-
-/**
- * Did the push service say this target is dead? Expiring subscriptions are the normal
- * steady state of push, and the right response is to delete your stored copy — not to
- * retry, and not to alert. Hangs off `push` itself so the send and its routine failure
- * check are one import.
- *
- * @example
- * ```ts
  * await push({ to: subscription, message: "hi" }).catch((error) => {
  * 	if (push.expired(error)) forget_subscription()
  * 	else throw error
  * })
  * ```
  */
-push.expired = PushProvider.is_expired
+export const push = Object.assign(channel_send<PushOptions>(RESOLUTION), {
+	expired: PushProvider.is_expired,
+})

@@ -35,6 +35,12 @@ export interface ChannelCapture {
 	subject?: string
 	/** The message body. Plain text on every non-email channel. */
 	text?: string
+	/**
+	 * The template name, for template-first channels (WhatsApp). A first-class field
+	 * rather than a `meta` row because the UI branches on it — display strings must never
+	 * double as type discriminants.
+	 */
+	template?: string
 	/** Channel-specific details worth showing (segments, template language, …), in order. */
 	meta?: Array<[string, string]>
 	scheduled_at?: Date
@@ -51,6 +57,8 @@ export interface InboxMessage extends Omit<
 	received_at: number
 	/** Which channel captured this. Absent means email, which predates the field. */
 	channel?: Channel
+	/** The template name, for template-first channels — see {@link ChannelCapture.template}. */
+	template?: string
 	/** Channel-specific details, rendered as-is by the UI. */
 	meta?: Array<[string, string]>
 	/** Optional now that texts and chats — which have no sender address, subject line or

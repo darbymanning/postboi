@@ -224,6 +224,31 @@ export abstract class Transport<TResponse = unknown, TPrepared = unknown> {
 	 * `after.send` or `on.error`. Shared by every channel and by the mock, so hooks behave
 	 * identically everywhere.
 	 */
+	/**
+	 * The one-or-many dispatch every channel's `send()` delegates to: an array fans out
+	 * through {@link run_batch}, a single message runs {@link with_hooks} around
+	 * {@link deliver}. Living here (rather than as four hand-copies in the channel bases)
+	 * is what makes "hooks and batching behave identically on every channel" a property of
+	 * the base class instead of a convention.
+	 */
+	protected async dispatch<TOptions>(
+		options: TOptions | Array<TOptions>,
+		batch: { concurrency?: number },
+		prepare: (options: TOptions) => Promise<TPrepared>
+	): Promise<TResponse | Array<BatchResult<TResponse>>> {
+		if (Array.isArray(options)) {
+			return this.run_batch(
+				options,
+				(one) => this.dispatch(one, {}, prepare) as Promise<TResponse>,
+				batch
+			)
+		}
+		return this.with_hooks(
+			() => prepare(options),
+			(message) => this.deliver(message)
+		)
+	}
+
 	protected async with_hooks(
 		prepare: () => Promise<TPrepared>,
 		core: (message: TPrepared) => Promise<TResponse>
