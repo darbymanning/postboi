@@ -523,6 +523,24 @@ export const CHAT_PROVIDERS = [
 		// `fields` made the CLI commit it somewhere no provider reads.
 		fields: [{ env: "TELEGRAM_BOT_TOKEN", arg: "bot_token", label: "Bot token", secret: true }],
 	},
+	{
+		key: "bluesky",
+		name: "Bluesky",
+		import: "postboi/bluesky",
+		class: "Bluesky",
+		url: "https://bsky.app/settings/app-passwords",
+		note: "AT Protocol — posts publicly to your own feed, not to a room",
+		fields: [
+			{ env: "BLUESKY_HANDLE", arg: "identifier", label: "Handle (e.g. you.bsky.social)" },
+			{ env: "BLUESKY_APP_PASSWORD", arg: "app_password", label: "App password", secret: true },
+			{
+				env: "BLUESKY_SERVICE",
+				arg: "service",
+				label: "PDS URL (only if you self-host)",
+				default: "https://bsky.social",
+			},
+		],
+	},
 ] as const satisfies ReadonlyArray<NotedProviderMeta>
 
 /** A known chat provider key, e.g. `"slack"`. */

@@ -42,7 +42,7 @@ export interface ChannelCapture {
 	 */
 	template?: string
 	/**
-	 * The chat platform the send was bound for (slack, discord, teams, telegram), when the
+	 * The chat platform the send was bound for (slack, discord, teams, telegram, bluesky), when the
 	 * capturing mock stood in for one. First-class for the same reason as `template`: the
 	 * UI picks a whole window skin by it.
 	 */

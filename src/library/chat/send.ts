@@ -27,6 +27,7 @@ const LOADERS: ChannelResolution<ChatProvider<unknown>>["loaders"] = {
 	discord: () => import("./discord.js").then((m) => m.default as unknown as ChatConstructor),
 	teams: () => import("./teams.js").then((m) => m.default as unknown as ChatConstructor),
 	telegram: () => import("./telegram.js").then((m) => m.default as unknown as ChatConstructor),
+	bluesky: () => import("./bluesky.js").then((m) => m.default as unknown as ChatConstructor),
 	mock: () => import("./mock.js").then((m) => m.default as unknown as ChatConstructor),
 }
 
@@ -196,3 +197,17 @@ export const teams: PlatformSend = platform("teams")
  * ```
  */
 export const telegram: PlatformSend = platform("telegram")
+
+/**
+ * Post to Bluesky without constructing anything — `BLUESKY_HANDLE` and
+ * `BLUESKY_APP_PASSWORD` are the setup. Unlike its neighbours here, **the post is
+ * public**: there is no channel, no room and no recipient, only your own feed.
+ *
+ * @example
+ * ```ts
+ * import { bluesky } from "postboi"
+ *
+ * await bluesky({ message: "Postboi 0.25 is out — https://postboi.email" })
+ * ```
+ */
+export const bluesky: PlatformSend = platform("bluesky")

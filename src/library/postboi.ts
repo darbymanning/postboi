@@ -12,7 +12,7 @@ export { sms } from "./sms/send.js"
 // The chat channel's per-platform functions. There's deliberately no generic `chat()`
 // export: you always know which platform you're posting to, so the platform is the name.
 // The channel-generic resolver still exists internally as `send()`'s chat leg.
-export { slack, discord, teams, telegram } from "./chat/send.js"
+export { slack, discord, teams, telegram, bluesky } from "./chat/send.js"
 // The zero-config `push()` — Web Push and FCM.
 export { push } from "./push/send.js"
 // The zero-config `whatsapp()` — Twilio or Meta's Cloud API.

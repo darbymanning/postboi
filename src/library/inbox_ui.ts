@@ -710,6 +710,19 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 #platwin.plat-telegram .m-sys { text-align: center }
 #platwin.plat-telegram #platentry { background: #fff }
 #platwin.plat-telegram #platentry input { border: 0 }
+/* Bluesky: a white feed with hairlines between posts — no room, no bubbles, no privacy. */
+#platwin.plat-bluesky #platbody { background: #fff; color: #0b0f19 }
+#platwin.plat-bluesky .plathead { background: #fff; color: #0b0f19; border-bottom: 1px solid #d4dbe2 }
+#platwin.plat-bluesky .plathead .dot { color: #1185fe; font-size: 15px }
+#platwin.plat-bluesky #plathist { padding: 0 }
+#platwin.plat-bluesky .msg { margin: 0; padding: 10px 12px; border-bottom: 1px solid #e6ebf0 }
+#platwin.plat-bluesky .pfp { border-radius: 50%; background: #1185fe }
+#platwin.plat-bluesky .m-head b { color: #0b0f19 }
+#platwin.plat-bluesky .m-head .t { color: #42576c; opacity: 1 }
+#platwin.plat-bluesky .m-sys { color: #42576c; padding: 0 12px }
+#platwin.plat-bluesky #platentry { border-top: 1px solid #d4dbe2 }
+#platwin.plat-bluesky #platentry input { border: 1px solid #d4dbe2; border-radius: 999px; background: #f7f9fa }
+#platwin.plat-bluesky #platentry input:focus { border-color: #1185fe; box-shadow: 0 0 0 1px #1185fe; background: #fff }
 #platbody { flex: 1; display: flex; flex-direction: column; min-height: 0 }
 
 /* ---- The push notification shade ---- */
@@ -1400,6 +1413,10 @@ var PLATFORMS = {
 	telegram: {
 		name: "Telegram", glyph: "\\u2708", room: "Dev Channel",
 		sub: "captured by the dev inbox", ph: "Write a message\\u2026",
+	},
+	bluesky: {
+		name: "Bluesky", glyph: "\\u{1F98B}", room: "Your feed",
+		sub: "public in production \\u00B7 captured here", ph: "What's up?",
 	},
 }
 

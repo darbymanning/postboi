@@ -75,6 +75,7 @@ export const contentSections: ContentSectionConfig[] = [
 					{ slug: "discord", name: "Discord" },
 					{ slug: "teams", name: "Teams" },
 					{ slug: "telegram", name: "Telegram" },
+					{ slug: "bluesky", name: "Bluesky" },
 				],
 			},
 			{

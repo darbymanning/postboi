@@ -751,6 +751,25 @@ hasn't started a chat with it — so it has the same storage problem as a push t
 
 **Effort: a few hours, as estimated.**
 
+### Bluesky, added later
+
+`bluesky()` posts to the account's own feed over the AT Protocol. It sits in the chat
+channel because the shape is identical — one message, one destination, no receipts — but
+it breaks the channel's private-by-default assumption: **the post is public**, there is no
+room to choose, and `to` is decorative. Say so wherever it's offered as a fallback.
+
+Three things it doesn't share with its neighbours:
+
+- **Auth is a session, not a key.** An app password buys a JWT good for a couple of hours,
+  and `createSession` is capped at 300 a day — so one login per post would become the
+  ceiling. The session is cached and re-minted on the server's own `ExpiredToken`, which is
+  cheaper than tracking `refreshJwt` and its expiry.
+- **Links need facets.** A URL in the text is dead unless the record carries a facet at its
+  **UTF-8 byte** offsets. Postboi builds link facets; mentions would need a handle→DID
+  lookup per name, so they wait for someone to ask.
+- **Length is 300 graphemes**, not characters. Counted before sending, so an over-long post
+  fails as `too_long` rather than as a 400.
+
 ---
 
 ## Phase 6 — WhatsApp and RCS (approval-gated) ✅ **done**
