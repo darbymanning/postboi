@@ -69,12 +69,13 @@ guessed at, because a template's content is fixed at approval time.
 
 | Provider | Import | Templates are |
 | --- | --- | --- |
-| Twilio | `postboi/whatsapp-twilio` | Content SIDs (`HX…`) |
+| Twilio | `postboi/whatsapp-twilio` | Content SIDs (`HX…`), or their names |
 | Meta Cloud API | `postboi/whatsapp-meta` | Approved names + language code |
 
 **Twilio** reuses your Twilio SMS credentials and the same Message resource — addresses get
 the `whatsapp:` prefix added for you. Templates are created in the Content Template Builder
-and addressed by their `HX…` SID.
+and addressed by their `HX…` SID — though once they've been [synced](#typed-template-names)
+you can use the friendly name instead, the same as on Meta.
 
 ```bash
 # .env
@@ -92,6 +93,7 @@ code (`language`, default `"en"`) that must match an approved translation.
 POSTBOI_WHATSAPP_PROVIDER=meta
 WHATSAPP_ACCESS_TOKEN=…
 WHATSAPP_PHONE_NUMBER_ID=123456789
+WHATSAPP_BUSINESS_ACCOUNT_ID=987654321   # optional — types your template names
 ```
 
 ### Template variables
@@ -102,6 +104,63 @@ Named keys for templates approved with named parameters, numeric keys for positi
 variables: { name: "Ada", tracking: "AB123" } // {{name}}, {{tracking}}
 variables: { 1: "Ada", 2: "AB123" } // {{1}}, {{2}}
 ```
+
+`variables` fills the template's **body**. A placeholder in the header or in a button's URL
+is its own field, because Meta sends each as a separate component:
+
+```typescript
+await whatsapp({
+	to,
+	template: "order_shipped",
+	header: { 1: "#1234" }, // the header's one variable
+	variables: { name: "Ada" }, // the body
+	buttons: [{ 1: "orders/1234" }], // one entry per dynamic button, in order
+})
+```
+
+Twilio numbers every placeholder in a single namespace, so there they all go in
+`variables` and `header`/`buttons` are ignored.
+
+### Typed template names
+
+A misspelled template comes back from the platform as a failed send, which is a slow way to
+find a typo. `bunx postboi init --whatsapp` and `bunx postboi sync` read your approved
+templates from Meta or Twilio and narrow `template` to them, exactly the way
+[type-safe `from`](/provider#type-safe-from) narrows your sending addresses:
+
+```typescript
+await whatsapp({ to, template: "order_shiped" })
+// ^ Type error: not one of your approved templates.
+//   Run `bunx postboi sync` to regenerate.
+```
+
+**It reads each template's placeholders too**, so `variables` knows what *that* template
+takes — including that it takes them at all:
+
+```typescript
+await whatsapp({ to, template: "order_shipped", variables: { name: "Ada" } })
+//                                              ^ Type error: `tracking` is missing
+
+await whatsapp({ to, template: "order_shipped" })
+// ^ Type error: this template needs variables
+```
+
+The templates live on the platform, not on your Postboi account, so the sync runs against
+Meta or Twilio with the credentials already in your env — no Postboi account needed. Meta
+needs one extra id to list them, `WHATSAPP_BUSINESS_ACCOUNT_ID`, which sits beside the phone
+number id in the API Setup panel; Twilio needs nothing you don't already have.
+
+**On Twilio this also earns you names.** Twilio sends a `ContentSid`, so the sync bakes the
+name→SID map alongside the types and the provider resolves it — the same
+`template: "order_shipped"` works on both platforms, and a raw `HX…` still goes through
+untouched.
+
+Like the `from` types, this lives inside `node_modules` (nothing to commit) and is entirely
+optional: with nothing generated, `template` accepts any string and `variables` any record.
+A raw `HX…` stays valid whatever's been generated, and a template whose body the sync
+couldn't read keeps accepting any variables rather than rejecting them — a stale list should
+never fail code that works. Re-run sync after getting a new template approved; `init` adds a
+`prepare` script so installs restore it.
 
 ## Development sends nothing
 

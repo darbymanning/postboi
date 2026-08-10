@@ -5,6 +5,7 @@ import {
 } from "./provider.js"
 import type { RequestSpec } from "../transport.js"
 import type { ProviderError } from "../errors.js"
+import { whatsapp_templates } from "../register.js"
 import {
 	twilio_auth,
 	twilio_messages_url,
@@ -40,7 +41,8 @@ const OUTSIDE_WINDOW = 63016
  * The same Message resource as Twilio SMS with `whatsapp:`-prefixed addresses (the prefix
  * is added for you), and the cheaper way in than Meta directly if you're already on
  * Twilio. Templates are Twilio **Content SIDs** (`HX…`, from the Content Template
- * Builder), not Meta template names.
+ * Builder) — or their friendly names, once `bunx postboi sync` has baked the map, which is
+ * what lets the same `template` value work here and on Meta.
  *
  * @example
  * ```ts
@@ -75,7 +77,7 @@ export default class TwilioWhatsapp extends WhatsappProvider<SendResponse> {
 		if (this.#messaging_service_sid) body.set("MessagingServiceSid", this.#messaging_service_sid)
 		if (message.from) body.set("From", prefixed(message.from))
 		if (message.template) {
-			body.set("ContentSid", message.template)
+			body.set("ContentSid", content_sid(message.template))
 			if (message.variables) body.set("ContentVariables", JSON.stringify(message.variables))
 		} else {
 			body.set("Body", message.message ?? "")
@@ -107,6 +109,18 @@ export default class TwilioWhatsapp extends WhatsappProvider<SendResponse> {
 		}
 		return error
 	}
+}
+
+/**
+ * Twilio sends a Content SID, but a template is far easier to read by the name it was
+ * built under — so a name that `bunx postboi sync` mapped resolves here, and anything
+ * else (a raw `HX…`, or a name from before the last sync) goes through untouched for
+ * Twilio to accept or reject.
+ */
+function content_sid(template: string): string {
+	// Own keys only: a template named `constructor` or `toString` would otherwise resolve to
+	// something off Object.prototype and be stringified into the request.
+	return Object.hasOwn(whatsapp_templates, template) ? whatsapp_templates[template] : template
 }
 
 /** Twilio addresses WhatsApp with a `whatsapp:` prefix on ordinary E.164 numbers. */

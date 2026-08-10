@@ -17,6 +17,7 @@ import type {
 	WhatsappOptions,
 	WhatsappProviderOptions,
 } from "./types.js"
+import type { WhatsappTemplate } from "../index.js"
 
 export type {
 	Phone,
@@ -58,8 +59,11 @@ export abstract class WhatsappProvider<TResponse = unknown> extends Transport<
 		this.defaults = { ...s.whatsapp?.default, ...options.default }
 	}
 
-	/** Send one message. Throws a {@link PostboiError} on any failure. */
-	send(options: WhatsappOptions): Promise<TResponse>
+	/**
+	 * Send one message. Throws a {@link PostboiError} on any failure. Generic so the
+	 * template being sent narrows its own `variables` — see {@link WhatsappOptions}.
+	 */
+	send<T extends WhatsappTemplate>(options: WhatsappOptions<T>): Promise<TResponse>
 	/** Send many, with bounded concurrency. Never rejects — each yields its own result. */
 	send(
 		options: Array<WhatsappOptions>,
@@ -126,6 +130,8 @@ export abstract class WhatsappProvider<TResponse = unknown> extends Transport<
 			message: has_message ? options.message : undefined,
 			template: has_template ? options.template : undefined,
 			variables: options.variables,
+			header: options.header,
+			buttons: options.buttons,
 			language: options.language ?? this.defaults.language ?? "en",
 		}
 	}

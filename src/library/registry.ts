@@ -627,6 +627,12 @@ export const WHATSAPP_PROVIDERS = [
 				arg: "phone_number_id",
 				label: "Phone number id (from the app dashboard, not the number itself)",
 			},
+			{
+				env: "WHATSAPP_BUSINESS_ACCOUNT_ID",
+				arg: "business_account_id",
+				label: "WhatsApp Business Account id (optional; types your template names)",
+				default: "",
+			},
 		],
 	},
 ] as const satisfies ReadonlyArray<NotedProviderMeta>

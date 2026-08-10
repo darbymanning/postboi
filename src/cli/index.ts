@@ -81,6 +81,7 @@ import {
 	upsert_captcha_key,
 	TYPES_TARGET,
 } from "./typegen.js"
+import { fetch_whatsapp_templates } from "./whatsapp_templates.js"
 import { offer_skill, refresh_skill } from "./skill.js"
 import { api_command } from "./api.js"
 import { dev_command } from "./dev.js"
@@ -111,7 +112,7 @@ ${dim(`  v${version()}`)}
 
 ${bold("Usage")}
   ${cyan("bunx postboi init")}     Set up the Postboi provider or a provider of your own
-  ${cyan("bunx postboi sync")}     Pull synced team credentials and refresh the generated from types
+  ${cyan("bunx postboi sync")}     Pull synced team credentials and refresh the generated from/template types
   ${cyan("bunx postboi env")}      The synced credentials ${dim("· push · pull [--force] · remove <KEY>")}
   ${cyan("bunx postboi dev")}      Local inbox for mail sent in development
   ${dim("                          · --port <n> --demo --no-sound --no-intro")}
@@ -818,15 +819,28 @@ async function sync(): Promise<void> {
 	const config_file = CONFIG_FILES.find((f) => existsSync(f))
 	const config_source = config_file ? readFileSync(config_file, "utf8") : undefined
 	const config_key = config_source ? config_captcha_key(config_source) : undefined
-	const bake = (key: string | undefined, source: string) => {
-		if (write_runtime(key)) {
+	// Templates come from Meta or Twilio, not from Postboi, so this runs with or without a
+	// token — and starting it first lets it overlap whatever account requests follow.
+	const templates_promise = fetch_whatsapp_templates()
+	const bake = async (key: string | undefined, source: string) => {
+		const { sids } = await templates_promise
+		if (write_runtime(key, sids)) {
 			console.log(`${green("✓")} captcha key baked for <Captcha /> ${dim(`(from ${source})`)}`)
 		}
+	}
+	/** Say what got typed, once, however sync got here. */
+	const report_templates = (names: Array<string>) => {
+		if (names.length === 0) return
+		console.log(
+			`${green("✓")} typed ${bold("template")} to your ${names.length} WhatsApp template(s) ${dim(`(${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""})`)}`
+		)
 	}
 
 	const token = read_env("POSTBOI_TOKEN")
 	if (!token) {
-		bake(config_key, config_file ?? "config")
+		await bake(config_key, config_file ?? "config")
+		const { names, variables } = await templates_promise
+		if (write_types(undefined, [], names, variables)) report_templates(names)
 		console.log(dim("postboi sync: no POSTBOI_TOKEN — skipping the generated from types."))
 		return
 	}
@@ -835,7 +849,9 @@ async function sync(): Promise<void> {
 	const vars_promise = fetch_env_vars(cloud_base(), token)
 	const account = await fetch_domains(cloud_base(), token)
 	if (!account) {
-		bake(config_key, config_file ?? "config")
+		await bake(config_key, config_file ?? "config")
+		const { names, variables } = await templates_promise
+		if (write_types(undefined, [], names, variables)) report_templates(names)
 		console.log(
 			yellow("postboi sync: could not fetch domains from the Postboi provider — skipped.")
 		)
@@ -876,7 +892,7 @@ async function sync(): Promise<void> {
 	}
 
 	const captcha_key = account.captcha_key ?? config_key
-	bake(captcha_key, account.captcha_key ? "the Postboi provider" : (config_file ?? "config"))
+	await bake(captcha_key, account.captcha_key ? "the Postboi provider" : (config_file ?? "config"))
 	// Keep the committed config as the tokenless source of truth for the key.
 	if (account.captcha_key && config_file && config_source && account.captcha_key !== config_key) {
 		const next = upsert_captcha_key(config_source, account.captcha_key)
@@ -890,12 +906,19 @@ async function sync(): Promise<void> {
 		}
 	}
 
-	const file = write_types(account.send_address ?? read_env("POSTBOI_FROM"), account.domains)
+	const { names, variables } = await templates_promise
+	const file = write_types(
+		account.send_address ?? read_env("POSTBOI_FROM"),
+		account.domains,
+		names,
+		variables
+	)
 	if (!file) {
 		console.log(dim("postboi sync: no sending addresses on this account yet."))
 		return
 	}
 	console.log(`${green("✓")} wrote ${bold(file)}`)
+	report_templates(names)
 	for (const d of account.domains) {
 		console.log(
 			d.status === "verified"
@@ -1424,9 +1447,38 @@ async function channel_init(
 
 	ensure_install(files)
 	write_channel_config(channel, provider.key, config_defaults, config_options)
+	if (channel === "whatsapp") await type_templates(provider, { ...config_options, ...values })
 
 	console.log(`\n${green(bold("Done!"))}\n`)
 	for (const line of spec.done(provider)) console.log(dim(line) + "\n")
+}
+
+/**
+ * Type `template` to the account's approved templates the moment WhatsApp is set up, so
+ * the first send already autocompletes rather than waiting for a `sync` the user has no
+ * reason to run yet. The credentials only exist in the files just written, so they go into
+ * this process's env — the same place a real send would read them from.
+ */
+async function type_templates(
+	provider: ChannelProvider,
+	collected: Record<string, string>
+): Promise<void> {
+	if (!existsSync(TYPES_TARGET)) return
+	env.POSTBOI_WHATSAPP_PROVIDER = provider.key
+	for (const field of provider.fields) {
+		const value = collected[field.env] ?? collected[field.arg]
+		if (value) env[field.env] = value
+	}
+	const { names, variables, sids } = await fetch_whatsapp_templates()
+	if (names.length === 0) return
+	// Both writers carry forward what this run has no opinion on — the account's `from`
+	// union and its baked captcha key, neither of which a channel init knows anything about.
+	write_types(undefined, [], names, variables)
+	write_runtime(undefined, sids)
+	console.log(
+		`${green("✓")} typed ${bold("template")} to your ${names.length} approved template(s)`
+	)
+	ensure_prepare()
 }
 
 /** Write (or show how to merge) a channel block of `postboi.config`. */

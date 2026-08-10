@@ -14,6 +14,8 @@ export interface SentWhatsapp {
 	message?: string
 	template?: string
 	variables?: Record<string, string>
+	header?: Record<string, string>
+	buttons?: Array<Record<string, string>>
 	language: string
 }
 
@@ -89,6 +91,8 @@ export default class MockWhatsapp extends WhatsappProvider<SendResponse> {
 			message: message.message,
 			template: message.template,
 			variables: message.variables,
+			header: message.header,
+			buttons: message.buttons,
 			language: message.language,
 		})
 	}

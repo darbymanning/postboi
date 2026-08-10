@@ -7,6 +7,8 @@
  * `POSTBOI_WHATSAPP_DEV=send`.
  */
 import type { WhatsappDefaults, WhatsappOptions } from "./types.js"
+import type { WhatsappTemplate } from "../index.js"
+import type { BatchResult } from "../transport.js"
 import { WhatsappProvider } from "./provider.js"
 import { channel_send, type ChannelResolution } from "../channels.js"
 import { read_env } from "../env.js"
@@ -73,6 +75,24 @@ const RESOLUTION: ChannelResolution<WhatsappProvider<unknown>> = {
  * }
  * ```
  */
-export const whatsapp = Object.assign(channel_send<WhatsappOptions>(RESOLUTION), {
-	closed: WhatsappProvider.is_outside_window,
-})
+export const whatsapp: WhatsappSend = Object.assign(
+	channel_send<WhatsappOptions>(RESOLUTION) as WhatsappSend,
+	{ closed: WhatsappProvider.is_outside_window }
+)
+
+/**
+ * `whatsapp()`'s own shape: {@link ChannelSend} plus the template type parameter, so a
+ * literal `template` narrows the `variables` accepted alongside it. The shared factory
+ * can't express that — a channel whose options depend on one of its own fields is this
+ * channel only — so the signature is declared here and the factory's runtime is reused
+ * unchanged.
+ */
+interface WhatsappSend {
+	<T extends WhatsappTemplate>(options: WhatsappOptions<T>): Promise<unknown>
+	(
+		options: Array<WhatsappOptions>,
+		batch?: { concurrency?: number }
+	): Promise<Array<BatchResult<unknown>>>
+	/** Was this the 24-hour customer service window being closed? */
+	closed(error: unknown): boolean
+}

@@ -116,6 +116,10 @@ export type Email = MailAddress | string
  * Type registry filled in by the generated types (the Postboi provider only — `bunx postboi sync`
  * writes them into this package's own `register.d.ts` in node_modules). When it declares a
  * `from` member, every `from` field in the API narrows to your permitted sending addresses.
+ *
+ * A `template` member does the same for WhatsApp. Those are approved at Meta or Twilio
+ * rather than here, so sync fetches them from the platform with the credentials already in
+ * your env — see {@link WhatsappTemplate}.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- empty on purpose: augmentation target
 export interface Register {}
@@ -129,6 +133,39 @@ export interface Register {}
 export type FromAddress = Register extends { from: infer F extends string }
 	? F | { address: F; name?: string }
 	: Email
+
+/**
+ * The WhatsApp templates you can send, per the generated types — or any string when none
+ * have been generated. `bunx postboi sync` reads them from Meta or Twilio directly (they
+ * live there, not on your Postboi account), so a misspelled template is a type error
+ * rather than a failed send. If a genuinely approved template is rejected here, the
+ * generated types are stale: re-run sync.
+ *
+ * A raw Twilio Content SID stays valid whatever's been generated — it's what the API
+ * takes, and a template approved since the last sync has no name here yet.
+ */
+export type WhatsappTemplate = Register extends { template: infer T extends string }
+	? T | `HX${string}`
+	: string
+
+/**
+ * The variables one WhatsApp template takes, per the generated types — the placeholder
+ * names in its approved body, so they're required rather than guessed at. Any
+ * `Record<string, string>` when nothing has been generated, or when the template isn't one
+ * sync knows about (a raw Twilio `HX…`, say).
+ *
+ * A template with no placeholders resolves to `Record<never, string>`, which is how
+ * passing variables to a template that takes none becomes a type error too.
+ */
+export type TemplateVariables<T extends string> = Register extends {
+	template_variables: infer M
+}
+	? T extends keyof M
+		? M[T] extends string
+			? Record<M[T], string>
+			: Record<string, string>
+		: Record<string, string>
+	: Record<string, string>
 
 /**
  * A plain object of form fields — e.g. Express/multer's `req.body`. Passed as a `body`, it's

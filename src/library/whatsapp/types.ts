@@ -12,6 +12,7 @@
  */
 import type { TransportOptions } from "../transport.js"
 import type { Phone } from "../sms/types.js"
+import type { TemplateVariables, WhatsappTemplate } from "../index.js"
 
 export type { Phone } from "../sms/types.js"
 
@@ -37,8 +38,34 @@ export type WhatsappDefaults = {
 	language?: string
 }
 
-/** Options accepted by `whatsapp(...)` and every WhatsApp provider's `send`. */
-export interface WhatsappOptions {
+/**
+ * Options accepted by `whatsapp(...)` and every WhatsApp provider's `send`.
+ *
+ * The type parameter is the template being sent, inferred from `template` — it's what
+ * lets `variables` know which placeholders that particular template takes, and whether it
+ * needs any at all. Left alone it behaves exactly as an ungenericised version would, so
+ * `Partial<WhatsappOptions>` and friends need no ceremony.
+ *
+ * Named keys for templates approved with named parameters (`{ name: "Ada" }`), numeric
+ * keys for positional ones (`{ 1: "Ada" }`) — the same shape either way.
+ */
+export type WhatsappOptions<T extends WhatsappTemplate = WhatsappTemplate> = WhatsappFields<T> &
+	VariablesField<T>
+
+/**
+ * `variables`, required exactly when the template is known to declare placeholders.
+ * Forgetting them altogether is the commonest way a template send fails, so a synced
+ * template asks for them up front — while an unsynced one (`keyof` is the open `string`)
+ * and a placeholder-free one both stay optional.
+ */
+type VariablesField<T extends WhatsappTemplate> = string extends keyof TemplateVariables<T>
+	? { variables?: TemplateVariables<T> }
+	: keyof TemplateVariables<T> extends never
+		? { variables?: TemplateVariables<T> }
+		: { variables: TemplateVariables<T> }
+
+/** Every WhatsApp send field except `variables` — see {@link WhatsappOptions}. */
+export interface WhatsappFields<T extends WhatsappTemplate = WhatsappTemplate> {
 	to?: Phone
 	/** Sender override (Twilio). See {@link WhatsappDefaults.from}. */
 	from?: string
@@ -52,13 +79,22 @@ export interface WhatsappOptions {
 	 * A pre-approved template, by the name it was approved under (Meta) or its Content
 	 * SID, `HX…` (Twilio). The deliverable-anytime path. Exactly one of `message` or
 	 * `template` per send.
+	 *
+	 * `bunx postboi sync` narrows this to your approved templates — see
+	 * {@link WhatsappTemplate}.
 	 */
-	template?: string
+	template?: T
 	/**
-	 * Template variables. Named keys for templates approved with named parameters
-	 * (`{ name: "Ada" }`), or numeric keys for positional ones (`{ 1: "Ada" }`).
+	 * The variable in the template's header, when it has one (Meta only — Twilio numbers
+	 * every placeholder in one namespace, so on Twilio they all go in `variables`). A text
+	 * header takes at most one, in the same key shape as `variables`.
 	 */
-	variables?: Record<string, string>
+	header?: Record<string, string>
+	/**
+	 * Variables for the template's dynamic buttons, one entry per button in the order they
+	 * were approved (Meta only). A URL button's variable fills the tail of its link.
+	 */
+	buttons?: Array<Record<string, string>>
 	/** Template language code for this send (Meta). */
 	language?: string
 	/** Override the default country for a national-format number in this send. */
@@ -73,6 +109,8 @@ export interface PreparedWhatsapp {
 	message?: string
 	template?: string
 	variables?: Record<string, string>
+	header?: Record<string, string>
+	buttons?: Array<Record<string, string>>
 	language: string
 }
 
