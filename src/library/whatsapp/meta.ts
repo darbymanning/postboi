@@ -1,6 +1,7 @@
 import {
 	WhatsappProvider,
 	type PreparedWhatsapp,
+	type TemplateValues,
 	type WhatsappProviderOptions,
 } from "./provider.js"
 import type { RequestSpec } from "../transport.js"
@@ -128,7 +129,10 @@ export default class Meta extends WhatsappProvider<SendResponse> {
  * on each entry. The same rule for every component, so the caller's key shape decides
  * once rather than per placement.
  */
-function parameters(values: Record<string, string>): Array<Record<string, unknown>> {
+function parameters(values: TemplateValues): Array<Record<string, unknown>> {
+	// A bare string is the single value of a one-slot component (a header, a URL button) on
+	// a positional template, where the parameter carries no name to give it.
+	if (typeof values === "string") return [{ type: "text", text: values }]
 	const entries = Object.entries(values)
 	const positional = entries.every(([key]) => /^\d+$/.test(key))
 	return positional
@@ -143,10 +147,14 @@ function parameters(values: Record<string, string>): Array<Record<string, unknow
  */
 function components(message: PreparedWhatsapp): Array<Record<string, unknown>> {
 	const parts: Array<Record<string, unknown>> = []
-	// An empty map is "no values here", not "a component with no parameters" — the latter is
-	// what Meta counts against the template's declared parameters and rejects.
-	const filled = (values?: Record<string, string>) =>
-		values && Object.keys(values).length > 0 ? values : undefined
+	// An empty string or map is "no values here", not "a component with no parameters" — the
+	// latter is what Meta counts against the template's declared parameters and rejects.
+	const filled = (values?: TemplateValues) =>
+		typeof values === "string"
+			? values || undefined
+			: values && Object.keys(values).length > 0
+				? values
+				: undefined
 
 	const header = filled(message.header)
 	const body = filled(message.variables)

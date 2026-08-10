@@ -64,6 +64,17 @@ type VariablesField<T extends WhatsappTemplate> = string extends keyof TemplateV
 		? { variables?: TemplateVariables<T> }
 		: { variables: TemplateVariables<T> }
 
+/**
+ * The values for one template component. Whether a template's placeholders are numbered
+ * (`{{1}}`) or named (`{{name}}`) is fixed when it's approved and applies to the whole
+ * template, so the key shape you use is really you declaring which kind it is.
+ *
+ * A component with a single slot — a text header, a URL button — takes the value on its
+ * own, since on a numbered template there's no name to key it by. Named templates still
+ * need the map: the header's placeholder has its own name, and nowhere else to put it.
+ */
+export type TemplateValues = string | Record<string, string>
+
 /** Every WhatsApp send field except `variables` — see {@link WhatsappOptions}. */
 export interface WhatsappFields<T extends WhatsappTemplate = WhatsappTemplate> {
 	to?: Phone
@@ -87,14 +98,19 @@ export interface WhatsappFields<T extends WhatsappTemplate = WhatsappTemplate> {
 	/**
 	 * The variable in the template's header, when it has one (Meta only — Twilio numbers
 	 * every placeholder in one namespace, so on Twilio they all go in `variables`). A text
-	 * header takes at most one, in the same key shape as `variables`.
+	 * header takes at most one, hence the bare `header: "#1234"`.
+	 *
+	 * Templates approved with *named* parameters need the placeholder's own name, which the
+	 * header has independently of the body — pass `{ membershiptype: "Gold" }` for those.
 	 */
-	header?: Record<string, string>
+	header?: TemplateValues
 	/**
 	 * Variables for the template's dynamic buttons, one entry per button in the order they
-	 * were approved (Meta only). A URL button's variable fills the tail of its link.
+	 * were approved (Meta only). A URL button's variable fills the tail of its link, and
+	 * takes exactly one value — `buttons: ["orders/1234"]`, or the named form as with
+	 * {@link WhatsappFields.header}.
 	 */
-	buttons?: Array<Record<string, string>>
+	buttons?: Array<TemplateValues>
 	/** Template language code for this send (Meta). */
 	language?: string
 	/** Override the default country for a national-format number in this send. */
@@ -109,8 +125,8 @@ export interface PreparedWhatsapp {
 	message?: string
 	template?: string
 	variables?: Record<string, string>
-	header?: Record<string, string>
-	buttons?: Array<Record<string, string>>
+	header?: TemplateValues
+	buttons?: Array<TemplateValues>
 	language: string
 }
 

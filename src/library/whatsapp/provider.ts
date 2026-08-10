@@ -22,6 +22,7 @@ import type { WhatsappTemplate } from "../index.js"
 export type {
 	Phone,
 	PreparedWhatsapp,
+	TemplateValues,
 	WhatsappDefaults,
 	WhatsappOptions,
 	WhatsappProviderOptions,

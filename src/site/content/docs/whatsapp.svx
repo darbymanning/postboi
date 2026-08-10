@@ -105,17 +105,30 @@ variables: { name: "Ada", tracking: "AB123" } // {{name}}, {{tracking}}
 variables: { 1: "Ada", 2: "AB123" } // {{1}}, {{2}}
 ```
 
+Which of the two a template uses is fixed when it's approved and applies to the whole
+template, so the keys you write are really you saying which kind it is.
+
 `variables` fills the template's **body**. A placeholder in the header or in a button's URL
-is its own field, because Meta sends each as a separate component:
+is its own field, because Meta sends each as a separate component. Those hold one value
+each, so they take it bare:
 
 ```typescript
 await whatsapp({
 	to,
 	template: "order_shipped",
-	header: { 1: "#1234" }, // the header's one variable
+	header: "#1234", // the header's one variable
 	variables: { name: "Ada" }, // the body
-	buttons: [{ 1: "orders/1234" }], // one entry per dynamic button, in order
+	buttons: ["orders/1234"], // one entry per dynamic button, in order
 })
+```
+
+A named template's header placeholder has a name of its own, unrelated to the body's, and
+nowhere else to go — so those take the map form instead, and a send that omits the name
+comes back as error `132000`:
+
+```typescript
+header: { membershiptype: "Gold" },
+buttons: [{ promo: "summer_2025" }],
 ```
 
 Twilio numbers every placeholder in a single namespace, so there they all go in

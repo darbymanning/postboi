@@ -213,9 +213,10 @@ describe("meta cloud api", () => {
 		await new Meta(CREDS).send({
 			to: "+447788223344",
 			template: "order_shipped",
-			header: { 1: "#1234" },
+			// A header and a URL button hold one value each, so they take it bare.
+			header: "#1234",
 			variables: { name: "Ada" },
-			buttons: [{ 1: "orders/1234" }, { 1: "returns/1234" }],
+			buttons: ["orders/1234", "returns/1234"],
 		})
 
 		// Header first, then body, then one component per button at its own index — a
@@ -247,7 +248,29 @@ describe("meta cloud api", () => {
 		expect(payload.template.components).toBeUndefined()
 	})
 
-	it("treats an empty map as no values, not as a parameterless component", async () => {
+	it("names a header or button variable when the template was approved with named ones", async () => {
+		const fetch = vi.fn().mockResolvedValue(respond({ body: { messages: [{ id: "wamid.A" }] } }))
+		vi.stubGlobal("fetch", fetch)
+		// A named template's header placeholder has its own name, independent of the body's,
+		// and Meta rejects the send with #132000 if it arrives without one.
+		await new Meta(CREDS).send({
+			to: "+447788223344",
+			template: "order_shipped",
+			header: { membershiptype: "Gold" },
+			variables: { name: "Ada" },
+			buttons: [{ promo: "summer_2025" }],
+		})
+
+		const parts = JSON.parse(fetch.mock.calls[0][1].body as string).template.components
+		expect(parts[0].parameters).toEqual([
+			{ type: "text", parameter_name: "membershiptype", text: "Gold" },
+		])
+		expect(parts[2].parameters).toEqual([
+			{ type: "text", parameter_name: "promo", text: "summer_2025" },
+		])
+	})
+
+	it("treats an empty value as no values, not as a parameterless component", async () => {
 		const fetch = vi.fn().mockResolvedValue(respond({ body: { messages: [{ id: "wamid.A" }] } }))
 		vi.stubGlobal("fetch", fetch)
 		// Natural when the values are built from data that turned out empty — Meta counts a
@@ -255,7 +278,7 @@ describe("meta cloud api", () => {
 		await new Meta(CREDS).send({
 			to: "+447788223344",
 			template: "order_shipped",
-			header: {},
+			header: "",
 			variables: { name: "Ada" },
 			buttons: [{}],
 		})
