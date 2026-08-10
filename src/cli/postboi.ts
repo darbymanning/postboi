@@ -32,6 +32,64 @@ export class PostboiAuthError extends Error {}
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 
+/** Validate a start response's shape, defaulting the timing fields. */
+function read_start(data: Partial<DeviceStart>, fallback_ttl: number): DeviceStart | undefined {
+	if (typeof data.code !== "string" || typeof data.url !== "string") return undefined
+	return {
+		code: data.code,
+		url: data.url,
+		expires_in: typeof data.expires_in === "number" ? data.expires_in : fallback_ttl,
+		interval: typeof data.interval === "number" ? data.interval : 2,
+	}
+}
+
+/**
+ * The polling loop shared by device auth and the connect flow: POST `{ code }` to `path`
+ * until `parse` yields a result, the server declares the code dead (404/410), or the
+ * deadline passes. Transient network errors and non-JSON bodies (a captive portal's 200)
+ * never throw — they're just another tick of the loop.
+ */
+async function poll_code<T>(
+	base: string,
+	path: string,
+	start: DeviceStart,
+	parse: (data: Record<string, unknown>) => T | undefined,
+	deps: { fetch?: FetchLike; sleep?: (ms: number) => Promise<unknown>; now?: () => number } = {}
+): Promise<T | "dead" | "timeout"> {
+	const { fetch: fetch_fn = fetch, sleep = delay, now = Date.now } = deps
+	const deadline = now() + start.expires_in * 1000
+
+	while (now() < deadline) {
+		let response: Response | undefined
+		try {
+			response = await fetch_fn(`${base}${path}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ code: start.code }),
+			})
+		} catch {
+			// transient network blip — keep polling until the deadline
+		}
+		if (response) {
+			// Only the statuses the API actually uses for a dead code are terminal. Anything
+			// else — a 429 from an edge rate-limiter throttling the 2s polling, a WAF 403, a
+			// 5xx — is transient and must not abort a sign-in the user is mid-way through.
+			if (response.status === 404 || response.status === 410) return "dead"
+			if (response.ok) {
+				const data = (await response.json().catch(() => undefined)) as
+					| Record<string, unknown>
+					| undefined
+				if (data) {
+					const result = parse(data)
+					if (result !== undefined) return result
+				}
+			}
+		}
+		await sleep(start.interval * 1000)
+	}
+	return "timeout"
+}
+
 export async function start_device_auth(
 	base: string,
 	fetch_fn: FetchLike = fetch
@@ -48,18 +106,13 @@ export async function start_device_auth(
 			`the Postboi provider responded with ${response.status} — try again shortly.`
 		)
 	}
-	const data = (await response.json()) as Partial<DeviceStart>
-	if (typeof data.code !== "string" || typeof data.url !== "string") {
+	const start = read_start((await response.json().catch(() => ({}))) as Partial<DeviceStart>, 600)
+	if (!start) {
 		throw new PostboiAuthError(
 			"Unexpected response from the Postboi provider — update postboi and retry."
 		)
 	}
-	return {
-		code: data.code,
-		url: data.url,
-		expires_in: typeof data.expires_in === "number" ? data.expires_in : 600,
-		interval: typeof data.interval === "number" ? data.interval : 2,
-	}
+	return start
 }
 
 /** What a claimed code exchanges into: the API token, plus the account's sending address. */
@@ -74,44 +127,85 @@ export async function poll_device_auth(
 	start: DeviceStart,
 	deps: { fetch?: FetchLike; sleep?: (ms: number) => Promise<unknown>; now?: () => number } = {}
 ): Promise<DeviceClaim> {
-	const { fetch: fetch_fn = fetch, sleep = delay, now = Date.now } = deps
-	const deadline = now() + start.expires_in * 1000
-
-	while (now() < deadline) {
-		let response: Response | undefined
-		try {
-			response = await fetch_fn(`${base}/api/cli/poll`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ code: start.code }),
-			})
-		} catch {
-			// transient network blip — keep polling until the deadline
-		}
-		if (response) {
-			if (response.status === 404 || response.status === 410) {
-				throw new PostboiAuthError(
-					"This sign-in code is no longer valid — run `postboi init` again."
-				)
-			}
-			if (response.ok) {
-				const data = (await response.json()) as {
-					status?: string
-					token?: string
-					send_address?: string
-				}
-				if (data.status === "claimed" && typeof data.token === "string") {
-					return {
+	const result = await poll_code<DeviceClaim>(
+		base,
+		"/api/cli/poll",
+		start,
+		(data) =>
+			data.status === "claimed" && typeof data.token === "string"
+				? {
 						token: data.token,
 						send_address: typeof data.send_address === "string" ? data.send_address : undefined,
 					}
-				}
-			}
-		}
-		await sleep(start.interval * 1000)
+				: undefined,
+		deps
+	)
+	if (result === "dead") {
+		throw new PostboiAuthError("This sign-in code is no longer valid — run `postboi init` again.")
 	}
+	if (result === "timeout") {
+		throw new PostboiAuthError("Timed out waiting for the browser — run `postboi init` again.")
+	}
+	return result
+}
 
-	throw new PostboiAuthError("Timed out waiting for the browser — run `postboi init` again.")
+/**
+ * The OAuth webhook connect flow for chat platforms, mirroring device auth: `start`
+ * mints a code and a browser URL, the user picks a channel on the provider's own consent
+ * screen, `poll` collects the created webhook URL. Everything here degrades to
+ * `undefined` rather than throwing — the paste-a-webhook prompt is always the fallback.
+ */
+export interface ConnectStart {
+	code: string
+	url: string
+	expires_in: number
+	interval: number
+}
+
+export async function start_connect(
+	base: string,
+	provider: string,
+	fetch_fn: FetchLike = fetch
+): Promise<ConnectStart | undefined> {
+	try {
+		const response = await fetch_fn(`${base}/api/connect/start`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ provider }),
+		})
+		if (!response.ok) return undefined
+		return read_start((await response.json()) as Partial<ConnectStart>, 900)
+	} catch {
+		return undefined
+	}
+}
+
+/** The connected webhook, plus the provider's label for it ("#alerts in Acme"). */
+export interface ConnectResult {
+	webhook_url: string
+	label?: string
+}
+
+/** Poll until the browser side connects, or the code dies — undefined means fall back. */
+export async function poll_connect(
+	base: string,
+	start: ConnectStart,
+	deps: { fetch?: FetchLike; sleep?: (ms: number) => Promise<unknown>; now?: () => number } = {}
+): Promise<ConnectResult | undefined> {
+	const result = await poll_code<ConnectResult>(
+		base,
+		"/api/connect/poll",
+		start,
+		(data) =>
+			data.status === "connected" && typeof data.webhook_url === "string"
+				? {
+						webhook_url: data.webhook_url,
+						label: typeof data.label === "string" ? data.label : undefined,
+					}
+				: undefined,
+		deps
+	)
+	return result === "dead" || result === "timeout" ? undefined : result
 }
 
 /** A domain on the account. `status` is `"verified"` when it can deliver; anything else
@@ -167,6 +261,63 @@ export async function fetch_domains(
 		}
 	} catch {
 		return undefined
+	}
+}
+
+/**
+ * The account's synced channel credentials, or undefined when unreachable (or on an API
+ * that predates them). An empty object is a real answer: nothing synced yet.
+ */
+export async function fetch_env_vars(
+	base: string,
+	token: string,
+	fetch_fn: FetchLike = fetch
+): Promise<{ vars: Record<string, string> } | undefined> {
+	try {
+		const response = await fetch_fn(`${base}/v1/env`, {
+			headers: { Authorization: `Bearer ${token}` },
+		})
+		if (!response.ok) return undefined
+		const data = (await response.json()) as { vars?: unknown }
+		if (data.vars === null || typeof data.vars !== "object") return undefined
+		const vars: Record<string, string> = {}
+		for (const [key, value] of Object.entries(data.vars as Record<string, unknown>)) {
+			if (typeof value === "string") vars[key] = value
+		}
+		return { vars }
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * Merge vars into the account's synced set. A null value deletes. A rejection carries the
+ * API's reason so the caller can relay it — "the vars cap is hit" and "the network is
+ * down" need different advice, and collapsing them told users to retry a 422 forever.
+ */
+export async function push_env_vars(
+	base: string,
+	token: string,
+	vars: Record<string, string | null>,
+	fetch_fn: FetchLike = fetch
+): Promise<{ ok: true } | { ok: false; reason?: string }> {
+	try {
+		const response = await fetch_fn(`${base}/v1/env`, {
+			method: "PUT",
+			headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+			body: JSON.stringify({ vars }),
+		})
+		if (response.ok) return { ok: true }
+		let reason = `the API answered ${response.status}`
+		try {
+			const data = (await response.json()) as { message?: unknown }
+			if (typeof data.message === "string" && data.message) reason = data.message
+		} catch {
+			// Empty or non-JSON error body — the status line will have to do.
+		}
+		return { ok: false, reason }
+	} catch {
+		return { ok: false }
 	}
 }
 

@@ -344,7 +344,7 @@ const highlighter = await createHighlighter({
 })
 
 const markdownLayout = fileURLToPath(
-	new URL("./src/lib/components/docs/MarkdownLayout.svelte", import.meta.url)
+	new URL("./src/site/components/docs/MarkdownLayout.svelte", import.meta.url)
 )
 
 /** @type {import('@sveltejs/kit').Config} */
@@ -387,9 +387,11 @@ const config = {
 
 	kit: {
 		adapter: adapter(),
-		// The library's tests import via `$library/*`; the docs app uses the default `$lib`.
+		// The library's tests import via `$library/*`; the docs site's own pieces live in
+		// `$site` — named so nobody has to remember which of lib/library meant what.
 		alias: {
 			$library: "src/library",
+			$site: "src/site",
 		},
 	},
 }

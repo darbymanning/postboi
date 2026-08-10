@@ -17,7 +17,8 @@ import { workers_env } from "./workers_env.js"
  */
 let fallback: Record<string, string> | null = null
 
-function parse_dotenv(text: string): Array<[string, string]> {
+/** Exported for tests: the CLI's env writer and this parser must agree on escapes. */
+export function parse_dotenv(text: string): Array<[string, string]> {
 	const out: Array<[string, string]> = []
 	for (const raw of text.split(/\r?\n/)) {
 		const line = raw.trim()
@@ -25,10 +26,13 @@ function parse_dotenv(text: string): Array<[string, string]> {
 		const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line)
 		if (!match) continue
 		let value = match[2].trim()
-		if (
-			(value.startsWith('"') && value.endsWith('"')) ||
-			(value.startsWith("'") && value.endsWith("'"))
-		) {
+		if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+			// Standard dotenv behaviour, and what the CLI's own writer produces: escapes in
+			// double-quoted values decode, so a multi-line credential (an FCM key) written as
+			// \n sequences reaches providers as real newlines rather than literal backslashes.
+			const escapes: Record<string, string> = { '"': '"', "\\": "\\", n: "\n", r: "\r" }
+			value = value.slice(1, -1).replace(/\\(["\\nr])/g, (_, c: string) => escapes[c])
+		} else if (value.startsWith("'") && value.endsWith("'") && value.length >= 2) {
 			value = value.slice(1, -1)
 		}
 		out.push([match[1], value])

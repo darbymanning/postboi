@@ -1,15 +1,15 @@
 import { error } from "@sveltejs/kit"
 import ImageResponse from "@takumi-rs/image-response"
 import type { RequestHandler } from "./$types"
-import { brandLogoRaw, siteConfig } from "$lib"
+import { brandLogoRaw, siteConfig } from "$site"
 import {
 	getContentSectionConfig,
 	getContentSectionItemBySlug,
 	getContentSectionMetadata,
 	getContentSectionHref,
 	getContentSectionManifest,
-} from "$lib/content/sections"
-import { contentSections } from "$lib/config/navigation"
+} from "$site/content/sections"
+import { contentSections } from "$site/config/navigation"
 import interLatin400DataUri from "@fontsource/inter/files/inter-latin-400-normal.woff2?inline"
 import interLatin500DataUri from "@fontsource/inter/files/inter-latin-500-normal.woff2?inline"
 

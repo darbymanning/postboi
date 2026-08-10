@@ -20,8 +20,19 @@
  * (edge/Workers), call {@link configure} explicitly at startup instead.
  */
 import type { Defaults, Hooks } from "./index.js"
+import type { Channel } from "./errors.js"
 import type { CaptchaOptions } from "./captcha.js"
-import type { ProviderKey } from "./registry.js"
+import type {
+	ChatProviderKey,
+	ProviderKey,
+	PushProviderKey,
+	SmsProviderKey,
+	WhatsappProviderKey,
+} from "./registry.js"
+import type { SmsDefaults } from "./sms/types.js"
+import type { ChatDefaults } from "./chat/types.js"
+import type { PushDefaults } from "./push/types.js"
+import type { WhatsappDefaults } from "./whatsapp/types.js"
 
 /** Everything you can configure globally via `postboi.config.ts` or {@link configure}. */
 export interface PostboiConfig {
@@ -50,8 +61,60 @@ export interface PostboiConfig {
 	retry_delay?: number
 	/** Derive a plain-text body from the HTML body when `text` is omitted. On by default. */
 	auto_text?: boolean
-	/** Lifecycle hooks run around every send (the main reason to use a config file). */
+	/**
+	 * Lifecycle hooks run around every send, on every channel (the main reason to use a
+	 * config file). `ctx.channel` says which channel fired it; narrow on that before
+	 * reading channel-specific fields like `message.subject`.
+	 */
 	hooks?: Hooks
+	/**
+	 * SMS channel settings for the zero-config `sms()`. `POSTBOI_SMS_*` env vars win over
+	 * anything here, the same way they do for email.
+	 */
+	sms?: {
+		/** Provider key (`twilio`, `smsworks`, …). `POSTBOI_SMS_PROVIDER` wins. */
+		provider?: SmsProviderKey | "mock"
+		/** Default fields applied to every text — sender, recipients, country. */
+		default?: SmsDefaults
+		/**
+		 * Non-secret SMS provider constructor options, keyed by the provider's option name.
+		 * Keep secrets in the environment.
+		 */
+		options?: Record<string, string>
+	}
+	/**
+	 * Chat channel settings for the platform functions (`slack()`, `discord()`, `teams()`,
+	 * `telegram()`) and `send()`'s chat leg. `POSTBOI_CHAT_*` env vars win over anything here.
+	 */
+	chat?: {
+		/** Provider key (`slack`, `discord`, `teams`, `telegram`). */
+		provider?: ChatProviderKey | "mock"
+		/** Default destination and display name. */
+		default?: ChatDefaults
+		/** Non-secret constructor options. Webhook URLs are secrets — keep them in env. */
+		options?: Record<string, string>
+	}
+	/**
+	 * WhatsApp channel settings for the zero-config `whatsapp()` — Twilio or Meta's Cloud
+	 * API. `POSTBOI_WHATSAPP_*` env vars win over anything here.
+	 */
+	whatsapp?: {
+		/** Provider key (`twilio`, `meta`). */
+		provider?: WhatsappProviderKey | "mock"
+		/** Default sender, recipient, country and template language. */
+		default?: WhatsappDefaults
+		/** Non-secret constructor options. Access tokens are secrets — keep them in env. */
+		options?: Record<string, string>
+	}
+	/** Push channel settings for the zero-config `push()` — Web Push and FCM. */
+	push?: {
+		/** Provider key (`webpush`, `fcm`). */
+		provider?: PushProviderKey | "mock"
+		/** Default icon and TTL. Deliberately no default target — push targets are per-device. */
+		default?: PushDefaults
+		/** Non-secret constructor options. Private keys are secrets — keep them in env. */
+		options?: Record<string, string>
+	}
 	/** Spam-protection settings applied to every FormData send (honeypot + Turnstile). */
 	captcha?: CaptchaOptions
 	/** Development-only behaviour. Ignored outside `NODE_ENV=development`. */
@@ -61,6 +124,20 @@ export interface PostboiConfig {
 		 * On by default — set false if you want local sends to reach the real provider.
 		 */
 		inbox?: boolean
+		/**
+		 * Capture texts in development instead of sending them. **On by default, and
+		 * stricter than `inbox`** — mail is only intercepted when an inbox is running, but
+		 * texts are always intercepted in development, because a stray one costs money and
+		 * reaches a real handset with no way to recall it. Set false (or
+		 * `POSTBOI_SMS_DEV=send`) when you genuinely need to test real delivery.
+		 */
+		sms?: boolean
+		/**
+		 * Capture WhatsApp messages in development instead of sending them. On by default,
+		 * for the same reason as SMS — real money, real handset, no recall. Set false (or
+		 * `POSTBOI_WHATSAPP_DEV=send`) to test real delivery.
+		 */
+		whatsapp?: boolean
 	}
 }
 
@@ -71,24 +148,60 @@ function defined<T extends object>(obj: T): Partial<T> {
 	return out as Partial<T>
 }
 
-/** Deep-merge hook groups so instance overrides don't clobber unrelated global hooks. */
-export function merge_hooks(base: Hooks = {}, override: Hooks = {}): Hooks {
+/**
+ * Deep-merge hook groups so instance overrides don't clobber unrelated global hooks.
+ * Structural over the group shape rather than tied to one hooks type, because the global
+ * `Hooks` (discriminated across channels) and each channel's `TransportHooks<TPrepared>`
+ * are different types that merge identically.
+ */
+export function merge_hooks<T extends { before?: object; after?: object; on?: object }>(
+	base?: T,
+	override?: T
+): T {
 	return {
-		before: { ...base.before, ...defined(override.before ?? {}) },
-		after: { ...base.after, ...defined(override.after ?? {}) },
-		on: { ...base.on, ...defined(override.on ?? {}) },
-	}
+		before: { ...base?.before, ...defined(override?.before ?? {}) },
+		after: { ...base?.after, ...defined(override?.after ?? {}) },
+		on: { ...base?.on, ...defined(override?.on ?? {}) },
+	} as T
+}
+
+/**
+ * The per-channel config sections merge() must walk, satisfies-checked so a new member of
+ * {@link Channel} can't ship a config section without a merge rule — the top-level spread
+ * would then silently clobber it for one channel only, discoverable at runtime. Email has
+ * no entry because its settings are the top-level fields.
+ */
+const CHANNEL_SECTIONS = {
+	sms: true,
+	chat: true,
+	push: true,
+	whatsapp: true,
+} satisfies Record<Exclude<Channel, "email">, true>
+
+/** Merge one channel section: override fields win, `default` objects combine. */
+function merge_section<T extends { default?: object }>(base?: T, override?: T): T {
+	return {
+		...base,
+		...defined(override ?? {}),
+		default: { ...base?.default, ...defined(override?.default ?? {}) },
+	} as T
 }
 
 /** Merge `override` over `base`, deep-merging the `default`, `hooks` and `captcha` objects. */
 function merge(base: PostboiConfig, override: PostboiConfig): PostboiConfig {
-	return {
+	const merged: PostboiConfig = {
 		...base,
 		...defined(override),
 		default: { ...base.default, ...defined(override.default ?? {}) },
 		hooks: merge_hooks(base.hooks, override.hooks),
 		captcha: { ...base.captcha, ...defined(override.captcha ?? {}) },
 	}
+	for (const section of Object.keys(CHANNEL_SECTIONS) as Array<keyof typeof CHANNEL_SECTIONS>) {
+		// The sections' value types differ per channel, which a keyed loop can't express —
+		// the cast is safe because base/override/merged agree on each key's type.
+		;(merged as Record<string, unknown>)[section] = merge_section(base[section], override[section])
+	}
+	return merged
 }
 
 let explicit: PostboiConfig = {}

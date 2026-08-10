@@ -25,15 +25,15 @@ didn't change since the last release.
 
 ### A. Snapshot the outgoing docs version (before editing docs for the new one)
 
-`src/lib/content/docs/` always holds the **latest** docs. Freeze the
+`src/site/content/docs/` always holds the **latest** docs. Freeze the
 currently-published version as an archived snapshot **before** you edit docs for
 `X.Y.Z`. Let `PREV` be the value of `latest` in
-[`src/lib/config/versions.json`](src/lib/config/versions.json).
+[`src/site/config/versions.json`](src/site/config/versions.json).
 
 1. Copy the current docs into a version folder (set `PREV` to that value first):
    ```sh
    PREV=0.6.0   # ← the current "latest" in versions.json
-   cp -R src/lib/content/docs "src/lib/content/v$PREV"
+   cp -R src/site/content/docs "src/site/content/v$PREV"
    ```
    This assumes you got here _before_ the new version's doc edits landed. If
    they're already on `main` — a feature branch that carried its own docs, say
@@ -42,36 +42,34 @@ currently-published version as an archived snapshot **before** you edit docs for
    commit:
    ```sh
    BEFORE=abc1234   # ← last commit with PREV's docs, e.g. main^ of the merge
-   mkdir -p "src/lib/content/v$PREV"
-   git archive "$BEFORE" src/lib/content/docs \
-     | tar -x --strip-components=4 -C "src/lib/content/v$PREV"
-   git show "$BEFORE:src/lib/config/navigation.ts"
+   mkdir -p "src/site/content/v$PREV"
+   git archive "$BEFORE" src/site/content/docs \
+     | tar -x --strip-components=4 -C "src/site/content/v$PREV"
+   git show "$BEFORE:src/site/config/navigation.ts"
    ```
-2. In `src/lib/config/versions.json`:
+2. In `src/site/config/versions.json`:
    - Set `"latest"` to the new version `X.Y.Z`.
    - Prepend an entry to `archived` (newest first):
      ```json
      {
      	"version": "PREV",
      	"slug": "vPREV",
-     	"nav": [
-     		/* … */
-     	]
+     	"nav": [/* … */]
      }
      ```
      For `nav`, copy the current sidebar structure from
      `contentSections[0].navigation` in
-     [`src/lib/config/navigation.ts`](src/lib/config/navigation.ts). It's JSON,
+     [`src/site/config/navigation.ts`](src/site/config/navigation.ts). It's JSON,
      so drop the component references (`icon: Email`) but **keep `icon: true`** —
      that's data the sidebar renders from, and every snapshot since `v0.14.0`
      carries it. This freezes the old nav even if you rename or reorder pages
      in the new version.
-3. Now make the actual `X.Y.Z` doc edits in `src/lib/content/docs/` (and
+3. Now make the actual `X.Y.Z` doc edits in `src/site/content/docs/` (and
    `navigation.ts` if the nav changed).
 4. Commit and push — this deploys the site (the docs app is the repo root now). Verify the switcher lists
    the new version and `/vPREV` still renders the old docs.
 
-> Snapshots are plain committed files under `src/lib/content/v*/`. There's
+> Snapshots are plain committed files under `src/site/content/v*/`. There's
 > no build-time git dependency — the site builds on a shallow clone. (The first
 > snapshot, `v0.5.0`, was seeded once from git history; everything after is a
 > `cp`.)

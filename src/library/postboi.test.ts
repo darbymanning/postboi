@@ -20,7 +20,16 @@ const sent_init = () =>
 	fetch.mock.calls.at(-1)![1] as RequestInit & { headers: Record<string, string> }
 const sent_json = () => JSON.parse(sent_init().body as string)
 
-beforeEach(() => fetch.mockReset())
+beforeEach(() => {
+	fetch.mockReset()
+	// No inbox unless a test asks for one. Discovery falls back to
+	// node_modules/.postboi/inbox.json, which a dev server on this machine leaves behind —
+	// so without this the dev-mail tests deliver to a port from last week and see a `fetch`
+	// they assert never happens. Passing on CI and failing on a laptop is the worst way for
+	// a test to be wrong. Tests that want an inbox stub their own port inside the test body,
+	// which runs after this and wins.
+	vi.stubEnv("POSTBOI_INBOX", "off")
+})
 afterEach(() => vi.unstubAllEnvs())
 
 describe("the Postboi provider (zero-config)", () => {
@@ -235,6 +244,18 @@ describe("the Postboi provider — account API", () => {
 		expect(sent_init().method).toBe("PATCH")
 		expect(sent_json()).toEqual({ scheduled_at: "2026-07-02T00:00:00.000Z" })
 		expect(moved.scheduled_at).toBe("2026-07-02T00:00:00.000Z")
+		vi.useRealTimers()
+	})
+
+	it("clamps month arithmetic to the target month's last day", async () => {
+		vi.useFakeTimers()
+		// Jan 31 + 1 month must land in February, not overflow setMonth into March 3.
+		vi.setSystemTime(new Date("2026-01-31T12:00:00Z"))
+		fetch.mockResolvedValue(respond({ json: { id: "m1", scheduled_at: "x" } }))
+
+		await provider().messages.reschedule("m1", { months: 1 })
+		const body = sent_json() as { scheduled_at: string }
+		expect(body.scheduled_at.startsWith("2026-02-28")).toBe(true)
 		vi.useRealTimers()
 	})
 

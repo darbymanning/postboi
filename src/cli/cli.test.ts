@@ -18,8 +18,23 @@ import {
 	render_config,
 	render_block,
 } from "./providers.js"
-import { detect_env_targets, format_line, upsert_env, remove_env, is_gitignored } from "./env.js"
-import { detect_hosts, detect_adapter_host, push_spec, manual_hint } from "./deploy.js"
+import {
+	detect_env_targets,
+	format_line,
+	upsert_env,
+	remove_env,
+	is_gitignored,
+	parse_env,
+} from "./env.js"
+import {
+	detect_hosts,
+	detect_adapter_host,
+	host_invocation,
+	link_args,
+	link_state,
+	push_spec,
+	manual_hint,
+} from "./deploy.js"
 import {
 	add_remote_exclude,
 	add_vite_plugin,
@@ -35,8 +50,13 @@ import {
 	start_device_auth,
 	poll_device_auth,
 	fetch_domains,
+	fetch_env_vars,
+	push_env_vars,
+	start_connect,
+	poll_connect,
 	PostboiAuthError,
 } from "./postboi.js"
+import { credential_env_keys } from "../library/registry.js"
 import {
 	render_types,
 	render_runtime,
@@ -169,6 +189,49 @@ describe("env file writing", () => {
 		expect(format_line("dotenv", "K", 'a"b\\c')).toBe('K="a\\"b\\\\c"')
 	})
 
+	it("escapes newlines so a multi-line value cannot corrupt the file", () => {
+		// An FCM service-account key is a multi-line PEM; raw newlines would split it
+		// across lines and garble everything after it.
+		const pem = "-----BEGIN PRIVATE KEY-----\nabc\ndef\n-----END PRIVATE KEY-----"
+		const line = format_line("dotenv", "FCM_PRIVATE_KEY", pem)
+		expect(line).not.toContain("\n")
+		expect(parse_env(`${line}\nOTHER=1\n`)).toEqual({ FCM_PRIVATE_KEY: pem, OTHER: "1" })
+	})
+
+	it("parse_env reads quoted, exported and bare assignments, skipping comments", () => {
+		expect(
+			parse_env('# comment\nRESEND_API_KEY="re_1"\nexport K="v"\nBARE=plain\nnot a line\n')
+		).toEqual({ RESEND_API_KEY: "re_1", K: "v", BARE: "plain" })
+	})
+
+	it("parse_env accepts whitespace around =, like the library's own parse_dotenv", () => {
+		// A hand-written `KEY = value` loads fine at runtime, so the push sweep must see it
+		// too — otherwise the credential the project demonstrably uses is never synced.
+		expect(parse_env("TWILIO_AUTH_TOKEN = abc123\nexport K =  v\n")).toEqual({
+			TWILIO_AUTH_TOKEN: "abc123",
+			K: "v",
+		})
+	})
+
+	it("round-trips a value ending in a backslash — the writer's and parser's escapes agree", () => {
+		// quote() writes `KEY="…\\"`: the final quote is real, the backslash before it is
+		// escaped. Reading that as an unterminated string would swallow every line after
+		// it — including other secrets — into this value.
+		const line = format_line("dotenv", "A", "abc123\\")
+		expect(parse_env(`${line}\nRESEND_API_KEY="re_9"\n`)).toEqual({
+			A: "abc123\\",
+			RESEND_API_KEY: "re_9",
+		})
+	})
+
+	it("upsert_env replaces a multi-line quoted value whole, not just its first line", () => {
+		// A hand-pasted PEM spans lines legally; replacing only line one would leave the
+		// tail dangling, and its orphaned closing quote corrupts every assignment after it.
+		const content = 'FCM_KEY="-----BEGIN\nabc\ndef\n-----END"\nOTHER=1\n'
+		expect(upsert_env(content, "FCM_KEY", "new", "dotenv")).toBe('FCM_KEY="new"\nOTHER=1\n')
+		expect(remove_env(content, "FCM_KEY")).toBe("OTHER=1\n")
+	})
+
 	it("remove_env drops the key line (any flavour) and leaves everything else", () => {
 		expect(remove_env('POSTBOI_TOKEN="t"\nPOSTBOI_FROM="a@b.c"\n', "POSTBOI_FROM")).toBe(
 			'POSTBOI_TOKEN="t"\n'
@@ -206,25 +269,92 @@ describe("deploy detection", () => {
 		expect(detect_adapter_host([])).toBeNull()
 	})
 
-	it("builds push commands (secrets via stdin, netlify via arg)", () => {
-		expect(push_spec("vercel", "K", "v")).toEqual({
+	const direct = { cmd: "vercel", prefix: [] }
+
+	it("builds upserting push commands (secrets via stdin, netlify via arg)", () => {
+		// Every push overwrites: the user chose to push freshly-collected credentials, so
+		// a stale existing value winning would be the surprise. Vercel spells that --force.
+		expect(push_spec(direct, "vercel", "K", "v")).toEqual({
 			cmd: "vercel",
-			args: ["env", "add", "K", "production"],
+			args: ["env", "add", "K", "production", "--force"],
 			stdin: "v",
 		})
-		expect(push_spec("cloudflare", "K", "v")).toEqual({
+		expect(push_spec({ cmd: "wrangler", prefix: [] }, "cloudflare", "K", "v")).toEqual({
 			cmd: "wrangler",
 			args: ["secret", "put", "K"],
 			stdin: "v",
 		})
-		expect(push_spec("netlify", "K", "v")).toEqual({
+		expect(push_spec({ cmd: "netlify", prefix: [] }, "netlify", "K", "v")).toEqual({
 			cmd: "netlify",
 			args: ["env:set", "K", "v"],
+			unsafe_on_windows: false,
 		})
-		expect(push_spec("railway", "K", "v")).toEqual({
+		expect(push_spec({ cmd: "railway", prefix: [] }, "railway", "K", "v")).toEqual({
 			cmd: "railway",
 			args: ["variables", "--set", "K=v"],
+			unsafe_on_windows: false,
 		})
+	})
+
+	it("flags argv-borne values cmd.exe would mangle, but never stdin-borne ones", () => {
+		// Windows runs these through a shell (the CLIs are .cmd shims) with no argv
+		// escaping — a JSON secret or a URL with query params must not be split or executed.
+		const json = '{"type": "service_account"}'
+		expect(push_spec({ cmd: "netlify", prefix: [] }, "netlify", "K", json).unsafe_on_windows).toBe(
+			true
+		)
+		expect(
+			push_spec({ cmd: "railway", prefix: [] }, "railway", "K", "https://h/x?a=1&b=2")
+				.unsafe_on_windows
+		).toBe(true)
+		// Vercel and Cloudflare take the value on stdin, so nothing rides through the shell.
+		expect(push_spec(direct, "vercel", "K", json).unsafe_on_windows).toBeUndefined()
+	})
+
+	it("falls back to the package runner when the host CLI isn't installed", () => {
+		expect(host_invocation("cloudflare", "bun", () => true)).toEqual({
+			cmd: "wrangler",
+			prefix: [],
+			via_runner: false,
+		})
+		expect(host_invocation("cloudflare", "bun", () => false)).toEqual({
+			cmd: "bunx",
+			prefix: ["wrangler"],
+			via_runner: true,
+		})
+		// The netlify binary lives in the netlify-cli package; railway in @railway/cli.
+		expect(host_invocation("netlify", "npm", () => false)).toEqual({
+			cmd: "npx",
+			prefix: ["--yes", "netlify-cli"],
+			via_runner: true,
+		})
+		expect(host_invocation("railway", "pnpm", () => false)).toEqual({
+			cmd: "pnpm",
+			prefix: ["dlx", "@railway/cli"],
+			via_runner: true,
+		})
+		const runnered = push_spec(
+			host_invocation("cloudflare", "bun", () => false),
+			"cloudflare",
+			"K",
+			"v"
+		)
+		expect(runnered).toEqual({ cmd: "bunx", args: ["wrangler", "secret", "put", "K"], stdin: "v" })
+	})
+
+	it("knows each host's link state and link command", () => {
+		expect(link_state("vercel", [], (p) => p === ".vercel/project.json")).toBe("linked")
+		expect(link_state("vercel", [], () => false)).toBe("unlinked")
+		expect(link_state("netlify", [], (p) => p === ".netlify/state.json")).toBe("linked")
+		expect(link_state("cloudflare", ["wrangler.jsonc"], () => false)).toBe("linked")
+		expect(link_state("cloudflare", [".dev.vars"], () => false)).toBe("unlinked")
+		// Railway keeps link state in its global config — nothing local to check.
+		expect(link_state("railway", [], () => false)).toBe("unknown")
+
+		expect(link_args("vercel")).toEqual(["link"])
+		expect(link_args("railway")).toEqual(["link"])
+		// Cloudflare's link is the config file itself, not a CLI command.
+		expect(link_args("cloudflare")).toBeNull()
 	})
 
 	it("offers a manual hint per host", () => {
@@ -727,5 +857,194 @@ describe("add_vite_plugin", () => {
 		// balanced brackets is a cheap proxy for "didn't mangle the array"
 		expect((result.match(/\[/g) ?? []).length).toBe((result.match(/\]/g) ?? []).length)
 		expect((result.match(/\{/g) ?? []).length).toBe((result.match(/\}/g) ?? []).length)
+	})
+})
+
+describe("synced credentials (postboi env)", () => {
+	const json = (body: unknown, status = 200) =>
+		({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response
+
+	it("fetch_env_vars parses the vars and drops non-string values", async () => {
+		const synced = await fetch_env_vars("https://postboi.email", "pb_secret", async (url, init) => {
+			expect(url).toBe("https://postboi.email/v1/env")
+			expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer pb_secret")
+			return json({ vars: { RESEND_API_KEY: "re_123", BROKEN: 42 } })
+		})
+		expect(synced?.vars).toEqual({ RESEND_API_KEY: "re_123" })
+	})
+
+	it("fetch_env_vars returns undefined on an API that predates the endpoint", async () => {
+		expect(
+			await fetch_env_vars("https://postboi.email", "pb_secret", async () => json({}, 404))
+		).toBeUndefined()
+	})
+
+	it("push_env_vars PUTs a merge, null deleting", async () => {
+		let sent: unknown
+		const ok = await push_env_vars(
+			"https://postboi.email",
+			"pb_secret",
+			{ SLACK_WEBHOOK_URL: "https://hooks.slack.com/x", OLD_KEY: null },
+			async (url, init) => {
+				expect(url).toBe("https://postboi.email/v1/env")
+				expect(init?.method).toBe("PUT")
+				sent = JSON.parse(String(init?.body))
+				return json({ stored: 1, removed: 1 })
+			}
+		)
+		expect(ok).toEqual({ ok: true })
+		expect(sent).toEqual({
+			vars: { SLACK_WEBHOOK_URL: "https://hooks.slack.com/x", OLD_KEY: null },
+		})
+	})
+
+	it("push_env_vars relays the API's rejection reason instead of blaming the network", async () => {
+		const rejected = await push_env_vars(
+			"https://postboi.email",
+			"pb_secret",
+			{ RESEND_API_KEY: "re_123" },
+			async () => json({ message: "an account stores at most 100 env vars" }, 422)
+		)
+		expect(rejected).toEqual({ ok: false, reason: "an account stores at most 100 env vars" })
+	})
+
+	it("push_env_vars reports an unreachable API with no reason", async () => {
+		const failed = await push_env_vars(
+			"https://postboi.email",
+			"pb_secret",
+			{ RESEND_API_KEY: "re_123" },
+			async () => {
+				throw new Error("network down")
+			}
+		)
+		expect(failed).toEqual({ ok: false })
+	})
+
+	it("start_connect posts the provider and reads the browser URL", async () => {
+		const result = await start_connect("https://postboi.email", "slack", async (url, init) => {
+			expect(url).toBe("https://postboi.email/api/connect/start")
+			expect(JSON.parse(String(init?.body))).toEqual({ provider: "slack" })
+			return json({ code: "c0de", url: "https://postboi.email/connect/slack?code=c0de" })
+		})
+		expect(result).toEqual({
+			code: "c0de",
+			url: "https://postboi.email/connect/slack?code=c0de",
+			expires_in: 900,
+			interval: 2,
+		})
+	})
+
+	it("start_connect degrades to undefined instead of throwing — paste is the fallback", async () => {
+		expect(
+			await start_connect("https://postboi.email", "discord", async () => {
+				throw new Error("ECONNREFUSED")
+			})
+		).toBeUndefined()
+		expect(
+			await start_connect("https://postboi.email", "discord", async () => json({}, 404))
+		).toBeUndefined()
+	})
+
+	it("poll_connect polls until the webhook arrives", async () => {
+		const responses = [
+			json({ status: "pending", interval: 2 }),
+			json({ status: "connected", webhook_url: "https://hooks.slack.com/x", label: "#alerts" }),
+		]
+		const result = await poll_connect(
+			"https://postboi.email",
+			{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
+			{ fetch: async () => responses.shift()!, sleep: async () => {}, now: () => 0 }
+		)
+		expect(result).toEqual({ webhook_url: "https://hooks.slack.com/x", label: "#alerts" })
+	})
+
+	it("poll_connect returns undefined on an expired code or timeout", async () => {
+		expect(
+			await poll_connect(
+				"https://postboi.email",
+				{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
+				{ fetch: async () => json({ error: "expired" }, 410), sleep: async () => {} }
+			)
+		).toBeUndefined()
+
+		let clock = 0
+		expect(
+			await poll_connect(
+				"https://postboi.email",
+				{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
+				{
+					fetch: async () => json({ status: "pending", interval: 2 }),
+					sleep: async () => {
+						clock += 1_000_000
+					},
+					now: () => clock,
+				}
+			)
+		).toBeUndefined()
+	})
+
+	it("credential_env_keys spans every channel and never includes POSTBOI_TOKEN", () => {
+		const keys = credential_env_keys()
+		// One representative per channel: the registry is the allowlist, so a new
+		// provider's credentials sync without anyone remembering to say so.
+		for (const expected of [
+			"RESEND_API_KEY",
+			"TWILIO_AUTH_TOKEN",
+			"SLACK_WEBHOOK_URL",
+			"VAPID_PRIVATE_KEY",
+			"WHATSAPP_ACCESS_TOKEN",
+		]) {
+			expect(keys).toContain(expected)
+		}
+		expect(keys).not.toContain("POSTBOI_TOKEN")
+	})
+})
+
+describe("multiline env values", () => {
+	it("parse_env reads a hand-pasted multiline quoted value instead of truncating it", () => {
+		// Real newlines inside quotes, the way dotenv and Bun allow — truncating this to
+		// its first line and team-syncing the fragment is the failure being ruled out.
+		const pem = "-----BEGIN PRIVATE KEY-----\nabc\ndef\n-----END PRIVATE KEY-----"
+		expect(parse_env(`FCM_PRIVATE_KEY="${pem}"\nOTHER=1\n`)).toEqual({
+			FCM_PRIVATE_KEY: pem,
+			OTHER: "1",
+		})
+	})
+})
+
+describe("poll_connect terminal statuses", () => {
+	const json_response = (body: unknown, status: number) =>
+		({ ok: false, status, json: async () => body }) as Response
+
+	it("treats 404/410 as dead instead of polling out the TTL", async () => {
+		expect(
+			await poll_connect(
+				"https://postboi.email",
+				{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
+				{
+					fetch: async () => json_response({ error: "not_found" }, 404),
+					sleep: async () => {},
+				}
+			)
+		).toBeUndefined()
+	})
+
+	it("keeps polling through a 429 rate limit until the code resolves", async () => {
+		let calls = 0
+		const responses: Array<Response> = [
+			json_response({ error: "rate_limited" }, 429),
+			{
+				ok: true,
+				status: 200,
+				json: async () => ({ status: "connected", webhook_url: "https://hooks.slack.com/x" }),
+			} as Response,
+		]
+		const result = await poll_connect(
+			"https://postboi.email",
+			{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
+			{ fetch: async () => responses[calls++], sleep: async () => {} }
+		)
+		expect(result?.webhook_url).toBe("https://hooks.slack.com/x")
+		expect(calls).toBe(2)
 	})
 })
