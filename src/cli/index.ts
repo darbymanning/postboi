@@ -1196,7 +1196,7 @@ async function browser_connect(provider: ChannelProvider): Promise<ConnectResult
 
 /**
  * Mint a VAPID key pair (P-256): the public key as the base64url uncompressed point the
- * push service and `subscribe_push` expect, the private key as the JWK `d` scalar —
+ * push service and `subscribe` expect, the private key as the JWK `d` scalar —
  * exactly the shapes `vapid_header` consumes.
  */
 export async function generate_vapid_keys(): Promise<{ public_key: string; private_key: string }> {
@@ -1333,7 +1333,7 @@ const CHANNEL_INIT = {
 			prefilled.VAPID_PUBLIC_KEY = pair.public_key
 			prefilled.VAPID_PRIVATE_KEY = pair.private_key
 			console.log(
-				`${green("✓")} generated — the public key also goes to the browser's \`subscribe_push({ key })\`:\n  ${dim(pair.public_key)}\n`
+				`${green("✓")} generated — the public key also goes to the browser's \`subscribe({ key })\`:\n  ${dim(pair.public_key)}\n`
 			)
 		},
 		async defaults(): Promise<Record<string, string>> {
@@ -1343,7 +1343,7 @@ const CHANNEL_INIT = {
 		done: () => [
 			'import { push } from "postboi"\n\nawait push({ to: subscription, message: "…" })',
 			// The half people forget: a push target has to be registered before it exists.
-			"Subscribe in the browser with `subscribe_push()` from postboi/push-client first.",
+			"Subscribe in the browser with `subscribe()` from postboi/push first.",
 		],
 	},
 	whatsapp: {
