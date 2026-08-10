@@ -56,6 +56,7 @@ describe("package exports", () => {
 			"inbox_theme.ts", // vendored XP.css, inlined into the dev inbox document
 			"inbox_art.ts", // the dev inbox's sign-on artwork, served by inbox_server.ts
 			"inbox_desktop.ts", // the dev inbox's wallpaper, clip and Start button, served by inbox_server.ts
+			"inbox_poom.ts", // POOM.EXE's Freedoom weapon sprites, served by inbox_server.ts
 		])
 		// Channel providers live in subdirectories (`sms/`), so scan those too — otherwise a
 		// new provider could ship with no exports entry and nothing would notice.

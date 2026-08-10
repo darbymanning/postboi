@@ -61,8 +61,10 @@ POSTBOI_INBOX=1080 bun run dev
 
 ## Just looking at it
 
-`--demo` fills the inbox with sample mail — a styled HTML message, a FormData table with
-an attachment, and a text-only body — so there's something to look at without wiring an app
+`--demo` fills the inbox with sample captures from every channel — mail (a styled HTML
+message, a FormData table with an attachment, a text-only body), a text thread, a WhatsApp
+template, one conversation per chat platform, and a couple of notifications, plus a
+scheduled send and a cancelled one — so there's something to look at without wiring an app
 to it:
 
 ```bash
@@ -70,7 +72,7 @@ bunx postboi dev --demo
 ```
 
 It re-seeds on every start, which also makes it the way to work on the inbox itself: run it
-under a file watcher and an edit restarts the server with the sample mail still there.
+under a file watcher and an edit restarts the server with the sample captures still there.
 
 ```bash
 bun --watch src/cli/index.ts dev --demo
@@ -194,9 +196,15 @@ each in its own window on the desktop:
 - **Push** pulls down a notification shade, every notification on one panel,
   delivered to 0 devices.
 - **SMS** is the exception to all of it: a text lands on a handset, so a handset is
-  what opens — a certain indestructible Nokia, no window frame at all, dragged around
-  by its body like Winamp. Read with the navi key, scroll with the rocker, power it
-  off from the button on its crown.
+  what opens — a Pokia, an indestructible blue brick with no window frame at all,
+  dragged around by its body like Winamp. Click a text on the screen to read it, scroll
+  it with the wheel or the two curved keys, and power the thing off from the button on
+  its crown. The keypad types, and the letters printed on the keys still spell
+  something.
+
+The desktop has one other icon on it, and it isn't a mail client. Its weapon sprites come
+from the [Freedoom](https://github.com/freedoom/freedoom) project, under the 3-clause BSD
+licence — the notice ships with the package as `FREEDOOM-LICENSE.txt`.
 
 Conversations thread by channel and destination — send three texts to the same number
 and the phone reads them as one inbox. Channel details ride along in each skin: SMS

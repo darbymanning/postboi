@@ -4,7 +4,7 @@ import { dirname, join } from "node:path"
 import process, { cwd, pid } from "node:process"
 import { INBOX_DISCOVERY, INBOX_PATH } from "../library/inbox.js"
 import { create_inbox_store, inbox_middleware } from "../library/inbox_server.js"
-import type { SentMessage } from "../library/mock.js"
+import type { CapturedMessage } from "../library/inbox_server.js"
 
 /**
  * `postboi dev` — the dev inbox as a standalone server.
@@ -38,11 +38,19 @@ function listen(
 	})
 }
 
+/** A moment ahead of now, so a scheduled demo send is still scheduled when you look at it. */
+const LATER = new Date(Date.now() + 6 * 60 * 60 * 1000)
+
+/** The send the seeding cancels afterwards, so the Deleted folder has something in it. */
+const DEMO_CANCELLED = "demo-cancelled"
+
 /**
- * Sample mail for `--demo`: one of each shape the inbox renders differently — a styled HTML
- * message, a FormData table with attachments, and a body with no HTML part at all.
+ * Sample captures for `--demo`: one of each shape the inbox renders differently, across
+ * every channel — the mail shapes (styled HTML, a FormData table with attachments, a body
+ * with no HTML part), a text thread, a WhatsApp template, one window per chat platform,
+ * and the notification shade. Oldest first: the list shows the last one added at the top.
  */
-function demo_messages(): Array<SentMessage> {
+function demo_messages(): Array<CapturedMessage> {
 	return [
 		{
 			to: [{ address: "ada@example.com", name: "Ada Lovelace" }],
@@ -83,6 +91,120 @@ function demo_messages(): Array<SentMessage> {
 			text: "Thanks for your order.\n\nOrder #1042 — £29.00\nVAT included.",
 			attachments: [],
 		},
+		{
+			to: [{ address: "ada@example.com" }],
+			from: { address: "news@acme.example" },
+			subject: "Our July newsletter",
+			text: "Everything we shipped last month.",
+			scheduled_at: LATER,
+			// Cancelled once the store has it, so the Deleted folder isn't empty either.
+			send_id: DEMO_CANCELLED,
+		},
+		{
+			channel: "sms",
+			to: [{ address: "+447700900123" }],
+			from: { address: "ACME" },
+			text: "Your Acme code is 448291. It expires in 10 minutes.",
+			meta: [["Segments", "1 × GSM-7 (49 units)"]],
+		},
+		{
+			channel: "sms",
+			to: [{ address: "+447700900123" }],
+			from: { address: "ACME" },
+			text: "Order #1042 is out for delivery — arriving today between 14:00 and 16:00.",
+			meta: [["Segments", "1 × GSM-7 (79 units)"]],
+		},
+		{
+			channel: "sms",
+			to: [{ address: "+447700900123" }],
+			from: { address: "ACME" },
+			text: "Rate your delivery: https://acme.example/r/1042",
+			meta: [["Segments", "1 × GSM-7 (48 units)"]],
+			scheduled_at: LATER,
+		},
+		{
+			channel: "whatsapp",
+			to: [{ address: "+447700900123" }],
+			from: { address: "+15550100000" },
+			subject: "Template: order_shipped",
+			template: "order_shipped",
+			text: "Hi Ada, order #1042 shipped. Track it any time.",
+			meta: [
+				["Language", "en_GB"],
+				["Variables", JSON.stringify({ name: "Ada", order: "1042" })],
+				["Buttons", JSON.stringify(["Track order", "Contact support"])],
+			],
+		},
+		{
+			channel: "whatsapp",
+			to: [{ address: "+447700900123" }],
+			from: { address: "+15550100000" },
+			text: "Delivered. Reply STOP to opt out of updates.",
+			meta: [],
+		},
+		{
+			channel: "chat",
+			provider: "slack",
+			to: [{ address: "https://hooks.slack.com/services/T000/B000/xxx" }],
+			subject: "Deploy started",
+			text: "acme-web → production · commit 9c20658 by @ada",
+			meta: [["Posts as", "deploybot"]],
+		},
+		{
+			channel: "chat",
+			provider: "slack",
+			to: [{ address: "https://hooks.slack.com/services/T000/B000/xxx" }],
+			subject: "Deploy finished",
+			text: "acme-web → production in 42s. All checks green.",
+			meta: [["Posts as", "deploybot"]],
+		},
+		{
+			channel: "chat",
+			provider: "discord",
+			to: [{ address: "https://discord.com/api/webhooks/000/xxx" }],
+			subject: "New signup",
+			text: "grace@navy.example joined on the Pro plan. That's 12 today.",
+			meta: [["Posts as", "acme-bot"]],
+		},
+		{
+			channel: "chat",
+			provider: "teams",
+			to: [{ address: "https://acme.webhook.office.com/webhookb2/000/xxx" }],
+			subject: "Nightly backup",
+			text: "Snapshot completed — 4.2 GB in 38s.",
+			meta: [],
+		},
+		{
+			channel: "chat",
+			provider: "telegram",
+			to: [{ address: "@acme_dev_channel" }],
+			text: "Error budget at 82% — three 500s on /checkout in the last hour.",
+			meta: [],
+		},
+		{
+			channel: "chat",
+			provider: "bluesky",
+			to: [{ address: "acme.bsky.social" }],
+			text: "Postboi 0.26 is out: push notifications, straight to Apple and Huawei.",
+			meta: [],
+		},
+		{
+			channel: "push",
+			to: [{ address: "ada-iphone-token" }],
+			subject: "Order shipped",
+			text: "Order #1042 is on its way.",
+			meta: [
+				["Opens", "https://acme.example/orders/1042"],
+				["Data", JSON.stringify({ order: "1042", type: "shipping" })],
+			],
+		},
+		{
+			channel: "push",
+			to: [{ address: "ada-iphone-token" }],
+			subject: "Grace replied",
+			text: "“Found a bug in your compiler.”",
+			meta: [],
+		},
 	]
 }
 
@@ -98,9 +220,12 @@ export async function dev_command(args: Array<string>): Promise<void> {
 	}
 
 	const store = create_inbox_store()
-	// Sample mail, so the inbox has something in it without an app wired up — and so a
+	// Sample captures, so the inbox has something in it without an app wired up — and so a
 	// restart (`bun --watch`, editing the UI) doesn't leave you staring at an empty mailbox.
-	if (args.includes("--demo")) for (const message of demo_messages()) store.add(message)
+	if (args.includes("--demo")) {
+		for (const message of demo_messages()) store.add(message)
+		store.cancel(DEMO_CANCELLED)
+	}
 	// Sound stays toggleable in the UI; these only set what the page starts with.
 	const middleware = inbox_middleware(store, INBOX_PATH, {
 		sounds: !args.includes("--no-sound") && !args.includes("--no-sounds"),

@@ -11,24 +11,27 @@
  * Each channel opens as its own application on the desktop: mail in the AOL reader,
  * WhatsApp in a WhatsApp-green window, Slack/Discord/Teams/Telegram in a chat window
  * wearing that platform's colours, pushes in a notification shade — all inside the XP
- * frame — and SMS on a Nokia handset that has no frame at all, the way Winamp had none.
+ * frame — and SMS on a handset that has no frame at all, the way Winamp had none.
  * They are children of the desktop the app manages: minimising Postboi Local takes every
  * one of them down with it, and restoring brings back exactly the set that was up.
  */
 
 import { THEME_CSS } from "./inbox_theme.js"
+import { FREEDOOM_NOTICE } from "./inbox_poom.js"
 import type { Channel } from "./errors.js"
 
 /**
  * Channel chip labels, typed here (and inlined into the client script below) so adding a
- * channel without a label is a compile error rather than a blank chip.
+ * channel without a label is a compile error rather than a blank chip. Chat is the fallback
+ * only: a capture that names its platform is chipped with the platform, not with "Chat".
  */
 const CHANNEL_LABELS = {
+	email: "Mail",
 	sms: "SMS",
 	whatsapp: "WhatsApp",
 	chat: "Chat",
 	push: "Push",
-} satisfies Record<Exclude<Channel, "email">, string>
+} satisfies Record<Channel, string>
 
 /**
  * The Postboi mark, inlined as a data URI — the tab icon, and the badge in every title
@@ -37,6 +40,38 @@ const CHANNEL_LABELS = {
  */
 const FAVICON =
 	"data:image/svg+xml,%3Csvg%20width%3D%22664%22%20height%3D%22664%22%20viewBox%3D%22-76%20-76%20664%20664%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%20%3Cpath%20d%3D%22M68.3939%20168.189L68.3751%20168.72C56.7497%20176.365%2028.1454%20195.529%2025.0885%20209.716C21.192%20227.793%2049.1638%20244.048%2064.0193%20248.609C63.4697%20259.384%2063.0556%20277.148%2064.968%20287.805C51.0574%20290.624%2039.5035%20295.187%2031.4207%20307.82C14.5473%20334.193%2022.5963%20369.062%2049.2014%20385.517C56.7911%20390.265%2061.3426%20391.191%2069.768%20393.42C69.768%20444.235%20139.294%20508.235%20239.059%20510.118C338.824%20512%20421.921%20443.237%20431.059%20393.412C502.84%20388.804%20506.628%20299.158%20448.185%20287.251C451.509%20272.03%20452.36%20256.371%20450.696%20240.88C450.018%20234.704%20445.41%20227.947%20447.27%20223.786C455.074%20206.312%20451.95%20180.459%20447.338%20163.343C434.677%20116.336%20406.532%2090.6687%20371.302%2059.6648C356.703%2046.8178%20347.121%2034.0163%20328.976%2024.1441C289.145%202.47405%20245.056%20-1.48981%20201.947%2010.2346C154.414%2023.4762%20114.045%2054.9714%2089.6344%2097.8536C77.3953%20119.356%2069.3652%20143.371%2068.3939%20168.189Z%22%20fill%3D%22%230F1C41%22%2F%3E%20%3Cpath%20d%3D%22M259.765%20350.118C257.882%20363.294%20223.153%20378.787%20212.002%20360.205C209.292%20355.728%20208.558%20350.33%20209.981%20345.293C213.806%20331.236%20228.578%20323.482%20242.677%20325.848C253.933%20327.737%20261.647%20336.941%20259.765%20350.118Z%22%20fill%3D%22%23F88428%22%2F%3E%20%3Cpath%20d%3D%22M382.931%20206.464C384.968%20210.523%20381.768%20230.997%20384.102%20236.757C396.808%20268.104%20407.744%20293.006%20405.467%20328.039C405.29%20330.786%20407.202%20334.861%20409.943%20336.37C427.283%20345.914%20423.692%20308.011%20439.861%20306.756C465.269%20304.06%20475.641%20336.713%20461.681%20354.527C452.695%20366.002%20445.772%20368.185%20432.102%20370.493C429.757%20367.38%20425.228%20359.685%20421.324%20360.34C412.955%20369.443%20408.418%20411.819%20391.096%20429.908C367.996%20454.032%20347.117%20468.88%20315.445%20480.234C268.04%20497.225%20218.327%20500.756%20171.867%20479.057C148.334%20468.854%20124.842%20454.887%20107.713%20435.363C83.8557%20408.536%2086.991%20374.047%2085.9783%20341.249C85.0635%20311.741%2090.2667%20287.11%2092.3787%20258.482C114.026%20255.485%20119.346%20254.017%20139.765%20246.468C138.764%20248.746%20137.8%20251.039%20136.866%20253.346C135.545%20256.685%20135.285%20257.723%20136.588%20260.751L138.308%20261.038C146.124%20257.575%20175.838%20247.787%20178.428%20245.364L178.493%20243.202C177.1%20239.807%20173.666%20237.171%20170.873%20234.618C178.805%20234.647%20184.983%20234.719%20192.862%20233.878L192.592%20247.311C219.935%20247.071%20255.921%20232.44%20278.171%20217.064L271.684%20236.376C295.413%20231.261%20319.691%20227.567%20342.942%20221.005C355.833%20217.366%20369.021%20211.486%20381.403%20206.187L382.931%20206.464ZM301.832%20376.713C278.547%20394.038%20260.413%20404.775%20229.655%20400.242C217.559%20398.45%20206.039%20393.884%20195.995%20386.9C191.884%20384.005%20186.899%20378.215%20182.043%20378.475C175.609%20387.615%20190.642%20423.64%20195.562%20433.259C204.925%20447.941%20217.872%20460.85%20235.494%20464.675C277.218%20473.729%20299.226%20429.799%20305.254%20395.759C306.413%20389.201%20309.237%20379.804%20301.832%20376.713ZM271.609%20339.789C255.786%20289.622%20182.792%20315.676%20194.737%20361.579C202.557%20391.614%20282.353%20384%20271.609%20339.789ZM323.471%20280.553C315.983%20284.478%20311.809%20289.404%20309.663%20297.735C305.522%20313.818%20312.155%20350.775%20325.489%20350.446C338.823%20350.117%20346.372%20284.804%20323.471%20280.553ZM158.178%20280.733C132.861%20291.75%20139.11%20347.683%20158.893%20349.246C166.103%20346.02%20170.896%20341.404%20173.196%20333.701C178.361%20316.409%20180.074%20286.409%20158.178%20280.733ZM343.688%20262.393C352.9%20256.917%20336.038%20232.49%20314.049%20233.772C306.278%20238.797%20306.041%20242.327%20303.594%20251.289C321.728%20251.403%20325.162%20250.91%20340.149%20261.352L343.688%20262.393Z%22%20fill%3D%22%23FCC58F%22%2F%3E%20%3Cpath%20d%3D%22M232.975%20437.332C246.822%20435.984%20255.835%20437.479%20269.026%20441.236C264.588%20446.375%20263.473%20447.708%20258.026%20451.841C251.005%20453.999%20223.436%20453.942%20226.199%20442.17C228.364%20439.211%20229.73%20438.827%20232.975%20437.332Z%22%20fill%3D%22%23E04A6E%22%2F%3E%20%3Cpath%20d%3D%22M119.36%20355.277C126.82%20353.057%20133.485%20354.181%20140.405%20357.536C152.798%20363.54%20146.245%20376.615%20137.412%20378.353C129.95%20379.821%20122.561%20380.55%20116.706%20376.471C109.993%20371.793%20106.075%20359.23%20119.36%20355.277Z%22%20fill%3D%22%23F88428%22%2F%3E%20%3Cpath%20d%3D%22M355.765%20353.882C370.824%20353.882%20383.075%20379.154%20360.949%20378.753C338.824%20378.353%20332.853%20368.342%20334.897%20362.994C336.941%20357.647%20340.706%20353.882%20355.765%20353.882Z%22%20fill%3D%22%23F88428%22%2F%3E%20%3Cpath%20d%3D%22M89.0997%20152.275C98.6357%20121.566%20105.695%20102.135%20127.311%2077.2893C154.094%2046.5083%20197.561%2025.1854%20238.246%2022.7786C264.294%2021.2377%20299.118%2029.1564%20321.777%2042.6563C329.051%2046.9891%20338.056%2055.2078%20344.584%2060.9855C344.426%2062.0784%20344.223%2063.4853%20343.978%2065.2057C348.029%2076.4035%20353.657%2086.7079%20356.778%2098.2858C360.057%20110.451%20360.328%20123.204%20358.961%20135.672C358.517%20139.733%20357.113%20146.317%20353.578%20148.8C331.931%20137.956%20297.043%20123.309%20272.93%20123.096C281.529%20114.918%20288.166%20107.384%20289.22%2095.0328C290.459%2081.9801%20286.348%2068.984%20277.828%2059.0173C257.781%2035.2842%20227.957%2036.8142%20205.753%2055.4115C186.858%2071.2406%20187.2%20102.518%20203.453%20120.116C178.741%20121.775%20151.752%20127.447%20128.742%20136.741C117.644%20141.225%2099.9346%20149.561%2089.0997%20152.275Z%22%20fill%3D%22%238DB7D5%22%2F%3E%20%3Cpath%20d%3D%22M215.963%20135.277C268.149%20129.918%20349.802%20155.829%20387.686%20191.482C373.324%20188.181%20357.237%20186.536%20342.382%20183.3C310.442%20176.343%20274.124%20167.503%20241.713%20164.129C233.435%20162.617%20219.087%20162.461%20210.549%20162.202C158.645%20160.621%20113.905%20173.945%2065.7472%20191.06C113.811%20154.615%20155.219%20139.779%20215.963%20135.277Z%22%20fill%3D%22%23346696%22%2F%3E%20%3Cpath%20d%3D%22M344.584%2060.9855C382.532%2093.6552%20427.272%20132.896%20431.5%20186.19C431.921%20191.535%20433.284%20205.359%20430.295%20209.175C418.843%20203.351%20401.047%20176.297%20385.525%20168.839C384.825%20168.504%20352.592%20147.761%20353.578%20148.8C357.113%20146.317%20358.517%20139.733%20358.961%20135.672C360.328%20123.204%20360.057%20110.451%20356.778%2098.2858C353.657%2086.7078%20338.824%2065.8823%20344.584%2060.9855Z%22%20fill%3D%22%23588CB5%22%2F%3E%20%3Cpath%20d%3D%22M67.7048%20306.415C70.2159%20309.199%2069.7152%20364.109%2069.8093%20370.599C62.6451%20368.363%2059.2794%20366.251%2053.2258%20362.095C36.4653%20347.559%2037.5006%20322.281%2056.5726%20310.116C59.5768%20308.201%2064.2338%20307.25%2067.7048%20306.415Z%22%20fill%3D%22%23FCC58F%22%2F%3E%20%3Cpath%20d%3D%22M218.353%2065.8824C218.353%2065.8824%20244.706%2037.6471%20272.746%2067.4902L242.824%2080.9412L218.353%2065.8824Z%22%20fill%3D%22%23FEFDFD%22%2F%3E%20%3Cpath%20d%3D%22M242.824%2094.1176L264.607%20111.245C242.824%20128%20214.588%20111.245%20214.588%20111.245L242.824%2094.1176Z%22%20fill%3D%22%23FDC005%22%2F%3E%20%3Cpath%20d%3D%22M252.235%2088.4706L276.706%2077.1765C276.706%2077.1765%20286.118%2092.2353%20272.941%20103.529L252.235%2088.4706Z%22%20fill%3D%22%23FEFDFD%22%2F%3E%20%3Cpath%20d%3D%22M208.941%20101.647C208.941%20101.647%20201.412%2086.5882%20211.283%2074.8412L233.412%2088.4706L208.941%20101.647Z%22%20fill%3D%22%23FEFDFD%22%2F%3E%20%3C%2Fsvg%3E"
+
+/*
+ * POOM's desktop icon: the wordmark, in the shape the 1993 one had — splayed heavy letters,
+ * hot metal running from white at the top through orange to a dark red at the feet, a black
+ * outline thick enough to survive being 48px wide, and a scorched tile behind it.
+ *
+ * Drawn rather than lifted: the original is a licensed logo in a typeface nobody may ship.
+ * `textLength` pins the width so a machine without Impact still gets letters that fit.
+ */
+const POOM_ICON =
+	"data:image/svg+xml," +
+	encodeURIComponent(
+		'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 60" width="64" height="60">' +
+			"<defs>" +
+			'<linearGradient id="m" x1="0" y1="0" x2="0" y2="1">' +
+			'<stop offset="0" stop-color="#fff3c4"/><stop offset=".26" stop-color="#ffb02a"/>' +
+			'<stop offset=".58" stop-color="#d8300f"/><stop offset="1" stop-color="#4c0703"/>' +
+			"</linearGradient>" +
+			'<radialGradient id="b" cx=".5" cy=".42" r=".72">' +
+			'<stop offset="0" stop-color="#5a1108"/><stop offset="1" stop-color="#160705"/>' +
+			"</radialGradient>" +
+			"</defs>" +
+			'<rect x="2" y="4" width="60" height="52" rx="5" fill="url(#b)" stroke="#0b0402" stroke-width="3"/>' +
+			'<rect x="5" y="7" width="54" height="46" rx="3" fill="none" stroke="#8a2a12" stroke-width="1"/>' +
+			'<g transform="translate(32 34) scale(1 1.42)">' +
+			'<text text-anchor="middle" y="7" textLength="50" lengthAdjust="spacingAndGlyphs" ' +
+			'font-family="Impact, Haettenschweiler, \'Arial Narrow\', sans-serif" font-size="26" ' +
+			'paint-order="stroke" stroke="#120302" stroke-width="5" stroke-linejoin="round" ' +
+			'fill="url(#m)">POOM</text>' +
+			"</g>" +
+			"</svg>"
+	)
 
 const CSS = `
 * { box-sizing: border-box }
@@ -280,7 +315,8 @@ tr.on .sched.off { color: #ffb3b3 }
 }
 #head .schedbar.off { background: #fbe3e3; border-color: #d08a8a; color: #7a2020 }
 td.when { width: 88px }
-td.who { width: 34% }
+td.who { width: 30% }
+td.chanco { width: 78px }
 #empty { padding: 26px; text-align: center; color: #808080; line-height: 1.6 }
 
 /* The action row along the bottom of the mailbox window. */
@@ -314,11 +350,25 @@ td.who { width: 34% }
 #readerfoot #r-count { flex: 1; text-align: center; font-weight: bold; color: #17265c }
 
 /* ---- Channel chips in the mailbox list ---- */
+/*
+ * Their own column, not a tail on the subject: which channel a capture went out on is the
+ * thing you scan the list for, and a chip that moves left and right with the length of the
+ * subject in front of it can't be scanned at all.
+ */
 .chan {
-	font: bold 9px Tahoma, Arial, sans-serif; letter-spacing: .02em; color: #0b5394;
-	background: #dceafa; border: 1px solid #9db9d9; border-radius: 3px;
-	padding: 0 4px; margin-left: 5px; vertical-align: 1px; text-transform: uppercase;
+	display: inline-block; font: bold 9px Tahoma, Arial, sans-serif; letter-spacing: .02em;
+	color: #0b5394; background: #dceafa; border: 1px solid #9db9d9; border-radius: 3px;
+	padding: 0 4px; vertical-align: 1px; text-transform: uppercase;
 }
+/* Each platform in its own colours — the same cue as the window it opens into. */
+.chan.c-slack { color: #4a154b; background: #f2e6f3; border-color: #c9a9cc }
+.chan.c-discord { color: #3b45b5; background: #e6e8fb; border-color: #a8afe9 }
+.chan.c-teams { color: #464775; background: #e7e8f2; border-color: #adb0d0 }
+.chan.c-telegram { color: #16789f; background: #dff2fb; border-color: #93cde5 }
+.chan.c-bluesky { color: #0b62c4; background: #dfeeff; border-color: #9cc4ee }
+.chan.c-whatsapp { color: #0b7a49; background: #ddf5e8; border-color: #90cfae }
+.chan.c-push { color: #8a5a00; background: #fdf0d2; border-color: #dcbc73 }
+/* Selected, the row is solid navy: every chip goes to the same reversed pair or vanishes. */
 tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 
 /*
@@ -755,22 +805,63 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 .pushfoot { text-align: center; color: #9fb3d1; font-size: 11px; padding: 2px 0 4px }
 
 /*
- * ---- The Nokia ----
+ * ---- POOM.EXE ----
+ *
+ * The other thing on the desktop. A black rectangle, a status bar with a face in it, and
+ * numbers in the colours id used, because half of what makes that screen that screen is
+ * the brown bar under it.
+ */
+#poom .title-bar-text { letter-spacing: .04em }
+#poomstage { flex: 1; min-height: 0; background: #000; display: flex; padding: 3px }
+#poom-view {
+	width: 100%; height: 100%; display: block; image-rendering: pixelated;
+	background: #000; border: 1px solid #26262c;
+}
+#poomhud {
+	flex: none; display: flex; align-items: center; gap: 14px; padding: 5px 12px;
+	background: linear-gradient(180deg, #6b5238 0%, #4a3826 55%, #34271a 100%);
+	border-top: 2px solid #241a10; font: bold 11px "Courier New", monospace; color: #d8c6a4;
+}
+#poomhud .stat { display: flex; flex-direction: column; align-items: center; line-height: 1.1 }
+#poomhud .stat b { font-size: 17px; color: #ff4b3a; text-shadow: 0 0 6px rgba(255,75,58,.5) }
+#poomhud .spacer { flex: 1 }
+#poomhud .keys { font-size: 10px; color: #b09a76; text-align: right; line-height: 1.35 }
+/* The mug shot, in its recessed frame — the face is the Postboi mark, taking the hits. */
+#poom-faces {
+	position: relative; display: block; width: 46px; height: 44px; flex: none;
+	background: #1d1d22; border: 2px solid;
+	border-color: #241a10 #7a5f40 #7a5f40 #241a10; padding: 1px;
+}
+#poom-faces img { position: absolute; inset: 1px; width: 42px; height: 40px; object-fit: contain; display: none }
+#poom-faces.face-ok .f-ok, #poom-faces.face-hurt .f-hurt, #poom-faces.face-low .f-low { display: block }
+/* Out of health: the last face it made, drained of everything. */
+#poom-faces.gone img { filter: grayscale(1) brightness(.55) }
+#poom-faces.hit { background: #5a1410; translate: 0 1px }
+
+/*
+ * ---- The Pokia ----
  *
  * SMS doesn't get a window: a text lands on a handset, so a handset is what opens — a
  * skinned, shaped thing sitting on the desktop the way Winamp sat on one, draggable by
  * its body, no XP frame anywhere. It still registers with the window manager, so it has
  * a taskbar button and minimises with the rest when the app is taken down.
  */
-#nokia { width: 246px; height: 536px; background: none }
+#pokia { width: 254px; height: 596px; background: none }
 .nk-shell {
 	position: relative; width: 100%; height: 100%;
-	border-radius: 42px 42px 58px 58px / 34px 34px 72px 72px;
-	background: linear-gradient(160deg, #37538c 0%, #24386b 42%, #17264e 100%);
+	/* The 3310's outline: barely-rounded shoulders, a deep sweep at the chin. */
+	border-radius: 40px 40px 74px 74px / 30px 30px 96px 96px;
+	background: linear-gradient(160deg, #3a5691 0%, #24386b 42%, #16244b 100%);
 	box-shadow: inset 0 2px 4px rgba(255,255,255,.35), inset 0 -6px 12px rgba(0,0,0,.45),
 		4px 8px 18px rgba(0,0,0,.55);
-	padding: 14px 16px 0; display: flex; flex-direction: column; align-items: center;
+	padding: 13px 14px 0; display: flex; flex-direction: column; align-items: center;
 	font: 11px Tahoma, Arial, sans-serif;
+}
+/* The seam: the silver line running round the front face, one inset ring's worth of it. */
+.nk-shell::after {
+	content: ""; position: absolute; inset: 4px; pointer-events: none;
+	border-radius: 37px 37px 71px 71px / 27px 27px 93px 93px;
+	box-shadow: inset 0 0 0 1px rgba(206,218,240,.34);
 }
 /* The power button on the crown — the only way a 3310 was ever turned off. */
 .nk-power {
@@ -780,20 +871,25 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 	box-shadow: inset 0 1px 1px rgba(255,255,255,.25); min-width: 0; min-height: 0;
 }
 .nk-power:active { translate: -50% 1px }
-.nk-ear { display: flex; gap: 5px; margin: 2px 0 5px }
-.nk-ear i { width: 5px; height: 5px; border-radius: 50%; background: #0d1530; box-shadow: inset 0 1px 1px rgba(0,0,0,.9) }
+/* The earpiece: a short vertical ladder of slits above the wordmark, as the 3310 wore it. */
+.nk-ear { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 1px 0 4px }
+.nk-ear i {
+	width: 4px; height: 2px; border-radius: 1px; background: #0b1229;
+	box-shadow: inset 0 1px 1px rgba(0,0,0,.9), 0 1px 0 rgba(255,255,255,.12);
+}
 .nk-brand { color: #cdd6ea; font: bold 13px Arial, sans-serif; letter-spacing: 3px; margin-bottom: 6px }
 .nk-bezel {
-	width: 196px; padding: 9px; border-radius: 12px 12px 26px 26px;
+	width: 204px; padding: 9px; border-radius: 12px 12px 26px 26px;
 	background: linear-gradient(180deg, #0e1428, #1a2547);
 	box-shadow: inset 0 2px 5px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.14);
 }
 /*
- * The screen: 84×48 pixels of green-grey LCD, upscaled. Monospace, hard edges, no
- * anti-aliasing worth speaking of, and everything on it drawn by the phone script.
+ * The screen. The real one was 84×48 and showed four lines; this one is taller on purpose —
+ * it is a mailbox as well as a handset, and squinting at four lines of a captured text is
+ * being period-accurate at the reader's expense.
  */
 .nk-lcd {
-	position: relative; height: 152px; overflow: hidden; padding: 4px 5px;
+	position: relative; height: 214px; overflow: hidden; padding: 4px 5px;
 	background: linear-gradient(180deg, #aec437 0%, #9cb52c 60%, #90a828 100%);
 	box-shadow: inset 0 0 7px rgba(30,40,0,.45);
 	font: bold 12px "Lucida Console", "Courier New", monospace; color: #22300a;
@@ -804,14 +900,31 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 .nk-bars { display: flex; align-items: flex-end; gap: 1px }
 .nk-bars i { width: 3px; background: #22300a }
 .nk-title { text-align: center; border-bottom: 2px solid #22300a; padding-bottom: 1px; margin-bottom: 2px }
-.nk-rows { height: 96px; overflow: hidden }
+.nk-rows { height: 158px; overflow: hidden }
 .nk-row { padding: 0 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .nk-row.on { background: #22300a; color: #aec437 }
-.nk-read { height: 96px; overflow: hidden; white-space: pre-wrap; word-wrap: break-word }
+.nk-read { height: 158px; overflow: hidden; white-space: pre-wrap; word-wrap: break-word }
 .nk-soft { display: flex; justify-content: space-between; padding: 1px 2px 0; border-top: 1px dotted #22300a; margin-top: 2px }
-.nk-empty { text-align: center; padding-top: 30px }
-/* The navi row: C, the big centre key, the up/down rocker. */
-.nk-navi { display: flex; align-items: center; gap: 9px; margin: 10px 0 6px; width: 196px; justify-content: space-between }
+.nk-soft span { padding: 0 2px }
+.nk-empty { text-align: center; padding-top: 56px }
+/* What the keypad has been typing, shown the way a handset shows a number being dialled. */
+.nk-dial { position: absolute; right: 6px; bottom: 4px; letter-spacing: 2px; opacity: .75 }
+/* Snake, drawn on its own canvas over the LCD text — same pixels, different program. */
+#nk-game { position: absolute; inset: 0; width: 100%; height: 100%; display: none }
+.nk-lcd.playing #nk-game { display: block }
+.nk-lcd.playing #nk-screen { display: none }
+
+/*
+ * The keys. The 3310's front is one silver contour with the call keys cut out of it either
+ * side of the centre button — not three loose buttons in a row, which is what this was.
+ */
+.nk-navi {
+	position: relative; display: flex; align-items: center; justify-content: center;
+	width: 212px; height: 46px; margin: 9px 0 7px;
+	border-radius: 40px 40px 26px 26px / 30px 30px 20px 20px;
+	background: linear-gradient(180deg, #e9edf4 0%, #c3ccdd 48%, #9fadc6 100%);
+	box-shadow: inset 0 1px 1px rgba(255,255,255,.9), 0 2px 4px rgba(0,0,0,.45);
+}
 .nk-key {
 	border: 0; color: #16223f; font: bold 12px Tahoma, sans-serif;
 	background: linear-gradient(180deg, #e7ecf5 0%, #b9c4d8 55%, #94a3c0 100%);
@@ -819,15 +932,24 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 	min-width: 0; min-height: 0;
 }
 .nk-key:active { box-shadow: inset 0 2px 3px rgba(0,0,0,.4); translate: 0 1px }
-.nk-c { width: 40px; height: 30px; border-radius: 6px 14px 14px 6px }
-.nk-mid { flex: 1; height: 34px; border-radius: 16px; font-size: 11px }
-.nk-updown { display: flex; flex-direction: column; gap: 2px }
-.nk-updown .nk-key { width: 40px; height: 15px; font-size: 9px; line-height: 1 }
-.nk-updown .nk-key.up { border-radius: 14px 14px 4px 4px }
-.nk-updown .nk-key.dn { border-radius: 4px 4px 14px 14px }
-/* The 3×4, in the 3310's slanted pill shape. */
-.nk-pad { width: 204px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px 7px; padding-bottom: 16px }
-.nk-pad .nk-key { height: 27px; border-radius: 9px 20px 9px 20px; position: relative; font-size: 12px }
+/* The two scroll keys, curving away from the centre button the way the 3310's did. */
+.nk-side { position: absolute; top: 9px; width: 72px; height: 30px; font-size: 13px; line-height: 1 }
+.nk-side.up { left: 6px; border-radius: 22px 8px 8px 22px / 20px 8px 8px 20px }
+.nk-side.dn { right: 6px; border-radius: 8px 22px 22px 8px / 8px 20px 20px 8px }
+/* The centre key: the oval with the teal bar across it. */
+.nk-mid {
+	position: relative; z-index: 1; width: 68px; height: 26px; border-radius: 14px;
+	font-size: 0; background: linear-gradient(180deg, #eef1f7 0%, #ccd4e2 50%, #a7b4cb 100%);
+}
+.nk-mid::after {
+	content: ""; position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+	width: 26px; height: 4px; border-radius: 2px; background: #3fb6c4;
+	box-shadow: inset 0 1px 1px rgba(0,0,0,.35);
+}
+/* The centre key's job, spelled out under the band instead of on it — the 3310 had no
+   label there either, and the screen's soft keys say what the buttons do. */
+.nk-pad { width: 212px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 8px; padding-bottom: 18px }
+.nk-pad .nk-key { height: 30px; border-radius: 9px 22px 9px 22px; position: relative; font-size: 12px }
 .nk-pad .nk-key small { position: absolute; right: 7px; bottom: 2px; font-size: 7px; letter-spacing: .5px; color: #3c4a68 }
 `
 
@@ -929,6 +1051,16 @@ var ICON_BELL =
 	"</svg>"
 var CHANNELS = ${JSON.stringify(CHANNEL_LABELS)}
 function channel_of(m) { return m.channel || "email" }
+/*
+ * The chip for a row. A chat capture carries the platform it was bound for, so it says
+ * "Slack" rather than "Chat" — "Chat" is what's left when the send didn't name one.
+ */
+function chan_chip(m) {
+	var chan = channel_of(m)
+	var look = chan === "chat" ? PLATFORMS[m.provider] : null
+	var kind = look ? m.provider : chan
+	return '<span class="chan c-' + esc(kind) + '">' + esc(look ? look.tag : CHANNELS[chan]) + "</span>"
+}
 function snip(text, n) {
 	text = String(text == null ? "" : text)
 	return text.length > n ? text.slice(0, n - 1) + "\\u2026" : text
@@ -995,9 +1127,9 @@ function render_list() {
 			"</td>" +
 			'<td class="when">' + when(m.received_at) + "</td>" +
 			'<td class="who">' + esc(who(m.to)) + "</td>" +
+			'<td class="chanco">' + chan_chip(m) + "</td>" +
 			"<td>" +
 			esc(snip(m.subject || (chan === "email" ? "(no subject)" : m.text || "(no message)"), 90)) +
-			(chan === "email" ? "" : ' <span class="chan">' + CHANNELS[chan] + "</span>") +
 			(m.cancelled_at
 				? ' <span class="sched off">cancelled</span>'
 				: state_of(m) === "scheduled"
@@ -1065,7 +1197,7 @@ function open_message(m) {
 		nk_view = "read"
 		nk_scroll = 0
 		render_list()
-		render_nokia()
+		render_pokia()
 		return
 	}
 	if (chan === "whatsapp") {
@@ -1191,7 +1323,7 @@ function load() {
 		render_wa()
 		render_plat()
 		render_push()
-		render_nokia()
+		render_pokia()
 	})
 }
 
@@ -1399,23 +1531,24 @@ var plat_convo = null
  */
 var PLATFORMS = {
 	slack: {
-		name: "Slack", glyph: "#", room: "postboi-dev",
+		name: "Slack", tag: "Slack", glyph: "#", room: "postboi-dev",
 		sub: "Dev Workspace \\u00B7 nothing leaves this machine", ph: "Message #postboi-dev",
 	},
 	discord: {
-		name: "Discord", glyph: "#", room: "general",
+		name: "Discord", tag: "Discord", glyph: "#", room: "general",
 		sub: "Dev Server \\u00B7 0 members online", ph: "Message #general",
 	},
 	teams: {
-		name: "Microsoft Teams", glyph: "\\u{1F465}", room: "General",
+		// The window says Microsoft Teams; the chip has a column 78px wide, so it says Teams.
+		name: "Microsoft Teams", tag: "Teams", glyph: "\\u{1F465}", room: "General",
 		sub: "Posts \\u00B7 the meeting never starts", ph: "Start a new conversation",
 	},
 	telegram: {
-		name: "Telegram", glyph: "\\u2708", room: "Dev Channel",
+		name: "Telegram", tag: "Telegram", glyph: "\\u2708", room: "Dev Channel",
 		sub: "captured by the dev inbox", ph: "Write a message\\u2026",
 	},
 	bluesky: {
-		name: "Bluesky", glyph: "\\u{1F98B}", room: "Your feed",
+		name: "Bluesky", tag: "Bluesky", glyph: "\\u{1F98B}", room: "Your feed",
 		sub: "public in production \\u00B7 captured here", ph: "What's up?",
 	},
 }
@@ -1551,7 +1684,7 @@ function render_push() {
 }
 
 /*
- * ---- The Nokia ----
+ * ---- The Pokia ----
  *
  * The handset's whole screen is redrawn from state on every change, like the real
  * firmware would: a view (the inbox list or a message), a selection, and a scroll
@@ -1563,7 +1696,9 @@ var nk_current = null
 var nk_view = "list"
 var nk_index = 0
 var nk_scroll = 0
-var NK_ROWS = 7
+var nk_dial = ""
+var nk_dial_timer = null
+var NK_ROWS = 11
 var NK_LINE = 15
 
 function nk_messages() {
@@ -1576,26 +1711,41 @@ var NK_SIGNAL =
 var NK_BATTERY =
 	'<span class="nk-bars"><i style="height:9px"></i><i style="height:9px"></i><i style="height:9px"></i></span>'
 
-function render_nokia() {
-	var el = $("nokia")
-	var win = find("nokia")
+/*
+ * The soft keys are the screen's, not the shell's: the labels at the bottom of the LCD say
+ * what the centre key does, and clicking a label does it too. Everything the phone can be
+ * asked to do goes through here, so the keypad, the wheel and the keyboard all agree.
+ */
+function nk_soft(left, right) {
+	return '<div class="nk-soft"><span data-soft="left">' + esc(left) + "</span>" +
+		'<span data-soft="right">' + esc(right) + "</span></div>"
+}
+
+function render_pokia() {
+	var el = $("pokia")
+	var win = find("pokia")
 	if (!nk_open) {
 		el.className = "child conv"
 		if (win) {
 			win.open = false
-			if (focused === "nokia") focused = "mailbox"
+			if (focused === "pokia") focused = "mailbox"
 			paint()
 		}
 		return
 	}
 	el.className = "child conv open" + (win && win.min ? " min" : "")
 	if (win) {
-		win.title = "Nokia \\u00B7 Messages"
+		win.title = nk_view === "game" ? "Pokia \\u00B7 Snake" : "Pokia \\u00B7 Messages"
 		var reopened = !win.open
 		win.open = true
-		if (reopened) focus_window("nokia")
+		if (reopened) focus_window("pokia")
 		else paint()
 	}
+	var lcd = $("nk-lcd")
+	var face = $("nk-screen")
+	lcd.className = "nk-lcd" + (nk_view === "game" ? " playing" : "")
+	if (nk_view === "game") return snake_draw()
+
 	var texts = nk_messages()
 	if (nk_current) {
 		var i = texts.indexOf(nk_current)
@@ -1604,12 +1754,12 @@ function render_nokia() {
 	nk_index = Math.max(0, Math.min(nk_index, texts.length - 1))
 	texts.forEach(function (m) { read[m.id] = true })
 
-	var lcd = $("nk-lcd")
 	var head = '<div class="stat">' + NK_SIGNAL + NK_BATTERY + "</div>"
+	var tail = nk_dial ? '<div class="nk-dial">' + esc(nk_dial) + "</div>" : ""
 	if (!texts.length) {
-		lcd.innerHTML = head + '<div class="nk-title">Messages</div>' +
+		face.innerHTML = head + '<div class="nk-title">Messages</div>' +
 			'<div class="nk-empty">No messages<br><br>Your app has not<br>texted yet</div>' +
-			'<div class="nk-soft"><span>&nbsp;</span><span>Back</span></div>'
+			nk_soft(" ", "Back") + tail
 		return
 	}
 	if (nk_view === "list") {
@@ -1619,13 +1769,12 @@ function render_nokia() {
 		var rows = texts.slice(first, first + NK_ROWS).map(function (m, offset) {
 			var n = first + offset
 			var label = (m.from && m.from.address) || "Your app"
-			return '<div class="nk-row' + (n === nk_index ? " on" : "") + '">' +
+			return '<div class="nk-row' + (n === nk_index ? " on" : "") + '" data-nkrow="' + n + '">' +
 				esc(label) + " " + esc(snip(m.text || "", 24)) + "</div>"
 		})
-		lcd.innerHTML = head + '<div class="nk-title">Messages (' + texts.length + ')</div>' +
+		face.innerHTML = head + '<div class="nk-title">Messages (' + texts.length + ')</div>' +
 			'<div class="nk-rows">' + rows.join("") + "</div>" +
-			'<div class="nk-soft"><span>Select</span><span>' + (nk_index + 1) + "/" + texts.length + "</span></div>"
-		$("nk-mid").textContent = "Select"
+			nk_soft("Select", nk_index + 1 + "/" + texts.length) + tail
 		return
 	}
 	var m = texts[nk_index]
@@ -1634,42 +1783,1301 @@ function render_nokia() {
 	;(m.meta || []).forEach(function (pair) { body += "\\n" + pair[0] + ": " + pair[1] })
 	if (m.cancelled_at) body += "\\nCancelled \\u2014 never going out"
 	else if (state_of(m) === "scheduled") body += "\\nSends " + when_full(m.scheduled_at)
-	lcd.innerHTML = head + '<div class="nk-title">' + stamp(m.received_at) + "</div>" +
+	face.innerHTML = head + '<div class="nk-title">' + stamp(m.received_at) + "</div>" +
 		'<div class="nk-read" id="nk-read">' + esc(body) + "</div>" +
-		'<div class="nk-soft"><span>Back</span><span>\\u2195 scroll</span></div>'
+		nk_soft("Back", "\\u2195 scroll") + tail
 	$("nk-read").scrollTop = nk_scroll * NK_LINE
-	$("nk-mid").textContent = "Back"
 }
 
-$("nk-up").onclick = function () {
-	if (nk_view === "list") { nk_index = Math.max(0, nk_index - 1); nk_current = null }
-	else nk_scroll = Math.max(0, nk_scroll - 1)
-	render_nokia()
+/** Up and down, wherever they come from: the side keys, the wheel, the arrow keys. */
+function nk_step(delta) {
+	if (nk_view === "game") return snake_turn(delta)
+	if (nk_view === "list") {
+		nk_index = Math.max(0, Math.min(nk_messages().length - 1, nk_index + delta))
+		nk_current = null
+	} else {
+		nk_scroll = Math.max(0, nk_scroll + delta)
+	}
+	render_pokia()
 }
-$("nk-dn").onclick = function () {
-	if (nk_view === "list") { nk_index = Math.min(nk_messages().length - 1, nk_index + 1); nk_current = null }
-	else nk_scroll += 1
-	render_nokia()
-}
-$("nk-mid").onclick = function () {
+
+/** The centre key: open the selected text, or come back out of the one that's open. */
+function nk_select() {
+	if (nk_view === "game") return snake_key("fire")
 	if (nk_view === "list" && nk_messages().length) { nk_view = "read"; nk_scroll = 0 }
 	else { nk_view = "list"; nk_current = null }
-	render_nokia()
+	render_pokia()
 	render_list()
 }
-$("nk-c").onclick = function () {
-	if (nk_view === "read") { nk_view = "list"; nk_current = null; render_nokia() }
-}
-$("nokia").querySelector(".nk-power").onclick = function () {
-	var win = find("nokia")
+
+$("nk-up").onclick = function () { nk_step(-1) }
+$("nk-dn").onclick = function () { nk_step(1) }
+$("nk-mid").onclick = nk_select
+
+/*
+ * The screen answers to the mouse as well as to the keys. A phone from 2000 did nothing of
+ * the sort — but this one is sitting on a desktop next to a pointer, and a list you can see
+ * and can't click is a worse anachronism than a touchscreen.
+ */
+$("nk-lcd").addEventListener("click", function (event) {
+	var soft = event.target.closest("[data-soft]")
+	if (soft) {
+		if (nk_view === "game") return soft.dataset.soft === "left" ? snake_key("fire") : snake_exit()
+		if (soft.dataset.soft === "left") nk_select()
+		return
+	}
+	var row = event.target.closest("[data-nkrow]")
+	if (!row) return
+	nk_index = Number(row.dataset.nkrow)
+	nk_current = null
+	nk_view = "read"
+	nk_scroll = 0
+	render_pokia()
+	render_list()
+})
+$("nk-lcd").addEventListener("wheel", function (event) {
+	if (!nk_open) return
+	// The phone owns the gesture: the desktop behind it has nothing to scroll anyway, and a
+	// flick that scrolled the page instead of the message would be the wrong thing every time.
+	event.preventDefault()
+	nk_step(event.deltaY > 0 ? 1 : -1)
+}, { passive: false })
+
+/*
+ * The keypad. It types, and one thing on this phone is listening: S-N-A-K-E on the letters
+ * printed on the keys — 76253 — is Snake, the way it was always somewhere in that menu.
+ */
+var SNAKE_CODE = "76253"
+$("pokia").querySelector(".nk-pad").addEventListener("click", function (event) {
+	var key = event.target.closest("[data-nk]")
+	if (!key) return
+	if (nk_view === "game") return snake_key(key.dataset.nk)
+	nk_dial = (nk_dial + key.dataset.nk).slice(-8)
+	clearTimeout(nk_dial_timer)
+	// A number half-dialled and abandoned clears itself, as it did on the real thing.
+	nk_dial_timer = setTimeout(function () { nk_dial = ""; render_pokia() }, 3000)
+	if (nk_dial.slice(-SNAKE_CODE.length) === SNAKE_CODE) { nk_dial = ""; return snake_start() }
+	render_pokia()
+})
+
+/* Arrow keys, WASD and Escape, but only while the handset is the focused window. */
+document.addEventListener("keydown", function (event) {
+	if (focused !== "pokia" || !nk_open) return
+	var key = event.key
+	var map = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+		w: "up", s: "down", a: "left", d: "right" }
+	var dir = map[key]
+	if (nk_view === "game") {
+		if (dir) { event.preventDefault(); snake_dir(dir) }
+		else if (key === " " || key === "Enter") { event.preventDefault(); snake_key("fire") }
+		else if (key === "Escape") snake_exit()
+		return
+	}
+	if (dir === "up") { event.preventDefault(); nk_step(-1) }
+	else if (dir === "down") { event.preventDefault(); nk_step(1) }
+	else if (key === "Enter") { event.preventDefault(); nk_select() }
+	else if (key === "Escape" && nk_view === "read") nk_select()
+})
+
+$("pokia").querySelector(".nk-power").onclick = function () {
+	var win = find("pokia")
 	if (win) close_window(win)
 }
 /* Dragged by the body, like Winamp — anywhere that isn't a key picks the phone up. */
-$("nokia").addEventListener("mousedown", function (event) {
+$("pokia").addEventListener("mousedown", function (event) {
 	if (event.target.closest("button")) return
-	var win = find("nokia")
+	var win = find("pokia")
 	if (win) drag(win, event)
 })
+
+/*
+ * ---- Snake ----
+ *
+ * The one from the phone: a walled arena, a dot to eat, a tail that grows, and a speed that
+ * creeps up until you make the mistake. Drawn on a canvas over the LCD in the same two
+ * colours the rest of the screen has, so it reads as the same hardware running a game.
+ *
+ * Steering takes whatever you have to hand: 2/4/6/8 on the keypad, the arrow keys, or the
+ * two side keys, which turn left and right relative to where the snake is already headed —
+ * the only scheme that works with two buttons, and the one that makes them worth pressing.
+ */
+var CELL = 9
+var snake = null
+var snake_timer = null
+var snake_best = Number(localStorage.getItem("postboi:snake") || 0)
+
+function snake_start() {
+	var lcd = $("nk-lcd")
+	var canvas = $("nk-game")
+	// Sized from the LCD it covers, not from a guess: the shell is styled in CSS and the
+	// arena has to come out of whatever that leaves, or the pixels land between cells.
+	canvas.width = lcd.clientWidth
+	canvas.height = lcd.clientHeight
+	var cols = Math.floor(canvas.width / CELL)
+	var rows = Math.floor((canvas.height - 31) / CELL)
+	snake = {
+		cols: cols, rows: rows,
+		body: [{ x: (cols >> 1) - 1, y: rows >> 1 }, { x: (cols >> 1) - 2, y: rows >> 1 }],
+		dir: { x: 1, y: 0 },
+		next: { x: 1, y: 0 },
+		food: null,
+		score: 0,
+		over: false,
+		// Paused on the splash: the code that starts the game is typed on the keypad, and a
+		// snake already running into a wall while you look up from it is a rotten welcome.
+		started: false,
+		paused: true,
+		speed: 220,
+	}
+	snake_feed()
+	nk_view = "game"
+	render_pokia()
+	snake_tick_later()
+}
+
+/** Somewhere the snake isn't. The arena is small, so rejection sampling is the whole job. */
+function snake_feed() {
+	for (;;) {
+		var spot = {
+			x: Math.floor(Math.random() * snake.cols),
+			y: Math.floor(Math.random() * snake.rows),
+		}
+		var hit = snake.body.some(function (part) { return part.x === spot.x && part.y === spot.y })
+		if (!hit) { snake.food = spot; return }
+	}
+}
+
+function snake_tick_later() {
+	clearTimeout(snake_timer)
+	if (!snake || snake.over || snake.paused || nk_view !== "game") return
+	snake_timer = setTimeout(snake_tick, snake.speed)
+}
+
+function snake_tick() {
+	if (!snake || snake.over || snake.paused) return
+	snake.dir = snake.next
+	var head = { x: snake.body[0].x + snake.dir.x, y: snake.body[0].y + snake.dir.y }
+	var into_wall = head.x < 0 || head.y < 0 || head.x >= snake.cols || head.y >= snake.rows
+	var into_self = snake.body.some(function (part) { return part.x === head.x && part.y === head.y })
+	if (into_wall || into_self) {
+		snake.over = true
+		if (snake.score > snake_best) {
+			snake_best = snake.score
+			localStorage.setItem("postboi:snake", String(snake_best))
+		}
+		snake_draw()
+		return
+	}
+	snake.body.unshift(head)
+	if (head.x === snake.food.x && head.y === snake.food.y) {
+		snake.score += 1
+		// It gets faster the longer you last, with a floor — past that it is reflexes, not a game.
+		snake.speed = Math.max(70, snake.speed - 6)
+		snake_feed()
+	} else snake.body.pop()
+	snake_draw()
+	snake_tick_later()
+}
+
+/** Absolute steering. A reversal into your own neck is the one input the game ignores. */
+function snake_dir(name) {
+	if (!snake || snake.over) return
+	var want = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } }[name]
+	if (!want) return
+	if (want.x === -snake.dir.x && want.y === -snake.dir.y) return
+	snake.next = want
+}
+
+/** Relative steering, for the two side keys: -1 turns left, 1 turns right. */
+function snake_turn(delta) {
+	if (!snake || snake.over) return
+	var d = snake.dir
+	snake.next = delta < 0 ? { x: d.y, y: -d.x } : { x: -d.y, y: d.x }
+}
+
+function snake_key(key) {
+	if (key === "2") return snake_dir("up")
+	if (key === "8") return snake_dir("down")
+	if (key === "4") return snake_dir("left")
+	if (key === "6") return snake_dir("right")
+	if (key === "*" || key === "#") return snake_exit()
+	// Fire, 5, 0: restart when it's over, pause and unpause while it isn't.
+	if (snake && snake.over) return snake_start()
+	if (snake) {
+		snake.started = true
+		snake.paused = !snake.paused
+		snake_draw()
+		snake_tick_later()
+	}
+}
+
+function snake_exit() {
+	clearTimeout(snake_timer)
+	snake = null
+	nk_view = "list"
+	render_pokia()
+}
+
+/* Everything is drawn in the LCD's own ink, on a canvas that lets the green through. */
+var LCD_INK = "#22300a"
+function snake_draw() {
+	var canvas = $("nk-game")
+	var ctx = canvas.getContext("2d")
+	ctx.clearRect(0, 0, canvas.width, canvas.height)
+	if (!snake) return
+	ctx.fillStyle = LCD_INK
+	ctx.font = 'bold 11px "Lucida Console", "Courier New", monospace'
+	ctx.textBaseline = "top"
+	ctx.fillText("SNAKE", 3, 1)
+	var head_line = snake.score + (snake_best ? "  HI " + snake_best : "")
+	ctx.fillText(head_line, canvas.width - 4 - ctx.measureText(head_line).width, 1)
+
+	var top = 16
+	var w = snake.cols * CELL
+	var h = snake.rows * CELL
+	var left = Math.floor((canvas.width - w) / 2)
+	// The arena wall, which is the thing you crash into.
+	ctx.strokeStyle = LCD_INK
+	ctx.lineWidth = 2
+	ctx.strokeRect(left - 2, top - 2, w + 4, h + 4)
+
+	snake.body.forEach(function (part, i) {
+		var size = i === 0 ? CELL - 1 : CELL - 3
+		var pad = i === 0 ? 0 : 1
+		ctx.fillRect(left + part.x * CELL + pad, top + part.y * CELL + pad, size, size)
+	})
+	// The dot, drawn as the ring the phone drew, so it never reads as a stubby tail.
+	var f = snake.food
+	ctx.lineWidth = 2
+	ctx.strokeRect(left + f.x * CELL + 1.5, top + f.y * CELL + 1.5, CELL - 4, CELL - 4)
+
+	// What the keys do, on the screen, because a game with no way out is a trap.
+	var hint = snake.started ? "Fire pause  # exit" : ""
+	ctx.fillText(hint, (canvas.width - ctx.measureText(hint).width) / 2, top + h + 3)
+
+	if (snake.over || snake.paused) {
+		var lines = snake.over
+			? ["GAME OVER", "SCORE " + snake.score, snake.score >= snake_best ? "NEW BEST" : "BEST " + snake_best, "", "Fire: again", "# : messages"]
+			: snake.started
+				? ["PAUSED", "", "Fire: resume", "# : messages"]
+				: ["SNAKE", "", "Fire to start", "2 4 6 8 or arrows", "\\u25B2 \\u25BC turn", "# : messages"]
+		var box_h = lines.length * 13 + 10
+		var box_y = top + Math.max(0, (h - box_h) / 2)
+		ctx.fillStyle = "#aec437"
+		ctx.fillRect(left + 6, box_y, w - 12, box_h)
+		ctx.strokeStyle = LCD_INK
+		ctx.strokeRect(left + 6, box_y, w - 12, box_h)
+		ctx.fillStyle = LCD_INK
+		lines.forEach(function (line, i) {
+			ctx.fillText(line, left + (w - ctx.measureText(line).width) / 2, box_y + 6 + i * 13)
+		})
+	}
+}
+
+
+/*
+ * ---- POOM.EXE ----
+ *
+ * Not Doom: Doom is a WAD file and a source port, neither of which fits in a dev server's
+ * HTML. This is the shape of it — a raycaster with a floor-cast street, a shotgun with a
+ * kick, and a status bar with a face on it that stops smiling as you take hits.
+ *
+ * The setting is a postman's: a suburban road, houses either side, picket fences, and the
+ * spam coming up the path at you with its flap open. The monsters are junk mail because
+ * this is a mail tool, and the round has to be finished either way.
+ *
+ * ponytail: a raycaster, not a BSP renderer. One wall height plus a short one for fences,
+ * no doors, no stairs, no sound. Every texture is drawn into an offscreen canvas at boot
+ * rather than shipped as an image — procedural bricks are cheaper than base64 ones.
+ */
+var POOM_W = 320
+var POOM_H = 176
+var TEX = 64
+
+/*
+ * The street. Ground: "." road, ":" pavement, "," grass. Tall: "H" house, "#" hedge.
+ * Short (you see over these, they still stop you): "f" fence, digits a fence with a sign
+ * nailed to it. Props, drawn as sprites: "T" tree, "P" pillar box.
+ */
+var POOM_MAP = [
+	"############################################",
+	"#,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,#",
+	"#,HHHHHH,,HHHHHH,,,HHHHH,,HHHHHH,,HHHHHHH,,#",
+	"#,HHHHHH,,HHHHHH,,,HHHHH,,HHHHHH,,HHHHHHH,,#",
+	"#,HHHHHH,,HHHHHH,,,HHHHH,,HHHHHH,,HHHHHHH,,#",
+	"#,,,,,,,T,,,,,,,,T,,,,,,,,,,,,,,T,,,,,,,,,,#",
+	"#fff1fff,ffff2fff,fffffff,ff3ffff,fff6fffff#",
+	"#::::::::::P:::::::::::::::::::::::::::::::#",
+	"#..........................................#",
+	"#..........................................#",
+	"#..........................................#",
+	"#:::::::::::::::::::::::::::::P::::::::::::#",
+	"#fff4ff,ffffffff,fff5ffff,ffffff,fff7ffffff#",
+	"#,,,,,,,T,,,,,,,,,,,,,,,T,,,,,,T,,,,,,,,,,,#",
+	"#,HHHHH,,HHHHHH,,,HHHHHH,,HHHHH,,HHHHHHH,,,#",
+	"#,HHHHH,,HHHHHH,,,HHHHHH,,HHHHH,,HHHHHHH,,,#",
+	"#,HHHHH,,HHHHHH,,,HHHHHH,,HHHHH,,HHHHHHH,,,#",
+	"#,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,#",
+	"#,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,#",
+	"############################################",
+]
+
+/* The signs on the fences. Somebody on this road has a label maker and a lot of feelings. */
+var POOM_SIGNS = {
+	1: ["BEWARE", "OF THE", "DOG"],
+	2: ["NO JUNK", "MAIL"],
+	3: ["NO", "COLD", "CALLERS"],
+	4: ["PLEASE DO", "NOT FEED", "THE SPAM"],
+	5: ["UNSUBSCRIBE", "IT WON'T", "HELP"],
+	6: ["RETURN", "TO SENDER"],
+	7: ["NO", "CIRCULARS", "THIS MEANS", "YOU"],
+}
+
+var POOM_W2 = POOM_W / 2
+var POOM_TALL = "H#"
+var POOM_SHORT = "f1234567"
+var POOM_PROP = "TP"
+var poom = null
+var poom_frame = null
+var poom_keys = {}
+var poom_art = null
+
+function poom_cell(x, y) {
+	var row = POOM_MAP[Math.floor(y)]
+	if (!row) return "#"
+	var cell = row[Math.floor(x)]
+	return cell === undefined ? "#" : cell
+}
+/** Everything but the three kinds of ground stops you walking into it. */
+function poom_solid(x, y) { return ".:,".indexOf(poom_cell(x, y)) === -1 }
+function poom_tall(x, y) { return POOM_TALL.indexOf(poom_cell(x, y)) !== -1 }
+
+/* ---- The art department ---- */
+
+function poom_canvas(w, h) {
+	var c = document.createElement("canvas")
+	c.width = w
+	c.height = h
+	return c
+}
+
+/*
+ * A repeatable stream of "random" numbers. Textures generated from Math.random would be a
+ * different house every time the window opened, which is the sort of thing you notice.
+ */
+function poom_rand(seed) {
+	var state = seed
+	return function () {
+		state = (state * 1103515245 + 12345) % 2147483648
+		return state / 2147483648
+	}
+}
+
+function poom_grime(g, seed, strength, w, h) {
+	var rand = poom_rand(seed)
+	for (var i = 0; i < (w * h) / 5; i++) {
+		var dark = rand() > 0.5
+		g.fillStyle = (dark ? "rgba(0,0,0," : "rgba(255,255,255,") + (rand() * strength).toFixed(3) + ")"
+		g.fillRect(Math.floor(rand() * w), Math.floor(rand() * h), 1, 1)
+	}
+}
+
+/** Tarmac, with the worn white line down the middle of the road. */
+function poom_tex_road() {
+	var c = poom_canvas(TEX, TEX)
+	var g = c.getContext("2d")
+	g.fillStyle = "#3b3b40"
+	g.fillRect(0, 0, TEX, TEX)
+	poom_grime(g, 3, 0.3, TEX, TEX)
+	g.fillStyle = "rgba(226,222,205,.8)"
+	g.fillRect(TEX / 2 - 3, 8, 6, 22)
+	g.fillRect(TEX / 2 - 3, 40, 6, 16)
+	return c
+}
+function poom_tex_pavement() {
+	var c = poom_canvas(TEX, TEX)
+	var g = c.getContext("2d")
+	g.fillStyle = "#8d8b84"
+	g.fillRect(0, 0, TEX, TEX)
+	g.fillStyle = "#7c7a73"
+	g.fillRect(0, 0, TEX, 2)
+	g.fillRect(0, 32, TEX, 2)
+	g.fillRect(0, 0, 2, TEX)
+	g.fillRect(32, 0, 2, TEX)
+	poom_grime(g, 9, 0.22, TEX, TEX)
+	return c
+}
+function poom_tex_grass() {
+	var c = poom_canvas(TEX, TEX)
+	var g = c.getContext("2d")
+	g.fillStyle = "#4b7233"
+	g.fillRect(0, 0, TEX, TEX)
+	var rand = poom_rand(17)
+	for (var i = 0; i < 700; i++) {
+		var tone = 46 + Math.floor(rand() * 46)
+		g.fillStyle = "rgb(" + Math.round(tone * 0.85) + "," + (tone + 44) + "," + Math.round(tone * 0.7) + ")"
+		g.fillRect(Math.floor(rand() * TEX), Math.floor(rand() * TEX), 1, 2)
+	}
+	return c
+}
+
+/** The hedge that closes the road off at both ends. Nobody's round goes on for ever. */
+function poom_tex_hedge() {
+	var c = poom_canvas(TEX, TEX)
+	var g = c.getContext("2d")
+	g.fillStyle = "#24401f"
+	g.fillRect(0, 0, TEX, TEX)
+	var rand = poom_rand(29)
+	for (var i = 0; i < 900; i++) {
+		var tone = 40 + Math.floor(rand() * 60)
+		g.fillStyle = "rgb(" + Math.round(tone * 0.55) + "," + tone + "," + Math.round(tone * 0.42) + ")"
+		var s = 2 + Math.floor(rand() * 3)
+		g.fillRect(Math.floor(rand() * TEX), Math.floor(rand() * TEX), s, s)
+	}
+	return c
+}
+
+/*
+ * The houses. Six of them, no two alike: the render picks one per building rather than per
+ * wall, so a house has the same front all the way along instead of changing every metre.
+ */
+var POOM_HOUSES = [
+	{ wall: "#c9b79a", trim: "#f2ece0", door: "#7a2f22", roof: "#6b4a3a", brick: false, number: "12" },
+	{ wall: "#9fb2c4", trim: "#ffffff", door: "#1f4f7a", roof: "#4a5a68", brick: false, number: "14" },
+	{ wall: "#b5644f", trim: "#efe6d6", door: "#2f5136", roof: "#5a3a30", brick: true, number: "16" },
+	{ wall: "#d8cba4", trim: "#fbf6ea", door: "#6b3a86", roof: "#7a6a4a", brick: false, number: "18" },
+	{ wall: "#8fa38a", trim: "#f4f1e6", door: "#8a5a1f", roof: "#4d5a48", brick: false, number: "20" },
+	{ wall: "#a8836b", trim: "#f6efe2", door: "#243a6b", roof: "#6a5140", brick: true, number: "22" },
+]
+
+function poom_tex_house(look) {
+	var c = poom_canvas(TEX, TEX)
+	var g = c.getContext("2d")
+	g.fillStyle = look.wall
+	g.fillRect(0, 0, TEX, TEX)
+	if (look.brick) {
+		for (var row = 0; row < 16; row++) {
+			for (var col = -1; col < 8; col++) {
+				g.fillStyle = "rgba(0,0,0,.13)"
+				g.fillRect(col * 8 + (row % 2 ? 4 : 0), row * 4, 7, 3)
+			}
+		}
+	} else {
+		// Weatherboard: a shadow line under every plank.
+		for (var y = 4; y < TEX; y += 5) {
+			g.fillStyle = "rgba(0,0,0,.16)"
+			g.fillRect(0, y, TEX, 1)
+		}
+	}
+	// The roof line along the top, so a wall reads as a house even head-on.
+	g.fillStyle = look.roof
+	g.fillRect(0, 0, TEX, 9)
+	g.fillStyle = "rgba(0,0,0,.25)"
+	g.fillRect(0, 9, TEX, 2)
+	g.fillStyle = look.trim
+	g.fillRect(0, 11, TEX, 2)
+
+	// Two windows over a door, which is what a front is.
+	function window_at(x, y, w, h) {
+		g.fillStyle = look.trim
+		g.fillRect(x - 2, y - 2, w + 4, h + 4)
+		g.fillStyle = "#2c3d4a"
+		g.fillRect(x, y, w, h)
+		g.fillStyle = "rgba(255,255,255,.22)"
+		g.beginPath()
+		g.moveTo(x, y + h)
+		g.lineTo(x + w, y)
+		g.lineTo(x + w, y + h * 0.45)
+		g.lineTo(x + w * 0.4, y + h)
+		g.closePath()
+		g.fill()
+		g.fillStyle = look.trim
+		g.fillRect(x + w / 2 - 1, y, 2, h)
+		g.fillRect(x, y + h / 2 - 1, w, 2)
+	}
+	window_at(8, 18, 16, 13)
+	window_at(TEX - 24, 18, 16, 13)
+	// Door, step and a number by the frame.
+	g.fillStyle = look.trim
+	g.fillRect(TEX / 2 - 10, 38, 20, 26)
+	g.fillStyle = look.door
+	g.fillRect(TEX / 2 - 8, 40, 16, 24)
+	g.fillStyle = "rgba(255,255,255,.18)"
+	g.fillRect(TEX / 2 - 6, 43, 12, 8)
+	g.fillStyle = "#d9c15a"
+	g.fillRect(TEX / 2 + 4, 52, 2, 2)
+	// The letterbox. This is the whole reason anyone is on this street.
+	g.fillStyle = "#3a2a20"
+	g.fillRect(TEX / 2 - 5, 56, 10, 3)
+	g.fillStyle = look.trim
+	g.font = 'bold 7px "Arial Narrow", Arial, sans-serif'
+	g.fillText(look.number, TEX / 2 + 12, 46)
+	poom_grime(g, 37, 0.1, TEX, TEX)
+	return c
+}
+
+/** A picket fence, with the gaps actually missing so you see the garden through it. */
+function poom_tex_fence(sign) {
+	var c = poom_canvas(TEX, TEX)
+	var g = c.getContext("2d")
+	// The texture is a full 64 tall but only the bottom third is ever drawn: a fence is
+	// rendered as a short wall, and the render takes the strip it needs from the bottom.
+	var top = 30
+	g.fillStyle = "#efeae0"
+	for (var i = 0; i < 8; i++) {
+		var x = i * 8 + 1
+		g.fillRect(x, top + 4, 6, TEX - top - 4)
+		g.beginPath()
+		g.moveTo(x, top + 5)
+		g.lineTo(x + 3, top)
+		g.lineTo(x + 6, top + 5)
+		g.closePath()
+		g.fill()
+	}
+	g.fillStyle = "#ddd6c8"
+	g.fillRect(0, top + 12, TEX, 5)
+	g.fillRect(0, top + 24, TEX, 5)
+	g.fillStyle = "rgba(0,0,0,.18)"
+	g.fillRect(0, TEX - 4, TEX, 4)
+	if (sign) {
+		g.fillStyle = "#e8dfc6"
+		g.fillRect(6, top + 6, TEX - 12, 24)
+		g.strokeStyle = "#3a2c1e"
+		g.lineWidth = 1
+		g.strokeRect(6.5, top + 6.5, TEX - 13, 23)
+		g.fillStyle = "#2a1f14"
+		g.textAlign = "center"
+		g.textBaseline = "middle"
+		var step = Math.min(8, 22 / sign.length)
+		sign.forEach(function (line, i) {
+			var size = 8
+			g.font = "bold " + size + 'px "Arial Narrow", Arial, sans-serif'
+			while (g.measureText(line).width > TEX - 18 && size > 4) {
+				size -= 1
+				g.font = "bold " + size + 'px "Arial Narrow", Arial, sans-serif'
+			}
+			g.fillText(line, TEX / 2, top + 18 - ((sign.length - 1) * step) / 2 + i * step)
+		})
+		g.textAlign = "left"
+		g.textBaseline = "alphabetic"
+	}
+	return c
+}
+
+/** A tree, and a pillar box: the two things a street this shape needs to not read as a corridor. */
+function poom_tex_tree() {
+	var c = poom_canvas(TEX, TEX)
+	var g = c.getContext("2d")
+	g.fillStyle = "#5b3f2a"
+	g.fillRect(TEX / 2 - 4, 34, 8, TEX - 34)
+	var rand = poom_rand(53)
+	for (var i = 0; i < 90; i++) {
+		var r = 7 + rand() * 9
+		var x = TEX / 2 + (rand() - 0.5) * 44
+		var y = 20 + (rand() - 0.5) * 30
+		var tone = 52 + Math.floor(rand() * 52)
+		g.fillStyle = "rgb(" + Math.round(tone * 0.5) + "," + tone + "," + Math.round(tone * 0.4) + ")"
+		g.beginPath()
+		g.arc(x, y, r, 0, Math.PI * 2)
+		g.fill()
+	}
+	return c
+}
+function poom_tex_pillar() {
+	var c = poom_canvas(TEX, TEX)
+	var g = c.getContext("2d")
+	g.fillStyle = "#a51f1a"
+	g.fillRect(TEX / 2 - 13, 18, 26, TEX - 18)
+	g.fillStyle = "#8c1713"
+	g.fillRect(TEX / 2 - 13, 18, 5, TEX - 18)
+	g.beginPath()
+	g.arc(TEX / 2, 20, 13, Math.PI, 0)
+	g.fillStyle = "#b52521"
+	g.fill()
+	g.fillStyle = "#1a1210"
+	g.fillRect(TEX / 2 - 9, 30, 18, 4)
+	g.fillStyle = "#e8d48a"
+	g.fillRect(TEX / 2 - 7, 40, 14, 8)
+	return c
+}
+
+/* The sky: one wide strip, sampled by heading, so turning pans the clouds past you. */
+var SKY_W = 512
+var SKY_H = 96
+function poom_tex_sky() {
+	var c = poom_canvas(SKY_W, SKY_H)
+	var g = c.getContext("2d")
+	var grad = g.createLinearGradient(0, 0, 0, SKY_H)
+	grad.addColorStop(0, "#2f6fb5")
+	grad.addColorStop(0.55, "#7fb2dd")
+	grad.addColorStop(1, "#cfe0e8")
+	g.fillStyle = grad
+	g.fillRect(0, 0, SKY_W, SKY_H)
+	var rand = poom_rand(71)
+	for (var i = 0; i < 26; i++) {
+		var cx = rand() * SKY_W
+		var cy = 8 + rand() * 52
+		var scale = 0.6 + rand() * 1.5
+		g.fillStyle = "rgba(255,255,255," + (0.4 + rand() * 0.5).toFixed(2) + ")"
+		for (var puff = 0; puff < 6; puff++) {
+			var px = cx + (puff - 2.5) * 7 * scale
+			var py = cy + Math.sin(puff) * 3 * scale
+			var r = (7 + rand() * 6) * scale
+			// Twice, a strip apart: the sky wraps as you turn, and a cloud cut in half at the
+			// seam is the one thing that gives away that the sky is 512 pixels wide.
+			;[px, px - SKY_W, px + SKY_W].forEach(function (at) {
+				g.beginPath()
+				g.arc(at, py, r, 0, Math.PI * 2)
+				g.fill()
+			})
+		}
+	}
+	// The sun, low and hazy, because this is a morning round.
+	var sun = g.createRadialGradient(SKY_W * 0.72, 22, 4, SKY_W * 0.72, 22, 34)
+	sun.addColorStop(0, "rgba(255,250,210,.95)")
+	sun.addColorStop(1, "rgba(255,240,190,0)")
+	g.fillStyle = sun
+	g.fillRect(SKY_W * 0.72 - 40, 0, 80, 70)
+	return c
+}
+
+/**
+ * The spam, drawn as frames of one animation: an envelope whose flap lifts to show what it
+ * has instead of a mouth. Closed across the street, wide open when it is on you.
+ */
+var POOM_FRAMES = 8
+function poom_mob_frame(open) {
+	var c = poom_canvas(TEX, TEX)
+	var g = c.getContext("2d")
+	var left = 7
+	var right = TEX - 7
+	var top = 18
+	var bottom = TEX - 8
+	var mid = (left + right) / 2
+
+	g.fillStyle = "#e8e0cc"
+	g.fillRect(left, top, right - left, bottom - top)
+	g.strokeStyle = "#2b2119"
+	g.lineWidth = 2
+	g.strokeRect(left, top, right - left, bottom - top)
+	g.fillStyle = "#2b2119"
+	g.fillRect(left + 8, top + 22, 7, 4 + Math.round(open * 3))
+	g.fillRect(right - 15, top + 22, 7, 4 + Math.round(open * 3))
+	g.fillStyle = "#b8332a"
+	g.fillRect(right - 17, top + 32, 11, 8)
+	g.fillStyle = "#8d251d"
+	g.fillRect(right - 17, top + 32, 11, 2)
+
+	// The mouth, opening down into the body: a dark gap with a tooth on each jaw.
+	var gape = open * 20
+	if (gape > 1) {
+		g.fillStyle = "#280b08"
+		g.fillRect(left + 2, top + 2, right - left - 4, gape)
+		g.fillStyle = "#f6f1e4"
+		for (var t = 0; t < 5; t++) {
+			var tx = left + 4 + t * ((right - left - 8) / 5)
+			var w = (right - left - 8) / 5 - 2
+			g.beginPath()
+			g.moveTo(tx, top + 2)
+			g.lineTo(tx + w, top + 2)
+			g.lineTo(tx + w / 2, top + 2 + Math.min(6, gape * 0.4))
+			g.closePath()
+			g.fill()
+			g.beginPath()
+			g.moveTo(tx, top + 2 + gape)
+			g.lineTo(tx + w, top + 2 + gape)
+			g.lineTo(tx + w / 2, top + 2 + gape - Math.min(5, gape * 0.34))
+			g.closePath()
+			g.fill()
+		}
+	}
+	// The flap, hinged along the top edge: shut it lies flat, open it rears back over the top.
+	g.fillStyle = "#d8cfb6"
+	g.beginPath()
+	g.moveTo(left, top)
+	g.lineTo(right, top)
+	g.lineTo(mid, top + 22 - open * 40)
+	g.closePath()
+	g.fill()
+	g.stroke()
+	return c
+}
+
+/*
+ * The shotgun, as pixel art rather than as shapes: 64x40 pixels, drawn once at boot and
+ * blitted up whole. Canvas curves scaled into a 320-wide window come out as soft blobs —
+ * this is the same trick the games it is impersonating used, which is to draw the thing at
+ * the size it is actually stored and let the hardware make it big.
+ *
+ * Two frames: fore-end forward, and fore-end racked back after a shot.
+ */
+/*
+ * The weapon frames come off the server as sprites (see inbox_poom.ts): at rest, firing,
+ * and the pump going back and forward again. They are drawn for a 320-wide view and this
+ * view is 320 wide, so they go on screen at their own size, a pixel to a pixel.
+ */
+/*
+ * The ready pose is the one with the hand on the pump — Freedoom's "A" frame is the barrel
+ * alone, which is the weapon lowered, so it is kept for the drop when you die and the cycle
+ * runs fire → pump back → pump forward → ready.
+ */
+var POOM_GUN_FRAMES = ["gunfire", "gunfire", "gunpump", "gunload"]
+var POOM_FLASH_FRAMES = ["flasha", "flashb"]
+/* Where each frame sits: the sprites carry no offsets, so the muzzle is lined up here. */
+var POOM_GUN_AT = {
+	gunidle: { x: 4, y: 0 },
+	gunfire: { x: 4, y: 0 },
+	gunpump: { x: 6, y: 6 },
+	gunload: { x: 12, y: 8 },
+}
+/* The mouth of the barrel, in the fired frame's own pixels: the flash is centred on it. */
+var POOM_MUZZLE = { x: 52, y: 4 }
+
+function poom_load_sprites() {
+	var loaded = {}
+	POOM_GUN_FRAMES.concat(POOM_FLASH_FRAMES).forEach(function (name) {
+		var image = new Image()
+		image.src = api + "/poom/" + name
+		loaded[name] = image
+	})
+	return loaded
+}
+
+function poom_build_art() {
+	if (poom_art) return
+	poom_art = {
+		ground: {},
+		tall: {},
+		short: {},
+		props: {},
+		mobs: [],
+		sky: poom_tex_sky(),
+		guns: poom_load_sprites(),
+		houses: POOM_HOUSES.map(poom_tex_house),
+	}
+	poom_art.ground["."] = poom_tex_road()
+	poom_art.ground[":"] = poom_tex_pavement()
+	poom_art.ground[","] = poom_tex_grass()
+	poom_art.tall["#"] = poom_tex_hedge()
+	poom_art.short.f = poom_tex_fence(null)
+	Object.keys(POOM_SIGNS).forEach(function (key) {
+		poom_art.short[key] = poom_tex_fence(POOM_SIGNS[key])
+	})
+	poom_art.props.T = poom_tex_tree()
+	poom_art.props.P = poom_tex_pillar()
+	for (var i = 0; i < POOM_FRAMES; i++) poom_art.mobs.push(poom_mob_frame(i / (POOM_FRAMES - 1)))
+	// The ground is sampled a pixel at a time by the floor caster, so it wants the raw
+	// pixels rather than a canvas to blit.
+	poom_art.pixels = {}
+	Object.keys(poom_art.ground).forEach(function (key) {
+		var g = poom_art.ground[key].getContext("2d")
+		poom_art.pixels[key] = new Uint32Array(g.getImageData(0, 0, TEX, TEX).data.buffer)
+	})
+	var sky = poom_art.sky.getContext("2d")
+	poom_art.sky_pixels = new Uint32Array(sky.getImageData(0, 0, SKY_W, SKY_H).data.buffer)
+}
+
+/** Which house this wall belongs to. Per building, not per wall, so a front stays one front. */
+function poom_house(mx, my) {
+	var id = (Math.floor(mx / 3) * 7 + Math.floor(my / 4) * 13) % POOM_HOUSES.length
+	return poom_art.houses[id]
+}
+
+/* ---- The world ---- */
+
+var POOM_SPAWNS = [
+	{ x: 6.5, y: 9.5 }, { x: 9.5, y: 8.5 }, { x: 12.5, y: 10.5 }, { x: 15.5, y: 9.5 },
+	{ x: 18.5, y: 8.5 }, { x: 21.5, y: 10.5 }, { x: 24.5, y: 9.5 }, { x: 27.5, y: 8.5 },
+	{ x: 30.5, y: 10.5 }, { x: 33.5, y: 9.5 }, { x: 36.5, y: 8.5 }, { x: 39.5, y: 10.5 },
+	{ x: 41.5, y: 9.5 }, { x: 34.5, y: 5.5 }, { x: 20.5, y: 5.5 }, { x: 11.5, y: 13.5 },
+	{ x: 28.5, y: 13.5 }, { x: 38.5, y: 13.5 }, { x: 4.5, y: 5.5 }, { x: 7.5, y: 13.5 },
+]
+
+function poom_start() {
+	poom_build_art()
+	// One loop, ever. Restarting on top of a running one is how the whole game ended up
+	// stepping twice per frame — every input twice as sensitive, everything twice as fast.
+	cancelAnimationFrame(poom_frame)
+	poom_frame = null
+	poom_keys = {}
+	poom = {
+		x: 2.5, y: 9.5, dir: 0,
+		vx: 0, vy: 0,
+		health: 100, ammo: 40,
+		hurt: 0, flash: 0, kick: 0, pitch: 0, bob: 0, walk: 0,
+		note: "", note_at: 0,
+		time: 0,
+		spam: POOM_SPAWNS.map(function (spot) {
+			return { x: spot.x, y: spot.y, dead: false, dying: 0, bite: 0, phase: spot.x + spot.y }
+		}),
+		over: null,
+	}
+	poom_loop()
+}
+
+var poom_last = 0
+function poom_loop(now) {
+	if (!poom) { poom_frame = null; return }
+	poom_frame = requestAnimationFrame(poom_loop)
+	var win = find("poom")
+	// Minimised, no time passes: coming back to a corpse because the spam kept walking while
+	// the window was down is the sort of thing that only ever reads as a bug.
+	if (!win || !win.open || win.min) { poom_last = now || poom_last; return }
+	var dt = Math.min(0.05, (now - poom_last) / 1000 || 0.016)
+	poom_last = now
+	poom.time += dt
+	poom_step(dt)
+	poom_draw()
+}
+
+function poom_step(dt) {
+	var dead = !!poom.over
+	poom.kick = Math.max(0, poom.kick - dt * 3.4)
+	poom.flash = Math.max(0, poom.flash - dt * 5)
+	poom.hurt = Math.max(0, poom.hurt - dt * 1.4)
+	poom.pitch = poom.over === "dead"
+		? Math.min(46, poom.pitch + dt * 90)
+		: poom.pitch * 0.86 - poom.kick * 0.9
+
+	if (!dead) {
+		if (poom_keys.left) poom.dir -= 2.7 * dt
+		if (poom_keys.right) poom.dir += 2.7 * dt
+		var forward = (poom_keys.up ? 1 : 0) - (poom_keys.down ? 1 : 0)
+		var strafe = (poom_keys.sright ? 1 : 0) - (poom_keys.sleft ? 1 : 0)
+		// Accelerate into a wish direction and rub the rest off, rather than teleporting a
+		// fixed step per frame: it gives the weight that made those games feel like something.
+		var wish_x = Math.cos(poom.dir) * forward - Math.sin(poom.dir) * strafe
+		var wish_y = Math.sin(poom.dir) * forward + Math.cos(poom.dir) * strafe
+		var len = Math.hypot(wish_x, wish_y) || 1
+		var pushing = forward || strafe ? 1 : 0
+		poom.vx += (wish_x / len) * 26 * dt * pushing
+		poom.vy += (wish_y / len) * 26 * dt * pushing
+		var drag = Math.max(0, 1 - 9 * dt)
+		poom.vx *= drag
+		poom.vy *= drag
+		var speed = Math.hypot(poom.vx, poom.vy)
+		if (speed > 3.6) { poom.vx = (poom.vx / speed) * 3.6; poom.vy = (poom.vy / speed) * 3.6 }
+		// Axis at a time, so a fence you brush along slides you instead of stopping you dead.
+		// The margin is what keeps the camera off the wall, and the texture out of your eye.
+		var pad = 0.28
+		var step_x = poom.vx * dt
+		var step_y = poom.vy * dt
+		if (!poom_solid(poom.x + step_x + Math.sign(step_x) * pad, poom.y)) poom.x += step_x
+		else poom.vx = 0
+		if (!poom_solid(poom.x, poom.y + step_y + Math.sign(step_y) * pad)) poom.y += step_y
+		else poom.vy = 0
+		// The bob is the speed, not the button: let go and it settles instead of stopping dead.
+		poom.walk += speed * dt * 3.4
+		poom.bob = Math.sin(poom.walk * 2) * Math.min(2.6, speed * 0.9)
+	} else {
+		poom.vx *= 0.8
+		poom.vy *= 0.8
+		poom.bob *= 0.9
+	}
+
+	var alive = 0
+	poom.spam.forEach(function (mob) {
+		if (mob.dead) return
+		if (mob.dying > 0) {
+			mob.dying -= dt * 3.4
+			if (mob.dying <= 0) mob.dead = true
+			return
+		}
+		alive++
+		mob.bite = Math.max(0, mob.bite - dt)
+		if (dead) return
+		var vx = poom.x - mob.x
+		var vy = poom.y - mob.y
+		var far = Math.hypot(vx, vy) || 1
+		if (far < 0.85) {
+			// A bite, not a leak: health that slides down by fractions is unreadable, so they
+			// take a whole mouthful on a cooldown and the number visibly steps.
+			if (mob.bite <= 0) {
+				mob.bite = 0.7
+				poom.health -= 13
+				poom.hurt = 1
+				poom_say("CHEWED ON")
+				if (poom.health <= 0) { poom.health = 0; poom.over = "dead" }
+			}
+			return
+		}
+		var step = 1.15 * dt
+		if (!poom_solid(mob.x + (vx / far) * step * 1.6, mob.y)) mob.x += (vx / far) * step
+		if (!poom_solid(mob.x, mob.y + (vy / far) * step * 1.6)) mob.y += (vy / far) * step
+	})
+	if (!alive && !poom.over) { poom.over = "clear"; poom_say("INBOX ZERO") }
+}
+
+/** Doom put its pickups in the top-left corner, so that is where this says things too. */
+function poom_say(text) {
+	poom.note = text
+	poom.note_at = poom.time
+}
+
+/** The shotgun: straight ahead, nothing else. Whatever is nearest in the middle of the screen. */
+function poom_fire() {
+	if (!poom || poom.over || poom.ammo <= 0) return
+	poom.ammo--
+	poom.flash = 1
+	poom.kick = 1
+	var best = null
+	poom.spam.forEach(function (mob) {
+		if (mob.dead || mob.dying > 0) return
+		var vx = mob.x - poom.x
+		var vy = mob.y - poom.y
+		var far = Math.hypot(vx, vy)
+		var off = Math.atan2(vy, vx) - poom.dir
+		while (off > Math.PI) off -= Math.PI * 2
+		while (off < -Math.PI) off += Math.PI * 2
+		// Wider tolerance up close, the way a spread does.
+		if (Math.abs(off) > 0.22 || far > 14) return
+		if (!best || far < best.far) best = { mob: mob, far: far }
+	})
+	if (!best) return
+	// No shooting through houses: walk the ray and see if it gets there. Fences are waist
+	// height, so pellets go over them.
+	var steps = Math.ceil(best.far * 8)
+	for (var i = 1; i < steps; i++) {
+		var t = (best.far * i) / steps
+		if (poom_tall(poom.x + Math.cos(poom.dir) * t, poom.y + Math.sin(poom.dir) * t)) return
+	}
+	best.mob.dying = 1
+	poom.ammo = Math.min(99, poom.ammo + 2)
+	poom_say("MARKED AS SPAM")
+}
+
+/* ---- The renderer ---- */
+
+var poom_buffer = null
+/*
+ * Sky and street, a pixel at a time, straight into an ImageData. Walls are strips of a
+ * texture and can go through drawImage; the ground can't — it recedes, so every row of it
+ * is a different slice of the world, which is the one thing a raycaster has to cast for.
+ */
+function poom_ground(ctx, horizon) {
+	var canvas = ctx.canvas
+	if (!poom_buffer || poom_buffer.width !== canvas.width) {
+		poom_buffer = ctx.createImageData(POOM_W, POOM_H)
+		poom_buffer.pixels = new Uint32Array(poom_buffer.data.buffer)
+	}
+	var out = poom_buffer.pixels
+	var sky = poom_art.sky_pixels
+	var cos = Math.cos(poom.dir)
+	var sin = Math.sin(poom.dir)
+	var fov = 0.66
+
+	// Sky: the strip panned by heading, and squashed into whatever is above the horizon.
+	var pan = Math.floor(((poom.dir / (Math.PI * 2)) % 1) * SKY_W + SKY_W) % SKY_W
+	var sky_top = Math.max(0, Math.min(POOM_H, horizon))
+	for (var y = 0; y < sky_top; y++) {
+		var sy = Math.min(SKY_H - 1, Math.max(0, Math.floor(((y - horizon + POOM_H * 0.62) / (POOM_H * 0.62)) * SKY_H)))
+		var row = sy * SKY_W
+		var out_row = y * POOM_W
+		for (var x = 0; x < POOM_W; x++) {
+			out[out_row + x] = sky[row + ((pan + Math.floor(x * 0.62)) % SKY_W)]
+		}
+	}
+
+	// Ground: one distance per row, then step across it. The eye is half a storey up, which
+	// is where the 0.5 comes from.
+	var rx0 = cos + sin * fov
+	var ry0 = sin - cos * fov
+	var rx1 = cos - sin * fov
+	var ry1 = sin + cos * fov
+	for (var gy = Math.max(0, sky_top); gy < POOM_H; gy++) {
+		var p = gy - horizon
+		if (p <= 0) continue
+		var dist = (0.5 * POOM_H) / p
+		var step_x = (dist * (rx1 - rx0)) / POOM_W
+		var step_y = (dist * (ry1 - ry0)) / POOM_W
+		var wx = poom.x + dist * rx0
+		var wy = poom.y + dist * ry0
+		// Fog: the far end of the road fades into the haze rather than staying crisp to the
+		// hedge, which is what gives a flat street any depth at all.
+		var fog = Math.min(0.72, Math.max(0, (dist - 3.5) / 13))
+		var out_row2 = gy * POOM_W
+		for (var gx = 0; gx < POOM_W; gx++) {
+			var cell = poom_cell(wx, wy)
+			var tex = poom_art.pixels[cell] || poom_art.pixels[","]
+			var tx = (wx - Math.floor(wx)) * TEX
+			var ty = (wy - Math.floor(wy)) * TEX
+			var px = tex[(ty | 0) * TEX + (tx | 0)]
+			if (fog > 0.01) {
+				// Blend toward the haze in place, one channel at a time.
+				var r = px & 255
+				var g2 = (px >> 8) & 255
+				var b = (px >> 16) & 255
+				r += (198 - r) * fog
+				g2 += (214 - g2) * fog
+				b += (226 - b) * fog
+				px = 0xff000000 | (b << 16) | (g2 << 8) | r
+			}
+			out[out_row2 + gx] = px
+			wx += step_x
+			wy += step_y
+		}
+	}
+	ctx.putImageData(poom_buffer, 0, 0)
+}
+
+function poom_draw() {
+	var canvas = $("poom-view")
+	var ctx = canvas.getContext("2d")
+	var zbuf = new Array(POOM_W)
+	var horizon = Math.round(POOM_H / 2 + poom.pitch + poom.bob)
+
+	poom_ground(ctx, horizon)
+
+	var fov = 0.66
+	for (var col = 0; col < POOM_W; col++) {
+		var camera = (2 * col) / POOM_W - 1
+		var rx = Math.cos(poom.dir) - Math.sin(poom.dir) * fov * camera
+		var ry = Math.sin(poom.dir) + Math.cos(poom.dir) * fov * camera
+		var mx = Math.floor(poom.x)
+		var my = Math.floor(poom.y)
+		var dx = Math.abs(1 / (rx || 1e-6))
+		var dy = Math.abs(1 / (ry || 1e-6))
+		var sx = rx < 0 ? -1 : 1
+		var sy = ry < 0 ? -1 : 1
+		var tx = rx < 0 ? (poom.x - mx) * dx : (mx + 1 - poom.x) * dx
+		var ty = ry < 0 ? (poom.y - my) * dy : (my + 1 - poom.y) * dy
+		var side = 0
+		var fences = []
+		// Step until a house or a hedge stops the ray, keeping every fence it passed on the
+		// way: you see over a fence, so it can't end the cast, but it still has to be drawn.
+		for (var guard = 0; guard < 96; guard++) {
+			if (tx < ty) { tx += dx; mx += sx; side = 0 }
+			else { ty += dy; my += sy; side = 1 }
+			var cell = poom_cell(mx, my)
+			if (POOM_TALL.indexOf(cell) !== -1) break
+			if (POOM_SHORT.indexOf(cell) !== -1) {
+				fences.push({ cell: cell, dist: side === 0 ? tx - dx : ty - dy, side: side, rx: rx, ry: ry })
+			}
+		}
+		var dist = side === 0 ? tx - dx : ty - dy
+		if (dist < 0.02) dist = 0.02
+		zbuf[col] = dist
+		var art = poom_cell(mx, my) === "#" ? poom_art.tall["#"] : poom_house(mx, my)
+		poom_strip(ctx, art, col, dist, side, rx, ry, horizon, 1)
+		// Fences after the wall behind them, far to near, so the near one wins.
+		fences.sort(function (a, b) { return b.dist - a.dist })
+		fences.forEach(function (fence) {
+			poom_strip(ctx, poom_art.short[fence.cell], col, fence.dist, fence.side, rx, ry, horizon, 0.44)
+		})
+	}
+
+	// The spam and the street furniture, furthest first, sliced against the wall distances.
+	var seen = poom.spam
+		.filter(function (mob) { return !mob.dead })
+		.map(function (mob) { return { x: mob.x, y: mob.y, mob: mob } })
+	POOM_MAP.forEach(function (row, my2) {
+		for (var mx2 = 0; mx2 < row.length; mx2++) {
+			if (POOM_PROP.indexOf(row[mx2]) !== -1) seen.push({ x: mx2 + 0.5, y: my2 + 0.5, prop: row[mx2] })
+		}
+	})
+	seen
+		.map(function (thing) {
+			thing.vx = thing.x - poom.x
+			thing.vy = thing.y - poom.y
+			thing.far = Math.hypot(thing.vx, thing.vy)
+			return thing
+		})
+		.sort(function (a, b) { return b.far - a.far })
+		.forEach(function (thing) {
+			if (thing.far > 22) return
+			var off = Math.atan2(thing.vy, thing.vx) - poom.dir
+			while (off > Math.PI) off -= Math.PI * 2
+			while (off < -Math.PI) off += Math.PI * 2
+			if (Math.abs(off) > 1.05 || thing.far < 0.12) return
+			var depth = Math.cos(off) * thing.far
+			if (depth < 0.14) return
+			var mob = thing.mob
+			var dying = mob && mob.dying > 0
+			var scale = thing.prop === "T" ? 1.7 : 1
+			var size = Math.min(POOM_H * 6, (POOM_H / depth) * scale) * (dying ? Math.max(0.2, mob.dying) : 1)
+			var centre = POOM_W2 + Math.tan(off) * (POOM_W2 / fov)
+			// Everything stands on the ground, so the feet go where a wall's foot would.
+			var foot = horizon + POOM_H / depth / 2
+			var top = foot - size
+			var left = Math.round(centre - size / 2)
+			var frame
+			if (mob) {
+				// It chews faster the closer it gets, and it is wide open by the time it arrives.
+				var mouth = dying
+					? POOM_FRAMES - 1
+					: Math.floor(
+						(Math.sin(poom.time * (2.5 + 6 / Math.max(1, depth)) + mob.phase) * 0.5 + 0.5) *
+							(POOM_FRAMES - 1) * Math.min(1, 2.4 / Math.max(1, depth - 0.3))
+					)
+				frame = poom_art.mobs[Math.max(0, Math.min(POOM_FRAMES - 1, mouth))]
+			} else frame = poom_art.props[thing.prop]
+			var haze = Math.min(0.72, Math.max(0, (depth - 3.5) / 13))
+			ctx.globalAlpha = dying ? Math.max(0, mob.dying) : 1
+			for (var s = 0; s < size; s++) {
+				var col2 = left + s
+				if (col2 < 0 || col2 >= POOM_W || zbuf[col2] < depth) continue
+				ctx.drawImage(frame, (s / size) * TEX, 0, TEX / size, TEX, col2, top, 1, size)
+				if (haze > 0.01) {
+					ctx.fillStyle = "rgba(198,214,226," + haze.toFixed(3) + ")"
+					ctx.fillRect(col2, top, 1, size)
+				}
+			}
+			ctx.globalAlpha = 1
+		})
+
+	poom_gun(ctx, horizon)
+
+	// Being bitten: the whole screen goes red from the edges in, the way it did.
+	if (poom.hurt > 0) {
+		var wash = ctx.createRadialGradient(POOM_W2, POOM_H / 2, POOM_H * 0.2, POOM_W2, POOM_H / 2, POOM_W * 0.72)
+		wash.addColorStop(0, "rgba(190,20,12," + (0.22 * poom.hurt).toFixed(3) + ")")
+		wash.addColorStop(1, "rgba(140,0,0," + (0.88 * poom.hurt).toFixed(3) + ")")
+		ctx.fillStyle = wash
+		ctx.fillRect(0, 0, POOM_W, POOM_H)
+	}
+	if (poom.flash > 0.55) {
+		ctx.fillStyle = "rgba(255,238,180," + (0.3 * (poom.flash - 0.55)).toFixed(3) + ")"
+		ctx.fillRect(0, 0, POOM_W, POOM_H)
+	}
+
+	if (poom.note && poom.time - poom.note_at < 2) {
+		ctx.fillStyle = "rgba(255,250,235," + Math.min(1, (2 - (poom.time - poom.note_at)) * 1.4).toFixed(2) + ")"
+		ctx.font = 'bold 11px "Courier New", monospace'
+		ctx.fillText(poom.note, 6, 15)
+	}
+	if (poom.over) {
+		ctx.fillStyle = "rgba(0,0,0,.6)"
+		ctx.fillRect(0, POOM_H / 2 - 28, POOM_W, 56)
+		ctx.fillStyle = poom.over === "clear" ? "#ffd35c" : "#ff6a5c"
+		ctx.font = 'bold 19px "Courier New", monospace'
+		ctx.textAlign = "center"
+		ctx.fillText(poom.over === "clear" ? "ROUND FINISHED" : "YOU GOT SPAMMED", POOM_W2, POOM_H / 2)
+		ctx.fillStyle = "#e8e2d4"
+		ctx.font = 'bold 11px "Courier New", monospace'
+		ctx.fillText("Enter or click: play again", POOM_W2, POOM_H / 2 + 20)
+		ctx.textAlign = "left"
+	}
+	poom_hud()
+}
+
+/**
+ * One vertical strip of one wall. The height is how much of a storey it stands: a house
+ * is the whole one, a fence a little under half, both standing on the same ground line.
+ */
+function poom_strip(ctx, art, col, dist, side, rx, ry, horizon, height) {
+	if (dist < 0.02) dist = 0.02
+	var full = POOM_H / dist
+	var foot = horizon + full / 2
+	var tall = full * height
+	// Where along the wall this column landed, which is the column of the texture to use.
+	var wall = side === 0 ? poom.y + dist * ry : poom.x + dist * rx
+	wall -= Math.floor(wall)
+	var tex_x = Math.floor(wall * TEX)
+	// Two of the four faces are seen from behind, in texture terms, and have to be flipped
+	// or every sign on this street reads back to front.
+	if ((side === 0 && rx < 0) || (side === 1 && ry > 0)) tex_x = TEX - tex_x - 1
+	// Take only the part of the texture this strip stands for — scaling the whole 64 rows
+	// into a short strip is what smears a fence into a stripe.
+	var src_y = TEX - TEX * height
+	ctx.drawImage(art, tex_x, src_y, 1, TEX - src_y, col, foot - tall, 1, tall)
+	// Distance and facing, as one wash over the strip: haze, not black — it is daylight.
+	var haze = Math.min(0.72, Math.max(0, (dist - 3.5) / 13))
+	var dark = side ? 0.14 : 0
+	if (haze > 0.01) {
+		ctx.fillStyle = "rgba(198,214,226," + haze.toFixed(3) + ")"
+		ctx.fillRect(col, foot - tall, 1, tall)
+	}
+	if (dark) {
+		ctx.fillStyle = "rgba(20,26,40,.14)"
+		ctx.fillRect(col, foot - tall, 1, tall)
+	}
+}
+
+/*
+ * The weapon. One sprite, picked by where the recoil has got to: the shot, then the pump
+ * back, then the pump coming forward, then at rest again — which is the whole animation
+ * that weapon ever had. It sways with the walk and drops with the kick.
+ */
+function poom_gun(ctx, horizon) {
+	var sway = Math.sin(poom.walk) * 5
+	var lift = Math.abs(Math.cos(poom.walk)) * 4
+	var drop = poom.kick * 26 + (poom.over === "dead" ? 130 : 0)
+	var stage = poom.kick > 0.72 ? 1 : poom.kick > 0.42 ? 2 : poom.kick > 0.12 ? 3 : 0
+	var name = poom.over === "dead" ? "gunidle" : POOM_GUN_FRAMES[stage]
+	var art = poom_art.guns[name]
+	// Nothing to draw until the sprite has actually arrived over the wire.
+	if (!art || !art.complete || !art.naturalWidth) return
+	var at = POOM_GUN_AT[name]
+	var x = Math.round(POOM_W2 - art.naturalWidth / 2 + at.x + sway)
+	var y = Math.round(POOM_H - art.naturalHeight + at.y + drop + lift - (horizon - POOM_H / 2) * 0.25)
+
+	ctx.imageSmoothingEnabled = false
+	// The flash goes off the end of the barrel, so it is drawn first and the gun over it.
+	if (poom.flash > 0.45) {
+		var flash = poom_art.guns[POOM_FLASH_FRAMES[poom.flash > 0.72 ? 0 : 1]]
+		if (flash && flash.complete && flash.naturalWidth) {
+			ctx.drawImage(
+				flash,
+				Math.round(x + POOM_MUZZLE.x - flash.naturalWidth / 2),
+				Math.round(y + POOM_MUZZLE.y - flash.naturalHeight / 2)
+			)
+		}
+	}
+	ctx.drawImage(art, x, y)
+	ctx.imageSmoothingEnabled = true
+}
+
+/*
+ * The status bar. The face is the Postboi mark, and it is the health bar you actually read:
+ * it goes nervous the moment something bites, and it gives up entirely near zero.
+ */
+function poom_hud() {
+	$("poom-health").textContent = Math.ceil(poom.health) + "%"
+	$("poom-ammo").textContent = poom.ammo
+	$("poom-spam").textContent = poom.spam.filter(function (mob) { return !mob.dead }).length
+	var mood = "ok"
+	if (poom.health <= 34) mood = "low"
+	else if (poom.hurt > 0.15) mood = "hurt"
+	$("poom-faces").className = "face-" + mood + (poom.health <= 0 ? " gone" : "") + (poom.hurt > 0.5 ? " hit" : "")
+}
+
+var POOM_KEYS = {
+	ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+	w: "up", s: "down", a: "sleft", d: "sright", q: "left", e: "right",
+}
+document.addEventListener("keydown", function (event) {
+	if (focused !== "poom" || !poom) return
+	if (event.key === "Enter" && poom.over) { event.preventDefault(); return poom_start() }
+	if (event.key === " ") { event.preventDefault(); return poom_fire() }
+	var name = POOM_KEYS[event.key]
+	if (!name) return
+	event.preventDefault()
+	poom_keys[name] = true
+})
+document.addEventListener("keyup", function (event) {
+	var name = POOM_KEYS[event.key]
+	if (name) poom_keys[name] = false
+})
+// Keys held when the window loses the focus would otherwise stay held for ever.
+window.addEventListener("blur", function () { poom_keys = {} })
+/* Click to shoot, drag to look — the mouse this thing was played with had two jobs. */
+$("poom-view").addEventListener("mousedown", function (event) {
+	if (poom && poom.over) return poom_start()
+	poom_fire()
+	var from = event.clientX
+	track(function (moved) {
+		if (!poom) return
+		poom.dir += (moved.clientX - from) * 0.006
+		from = moved.clientX
+	})
+})
+
+function poom_open() {
+	ensure_signed_on()
+	open_window("poom")
+	if (!poom) return poom_start()
+	if (!poom_frame) poom_loop()
+}
 
 /*
  * The voice. Muted state is remembered, and defaults to whatever the server was configured
@@ -1788,7 +3196,7 @@ function register(id, title, rect) {
 	place(el, rect)
 
 	el.addEventListener("mousedown", function () { focus_window(id) })
-	// The Nokia has no XP chrome — no title bar to drag, no edges to pull — so each piece
+	// The Pokia has no XP chrome — no title bar to drag, no edges to pull — so each piece
 	// is wired only where it exists. Its own drag handle is registered by the phone code.
 	var bar = el.querySelector(".title-bar")
 	if (bar) {
@@ -1899,13 +3307,21 @@ function close_window(win) {
 		render_push()
 		return
 	}
-	if (win.id === "nokia") {
+	if (win.id === "pokia") {
 		nk_open = false
 		nk_current = null
+		// A game left ticking behind a closed phone is a timer nobody can see or stop.
+		clearTimeout(snake_timer)
+		snake = null
 		nk_view = "list"
 		render_list()
-		render_nokia()
+		render_pokia()
 		return
+	}
+	if (win.id === "poom") {
+		cancelAnimationFrame(poom_frame)
+		poom_frame = null
+		poom = null
 	}
 	win.el.classList.add("closed")
 	if (focused === win.id) focused = null
@@ -2079,7 +3495,8 @@ function app_set(state) {
 			focused = null
 		}
 		el.classList.add(state)
-		if (state === "min") run_bliss()
+		// Both ways of getting to the desktop are a reveal: minimising it and closing it.
+		run_bliss()
 		paint()
 		return
 	}
@@ -2097,14 +3514,13 @@ function app_set(state) {
 }
 
 /*
- * The wallpaper's postman, once. He starts on the frame already showing — the wallpaper is
- * that frame — so there is no cut when he sets off, and he holds wherever he finishes. A
- * second minimise gets the wallpaper rather than the same gag twice.
+ * The wallpaper's postman. He starts on the frame already showing — the wallpaper is that
+ * frame — so there is no cut when he sets off, and he holds wherever he finishes. He runs
+ * again on every reveal: the desktop coming back is the gag, and a gag that fires once is
+ * one nobody who wasn't watching the first time ever sees.
  */
-var bliss_played = false
 function run_bliss() {
-	if (bliss_played || !bliss_ready) return
-	bliss_played = true
+	if (!bliss_ready) return
 	var video = $("bliss")
 	video.className = "showing"
 	video.currentTime = 0
@@ -2363,6 +3779,11 @@ $("start").style.backgroundImage = "url(" + api + "/desktop/start)"
 $("sc-app").querySelector("img").src = api + "/desktop/icon"
 $("m-app").querySelector("img").src = api + "/desktop/icon"
 $("m-face").src = api + "/desktop/avatar"
+// The three moods of the status bar, loaded up front: a face that arrives from the network
+// the first time something bites you is a face that arrives after the moment has passed.
+$("poom-faces").querySelector(".f-ok").src = api + "/desktop/avatar"
+$("poom-faces").querySelector(".f-hurt").src = api + "/desktop/nervous"
+$("poom-faces").querySelector(".f-low").src = api + "/desktop/crying"
 $("introwordmark").src = api + "/art/logo"
 var paper = new Image()
 paper.onload = function () {
@@ -2383,25 +3804,29 @@ $("bliss").addEventListener("error", function () { bliss_ready = false })
 $("bliss").src = api + "/desktop/blissy"
 
 /*
- * The desktop shortcut. Double click to launch, the way a desktop icon works — and the drag
- * has to distinguish itself from a click, or picking the icon up would open the app as well.
+ * The desktop shortcuts. Double click to launch, the way a desktop icon works — and the drag
+ * has to distinguish itself from a click, or picking an icon up would open it as well.
  */
-var shortcut = $("sc-app")
-shortcut.ondblclick = function () { launch_app() }
-shortcut.addEventListener("mousedown", function (event) {
-	event.preventDefault()
-	shortcut.className = "shortcut on"
-	var dx = event.clientX - shortcut.offsetLeft
-	var dy = event.clientY - shortcut.offsetTop
-	var box = ws_rect()
-	track(function (e) {
-		shortcut.style.left = Math.max(0, Math.min(box.w - shortcut.offsetWidth, e.clientX - dx)) + "px"
-		shortcut.style.top = Math.max(0, Math.min(box.h - shortcut.offsetHeight, e.clientY - dy)) + "px"
+var LAUNCH = { "sc-app": launch_app, "sc-poom": poom_open }
+var icons = [].slice.call(document.querySelectorAll(".shortcut"))
+icons.forEach(function (icon) {
+	icon.ondblclick = LAUNCH[icon.id]
+	icon.addEventListener("mousedown", function (event) {
+		event.preventDefault()
+		icons.forEach(function (other) { other.className = "shortcut" })
+		icon.className = "shortcut on"
+		var dx = event.clientX - icon.offsetLeft
+		var dy = event.clientY - icon.offsetTop
+		var box = ws_rect()
+		track(function (e) {
+			icon.style.left = Math.max(0, Math.min(box.w - icon.offsetWidth, e.clientX - dx)) + "px"
+			icon.style.top = Math.max(0, Math.min(box.h - icon.offsetHeight, e.clientY - dy)) + "px"
+		})
 	})
 })
 // Clicking the desktop itself drops the selection, as it does on a real one.
 $("icons").addEventListener("mousedown", function (event) {
-	if (event.target === $("icons")) shortcut.className = "shortcut"
+	if (event.target === $("icons")) icons.forEach(function (icon) { icon.className = "shortcut" })
 })
 
 apply_mute(muted)
@@ -2514,18 +3939,25 @@ register("pushwin", "Notifications", {
 	w: pu.w,
 	h: pu.h,
 })
+var pm = { w: Math.min(660, box.w - 40), h: Math.min(444, box.h - 30) }
+register("poom", "POOM.EXE", {
+	x: Math.max(0, Math.round((box.w - pm.w) / 2) - 20),
+	y: Math.max(0, Math.round((box.h - pm.h) / 2)),
+	w: pm.w,
+	h: pm.h,
+})
 /*
  * The handset leans against the right edge, fixed-size — relayout() re-centres windows
  * nobody has moved, and a phone snapping to the middle of the desk would break the
  * Winamp-ness of it, so it counts as placed from the start.
  */
-register("nokia", "Nokia \\u00B7 Messages", {
-	x: Math.max(6, box.w - 276),
-	y: Math.max(4, box.h - 552),
-	w: 246,
-	h: 536,
+register("pokia", "Pokia \\u00B7 Messages", {
+	x: Math.max(6, box.w - 284),
+	y: Math.max(4, box.h - 612),
+	w: 254,
+	h: 596,
 })
-find("nokia").placed = true
+find("pokia").placed = true
 $("msn-them").src = api + "/desktop/avatar"
 $("aol").classList.add("maxed")
 focus_window("mailbox")
@@ -2600,6 +4032,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Postboi Local</title>
+<!-- ${FREEDOOM_NOTICE} -->
 <link rel="icon" href="${FAVICON}">
 <style>${THEME_CSS}</style>
 <style>${CSS}</style>
@@ -2612,6 +4045,9 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 	<div id="icons">
 		<button class="shortcut" id="sc-app" style="left:22px;top:18px">
 			<img src="" alt=""><span>Postboi</span>
+		</button>
+		<button class="shortcut" id="sc-poom" style="left:22px;top:112px">
+			<img src="${POOM_ICON}" alt=""><span>POOM.EXE</span>
 		</button>
 	</div>
 
@@ -2877,36 +4313,69 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 	</div>
 
+	<!-- Starts closed: it is an icon on the desktop, not something the inbox opens for you. -->
+	<div id="poom" class="child window closed">
+		<div class="title-bar">
+			<div class="title-bar-text">&#128163; <span>POOM.EXE</span></div>
+			<div class="title-bar-controls">
+				<button aria-label="Minimize" data-act="min"></button>
+				<button aria-label="Maximize" data-act="max"></button>
+				<button aria-label="Close" data-act="close"></button>
+			</div>
+		</div>
+		<div id="poomstage"><canvas id="poom-view" width="320" height="176"></canvas></div>
+		<div id="poomhud">
+			<!-- Three faces, one showing: the mark, the mark worried, and the mark in tears. -->
+			<span id="poom-faces" class="face-ok">
+				<img class="f-ok" src="" alt="">
+				<img class="f-hurt" src="" alt="">
+				<img class="f-low" src="" alt="">
+			</span>
+			<span class="stat">AMMO<b id="poom-ammo">40</b></span>
+			<span class="stat">HEALTH<b id="poom-health">100%</b></span>
+			<span class="stat">SPAM<b id="poom-spam">20</b></span>
+			<span class="spacer"></span>
+			<span class="keys">Arrows / WASD move &#183; drag to look<br>Space shoots. Clear the inbox.</span>
+		</div>
+		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	</div>
+
 	<!-- The handset. Not a .window on purpose: no XP frame, no title bar — the shell is
 	     the chrome, the way a Winamp skin was. Dragged by its body, powered off from the
 	     button on its crown, and still a citizen of the taskbar like everything else. -->
-	<div id="nokia" class="child conv">
+	<div id="pokia" class="child conv">
 		<div class="nk-shell">
 			<button class="nk-power" aria-label="Power off"></button>
-			<div class="nk-ear"><i></i><i></i><i></i><i></i></div>
-			<div class="nk-brand">NOKIA</div>
-			<div class="nk-bezel"><div class="nk-lcd" id="nk-lcd"></div></div>
-			<div class="nk-navi">
-				<button class="nk-key nk-c" id="nk-c">C</button>
-				<button class="nk-key nk-mid" id="nk-mid">Select</button>
-				<span class="nk-updown">
-					<button class="nk-key up" id="nk-up" aria-label="Up">&#9650;</button>
-					<button class="nk-key dn" id="nk-dn" aria-label="Down">&#9660;</button>
-				</span>
+			<div class="nk-ear"><i></i><i></i><i></i><i></i><i></i></div>
+			<div class="nk-brand">POKIA</div>
+			<!-- The text layer and the game layer are siblings: the firmware redraws its screen
+			     by replacing the one, and Snake would be wiped out with it if it lived inside. -->
+			<div class="nk-bezel">
+				<div class="nk-lcd" id="nk-lcd">
+					<div id="nk-screen"></div>
+					<canvas id="nk-game" width="186" height="214"></canvas>
+				</div>
 			</div>
+			<div class="nk-navi">
+				<button class="nk-key nk-side up" id="nk-up" aria-label="Scroll up">&#9650;</button>
+				<button class="nk-key nk-mid" id="nk-mid" aria-label="Select"></button>
+				<button class="nk-key nk-side dn" id="nk-dn" aria-label="Scroll down">&#9660;</button>
+			</div>
+			<!-- The keypad types. Nothing here dials, but the letters printed on the keys are
+			     the same ones the 3310 had, and something on this phone still answers to them. -->
 			<div class="nk-pad">
-				<button class="nk-key">1</button>
-				<button class="nk-key">2<small>abc</small></button>
-				<button class="nk-key">3<small>def</small></button>
-				<button class="nk-key">4<small>ghi</small></button>
-				<button class="nk-key">5<small>jkl</small></button>
-				<button class="nk-key">6<small>mno</small></button>
-				<button class="nk-key">7<small>pqrs</small></button>
-				<button class="nk-key">8<small>tuv</small></button>
-				<button class="nk-key">9<small>wxyz</small></button>
-				<button class="nk-key">*</button>
-				<button class="nk-key">0</button>
-				<button class="nk-key">#</button>
+				<button class="nk-key" data-nk="1">1</button>
+				<button class="nk-key" data-nk="2">2<small>abc</small></button>
+				<button class="nk-key" data-nk="3">3<small>def</small></button>
+				<button class="nk-key" data-nk="4">4<small>ghi</small></button>
+				<button class="nk-key" data-nk="5">5<small>jkl</small></button>
+				<button class="nk-key" data-nk="6">6<small>mno</small></button>
+				<button class="nk-key" data-nk="7">7<small>pqrs</small></button>
+				<button class="nk-key" data-nk="8">8<small>tuv</small></button>
+				<button class="nk-key" data-nk="9">9<small>wxyz</small></button>
+				<button class="nk-key" data-nk="*">*</button>
+				<button class="nk-key" data-nk="0">0</button>
+				<button class="nk-key" data-nk="#">#</button>
 			</div>
 		</div>
 	</div>

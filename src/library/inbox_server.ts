@@ -5,6 +5,7 @@ import { inbox_ui, type InboxUiOptions } from "./inbox_ui.js"
 import { SOUNDS } from "./inbox_sounds.js"
 import { ART } from "./inbox_art.js"
 import { DESKTOP } from "./inbox_desktop.js"
+import { POOM_SPRITES } from "./inbox_poom.js"
 
 /**
  * The dev inbox's storage and HTTP surface. Kept apart from the transport that mounts it:
@@ -402,6 +403,13 @@ export function inbox_middleware(
 			const asset = own(DESKTOP, desktop_match[1])
 			if (!asset) return void send_json(response, 404, { error: "no such desktop asset" })
 			return void send_asset(request, response, asset.type, asset.data)
+		}
+
+		const poom_match = /^\/api\/poom\/([a-z]+)$/.exec(route)
+		if (poom_match && method === "GET") {
+			const sprite = own(POOM_SPRITES, poom_match[1])
+			if (!sprite) return void send_json(response, 404, { error: "no such sprite" })
+			return void send_asset(request, response, "image/png", sprite.data)
 		}
 
 		const sound_match = /^\/api\/sounds\/([a-z]+)$/.exec(route)

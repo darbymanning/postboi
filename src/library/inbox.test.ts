@@ -3,6 +3,8 @@ import { createServer, type Server } from "node:http"
 import { create_inbox_store, inbox_middleware, best_rendition } from "./inbox_server.js"
 import { resolve_inbox, set_inbox_port, INBOX_PATH } from "./inbox.js"
 import { inbox_ui } from "./inbox_ui.js"
+import { DESKTOP } from "./inbox_desktop.js"
+import { POOM_SPRITES } from "./inbox_poom.js"
 import { inbox_sink } from "./channel_inbox.js"
 import Mock from "./mock.js"
 import MockSms from "./sms/mock.js"
@@ -125,10 +127,10 @@ describe("inbox middleware", () => {
 		// The mailbox closes too, and the Start menu is how it comes back.
 		expect(html).toContain('id="m-mailbox"')
 		// Resize handles on the mailbox, the reader, the messenger, the three channel app
-		// windows (WhatsApp, chat, notifications) and the app frame itself — the reading
-		// pane is only ever big enough because you can make it bigger. The Nokia has none:
-		// a handset is not resizable, which is rather the point of it.
-		expect(html.match(/class="grip"/g)).toHaveLength(7)
+		// windows (WhatsApp, chat, notifications), POOM.EXE and the app frame itself — the
+		// reading pane is only ever big enough because you can make it bigger. The Pokia has
+		// none: a handset is not resizable, which is rather the point of it.
+		expect(html.match(/class="grip"/g)).toHaveLength(8)
 	})
 
 	it("is branded Postboi, not the client it's dressed as", async () => {
@@ -576,17 +578,50 @@ describe("channel captures", () => {
 		expect(html).toContain("Conversation")
 	})
 
-	it("ships a window per channel — and the Nokia without an XP frame", () => {
+	it("ships a window per channel — and the handset without an XP frame", () => {
 		const html = inbox_ui()
-		for (const id of ["wawin", "platwin", "pushwin", "nokia", "nk-lcd", "wachat", "pushbody"]) {
+		for (const id of ["wawin", "platwin", "pushwin", "pokia", "nk-lcd", "wachat", "pushbody"]) {
 			expect(html).toContain(`id="${id}"`)
 		}
 		// The handset is a child of the desktop but never a .window: no title bar, no
 		// frame — the shell is the chrome, the way a Winamp skin was.
-		expect(html).toContain('id="nokia" class="child conv"')
+		expect(html).toContain('id="pokia" class="child conv"')
+		// And it is a Pokia, not the brand it is plainly doing an impression of.
+		expect(html).not.toContain("NOKIA")
 		// The four chat wardrobes the platform picker can dress the window in.
 		for (const plat of ["plat-slack", "plat-discord", "plat-teams", "plat-telegram"]) {
 			expect(html).toContain(plat)
+		}
+	})
+
+	it("chips each row with the platform it went out on, in its own column", () => {
+		const html = inbox_ui()
+		// The label comes off the platform, not the channel: a Slack capture says Slack.
+		for (const tag of ["Slack", "Discord", "Teams", "Telegram", "Bluesky"]) {
+			expect(html).toContain(`tag: "${tag}"`)
+		}
+		// Its own cell, so the chips line up down the list instead of trailing the subject.
+		expect(html).toContain('<td class="chanco">')
+		expect(html).toContain("td.chanco {")
+	})
+
+	it("ships the two things on the desktop that aren't mail", () => {
+		const html = inbox_ui()
+		// Snake, on the handset's screen, over the same LCD the texts are drawn on.
+		expect(html).toContain('id="nk-game"')
+		expect(html).toContain('id="nk-screen"')
+		// The weapon sprites are Freedoom's, so the notice they are licensed on has to go
+		// out with them — in the page itself, not only in a file beside it.
+		expect(html).toContain("Freedoom project")
+		expect(Object.keys(POOM_SPRITES)).toContain("gunfire")
+		// POOM.EXE, and the face that takes the hits in its status bar.
+		expect(html).toContain('id="poom"')
+		expect(html).toContain('id="poom-view"')
+		expect(html).toContain('id="poom-faces"')
+		expect(html).toContain('id="sc-poom"')
+		// All three moods ship, or the face can't change when something bites you.
+		for (const mood of ["avatar", "nervous", "crying"]) {
+			expect(DESKTOP[mood]).toBeDefined()
 		}
 	})
 
