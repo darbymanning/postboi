@@ -4,11 +4,21 @@
  * node_modules — no project file, nothing to commit:
  *
  * - the `.d.ts` gains a `Register` augmentation narrowing `from` to the account's addresses
- * - the `.js` gains the account's publishable captcha key, so `<Captcha />` needs no props
+ *   and `template` to your approved WhatsApp templates
+ * - the `.js` gains the account's publishable captcha key, so `<Captcha />` needs no props,
+ *   and Twilio's template name→Content SID map
  *
  * Untouched (or after a reinstall), `Register` stays empty, `from` falls back to any
- * `Email`, and `captcha_key` is undefined — builds never depend on the generated files.
+ * `Email`, `template` to any string, and the runtime values are empty — builds never
+ * depend on the generated files.
  */
 
 /** The account's publishable managed-captcha key (`pk_…`), baked by `bunx postboi sync`. */
 export const captcha_key: string | undefined = undefined
+
+/**
+ * Twilio Content templates by friendly name, baked by `bunx postboi sync`. Twilio sends a
+ * `ContentSid`, so this is what lets a `template: "order_shipped"` mean the same thing on
+ * Twilio as it does on Meta.
+ */
+export const whatsapp_templates: Record<string, string> = {}

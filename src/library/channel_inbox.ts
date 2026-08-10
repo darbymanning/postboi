@@ -51,6 +51,10 @@ const NORMALISERS = {
 		const meta: Array<[string, string]> = []
 		if (wa.template) meta.push(["Language", wa.language])
 		if (wa.variables) meta.push(["Variables", JSON.stringify(wa.variables)])
+		// Header and button values go in their own components, so a send that fills them
+		// and an inbox that only shows the body look identical when one of them is wrong.
+		if (wa.header) meta.push(["Header", JSON.stringify(wa.header)])
+		if (wa.buttons) meta.push(["Buttons", JSON.stringify(wa.buttons)])
 		return {
 			channel: "whatsapp",
 			to: [{ address: wa.to }],

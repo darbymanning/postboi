@@ -60,6 +60,8 @@ import { credential_env_keys } from "../library/registry.js"
 import {
 	render_types,
 	render_runtime,
+	parse_from,
+	parse_runtime,
 	config_captcha_key,
 	upsert_captcha_key,
 	from_status,
@@ -624,12 +626,60 @@ describe("cloud domains & generated from types", () => {
 		expect(source).toContain("export declare const captcha_key: string | undefined")
 	})
 
-	it("render_types returns null when the account has nothing to send from", () => {
+	it("render_types returns null when there is nothing to narrow", () => {
 		expect(render_types(undefined, [])).toBeNull()
 	})
 
-	it("render_runtime bakes the key", () => {
+	it("render_types narrows template to the approved names, with or without a from union", () => {
+		const both = render_types("joe@send.postboi.email", domains, ["order_shipped"])!
+		expect(both).toContain("from:")
+		expect(both).toContain("template:")
+		expect(both).toContain('| "order_shipped"')
+		// a bring-your-own-provider project has no addresses to type but still has templates
+		const templates_only = render_types(undefined, [], ["re_engage"])!
+		expect(templates_only).toContain('| "re_engage"')
+		expect(templates_only).not.toContain("from:")
+	})
+
+	it("render_types maps each template to its own variables, omitting the ones it can't read", () => {
+		const source = render_types(undefined, [], ["order_shipped", "ping"], {
+			order_shipped: ["name", "tracking"],
+			ping: [],
+		})!
+		expect(source).toContain('"order_shipped": "name" | "tracking"')
+		// a template whose placeholders came back empty is left unnarrowed on purpose —
+		// typing it as "takes nothing" would reject a valid send
+		expect(source).not.toContain('"ping":')
+		// no variables read at all: the member is dropped rather than emitted empty
+		expect(render_types(undefined, [], ["ping"])!).not.toContain("template_variables")
+	})
+
+	it("render_runtime bakes the key and the template SIDs", () => {
 		expect(render_runtime("pk_123")).toContain('export const captcha_key = "pk_123"')
+		const source = render_runtime(undefined, { order_shipped: "HX1" })
+		expect(source).toContain('export const whatsapp_templates = {"order_shipped":"HX1"}')
+	})
+
+	it("round-trips its own output, so a partial run keeps what it can't recompute", () => {
+		// These parsers read back what the renderers wrote — if the emitted shape ever drifts,
+		// a sync that resolved only templates would silently drop the `from` union and the
+		// baked Twilio SIDs instead of carrying them forward.
+		const types = render_types("joe@send.postboi.email", domains, ["order_shipped"])!
+		const kept = parse_from(types)
+		expect(kept).toContain('"joe@send.postboi.email"')
+		expect(kept).toContain("`${string}@example.com`")
+
+		// a templates-only run re-emits the preserved union verbatim
+		const next = render_types(undefined, [], ["re_engage"], {}, kept)!
+		expect(parse_from(next)).toEqual(kept)
+
+		const runtime = render_runtime("pk_123", { order_shipped: "HX1" })
+		expect(parse_runtime(runtime)).toEqual({
+			captcha_key: "pk_123",
+			sids: { order_shipped: "HX1" },
+		})
+		// the shipped placeholder parses as "nothing baked yet", not as garbage
+		expect(parse_runtime(render_runtime(undefined))).toEqual({ captcha_key: undefined, sids: {} })
 	})
 
 	it("config_captcha_key reads the committed key", () => {

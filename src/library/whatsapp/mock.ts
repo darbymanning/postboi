@@ -1,6 +1,7 @@
 import {
 	WhatsappProvider,
 	type PreparedWhatsapp,
+	type TemplateValues,
 	type WhatsappProviderOptions,
 } from "./provider.js"
 import type { RequestSpec } from "../transport.js"
@@ -14,6 +15,8 @@ export interface SentWhatsapp {
 	message?: string
 	template?: string
 	variables?: Record<string, string>
+	header?: TemplateValues
+	buttons?: Array<TemplateValues>
 	language: string
 }
 
@@ -89,6 +92,8 @@ export default class MockWhatsapp extends WhatsappProvider<SendResponse> {
 			message: message.message,
 			template: message.template,
 			variables: message.variables,
+			header: message.header,
+			buttons: message.buttons,
 			language: message.language,
 		})
 	}

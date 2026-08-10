@@ -207,6 +207,87 @@ describe("meta cloud api", () => {
 		])
 	})
 
+	it("carries header and button variables as their own components", async () => {
+		const fetch = vi.fn().mockResolvedValue(respond({ body: { messages: [{ id: "wamid.A" }] } }))
+		vi.stubGlobal("fetch", fetch)
+		await new Meta(CREDS).send({
+			to: "+447788223344",
+			template: "order_shipped",
+			// A header and a URL button hold one value each, so they take it bare.
+			header: "#1234",
+			variables: { name: "Ada" },
+			buttons: ["orders/1234", "returns/1234"],
+		})
+
+		// Header first, then body, then one component per button at its own index — a
+		// body-only payload would have Meta reject the send for the missing parameters.
+		expect(JSON.parse(fetch.mock.calls[0][1].body as string).template.components).toEqual([
+			{ type: "header", parameters: [{ type: "text", text: "#1234" }] },
+			{ type: "body", parameters: [{ type: "text", parameter_name: "name", text: "Ada" }] },
+			{
+				type: "button",
+				sub_type: "url",
+				index: "0",
+				parameters: [{ type: "text", text: "orders/1234" }],
+			},
+			{
+				type: "button",
+				sub_type: "url",
+				index: "1",
+				parameters: [{ type: "text", text: "returns/1234" }],
+			},
+		])
+	})
+
+	it("omits components entirely for a template with no variables at all", async () => {
+		const fetch = vi.fn().mockResolvedValue(respond({ body: { messages: [{ id: "wamid.A" }] } }))
+		vi.stubGlobal("fetch", fetch)
+		await new Meta(CREDS).send({ to: "+447788223344", template: "ping" })
+
+		const payload = JSON.parse(fetch.mock.calls[0][1].body as string)
+		expect(payload.template.components).toBeUndefined()
+	})
+
+	it("names a header or button variable when the template was approved with named ones", async () => {
+		const fetch = vi.fn().mockResolvedValue(respond({ body: { messages: [{ id: "wamid.A" }] } }))
+		vi.stubGlobal("fetch", fetch)
+		// A named template's header placeholder has its own name, independent of the body's,
+		// and Meta rejects the send with #132000 if it arrives without one.
+		await new Meta(CREDS).send({
+			to: "+447788223344",
+			template: "order_shipped",
+			header: { membershiptype: "Gold" },
+			variables: { name: "Ada" },
+			buttons: [{ promo: "summer_2025" }],
+		})
+
+		const parts = JSON.parse(fetch.mock.calls[0][1].body as string).template.components
+		expect(parts[0].parameters).toEqual([
+			{ type: "text", parameter_name: "membershiptype", text: "Gold" },
+		])
+		expect(parts[2].parameters).toEqual([
+			{ type: "text", parameter_name: "promo", text: "summer_2025" },
+		])
+	})
+
+	it("treats an empty value as no values, not as a parameterless component", async () => {
+		const fetch = vi.fn().mockResolvedValue(respond({ body: { messages: [{ id: "wamid.A" }] } }))
+		vi.stubGlobal("fetch", fetch)
+		// Natural when the values are built from data that turned out empty — Meta counts a
+		// `parameters: []` component against the template's declared parameters and rejects it.
+		await new Meta(CREDS).send({
+			to: "+447788223344",
+			template: "order_shipped",
+			header: "",
+			variables: { name: "Ada" },
+			buttons: [{}],
+		})
+
+		expect(JSON.parse(fetch.mock.calls[0][1].body as string).template.components).toEqual([
+			{ type: "body", parameters: [{ type: "text", parameter_name: "name", text: "Ada" }] },
+		])
+	})
+
 	it("normalises error 131047 to outside_window", async () => {
 		vi.stubGlobal(
 			"fetch",
