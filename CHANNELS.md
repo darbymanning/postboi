@@ -72,12 +72,12 @@ await send({
 })
 ```
 
-Client-side, for Web Push subscription — matching the existing `Captcha` adapter pattern:
+Client-side, for Web Push subscription — framework-agnostic, so there is no adapter to pick:
 
 ```ts
-import { subscribe_push } from "postboi/react" // and /svelte, /vue, /astro
+import { subscribe } from "postboi/push" // one import, every framework
 
-const subscription = await subscribe_push({ key: VAPID_PUBLIC_KEY })
+const subscription = await subscribe({ key: VAPID_PUBLIC_KEY })
 await fetch("/api/register-push", { method: "POST", body: JSON.stringify(subscription) })
 ```
 

@@ -178,7 +178,7 @@
 			"types": "./dist/push/mock.d.ts",
 			"default": "./dist/push/mock.js"
 		},
-		"./push-client": {
+		"./push": {
 			"types": "./dist/push/client.d.ts",
 			"default": "./dist/push/client.js"
 		},

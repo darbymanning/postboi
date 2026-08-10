@@ -7,20 +7,19 @@
  * `userVisibleOnly` is mandatory in Chrome, and permission has to be requested from a user
  * gesture or it's auto-denied).
  *
- * Framework-agnostic and safe to import anywhere — it touches no browser API until called.
- * Import from `postboi/push-client` directly (Svelte and everything else), or via the
- * `postboi/react` / `postboi/vue` adapters which re-export it.
+ * Framework-agnostic and safe to import anywhere — `postboi/push` is the same import in
+ * Svelte, React, Vue or no framework at all, and it touches no browser API until called.
  */
 import { from_base64url } from "./crypto.js"
 
-/** What `subscribe_push` hands back — post this to your server and store it. */
+/** What `subscribe` hands back — post this to your server and store it. */
 export interface PushSubscriptionJSON {
 	endpoint: string
 	keys: { p256dh: string; auth: string }
 	expirationTime?: number | null
 }
 
-/** Options for {@link subscribe_push}. */
+/** Options for {@link subscribe}. */
 export interface SubscribeOptions {
 	/** Your VAPID **public** key, base64url. Must match the private key the server signs with. */
 	key: string
@@ -56,8 +55,8 @@ export function vapid_key_to_bytes(key: string): Uint8Array {
 	return from_base64url(key)
 }
 
-/** Is Web Push available in this browser at all? */
-export function push_supported(): boolean {
+/** Is Web Push available in this browser at all? Reached as `subscribe.supported()`. */
+function supported(): boolean {
 	return (
 		typeof window !== "undefined" &&
 		"serviceWorker" in navigator &&
@@ -66,9 +65,19 @@ export function push_supported(): boolean {
 	)
 }
 
-/** The current notification permission, without prompting. */
-export function push_permission(): NotificationPermission | "unsupported" {
-	return push_supported() ? Notification.permission : "unsupported"
+/** The current notification permission, without prompting. Reached as `subscribe.permission()`. */
+function permission(): NotificationPermission | "unsupported" {
+	return supported() ? Notification.permission : "unsupported"
+}
+
+/**
+ * Why a subscribe failed, or null if the error didn't come from here. Reached as
+ * `subscribe.reason(error)` — the same shape as `push.expired(error)`, spread over the
+ * several walls this call can hit rather than the one. The return is a union, so a
+ * mistyped comparison is a type error instead of a branch that never runs.
+ */
+function reason(error: unknown): PushSubscribeError["reason"] | null {
+	return error instanceof PushSubscribeError ? error.reason : null
 }
 
 /** Does an existing subscription's server key match the one we're subscribing with? */
@@ -105,12 +114,16 @@ function to_json(subscription: PushSubscription): PushSubscriptionJSON {
  * **Call it from a click or similar.** Browsers auto-deny a permission prompt that isn't
  * tied to a user gesture, and once denied you cannot ask again.
  *
+ * `subscribe.supported()` and `subscribe.permission()` answer the two questions a UI asks
+ * before offering the button, neither of which prompts. `subscribe.reason(error)` answers
+ * the one it asks afterwards.
+ *
  * @example
  * ```ts
- * import { subscribe_push } from "postboi/react"
+ * import { subscribe } from "postboi/push"
  *
  * async function enable() {
- * 	const subscription = await subscribe_push({ key: VAPID_PUBLIC_KEY })
+ * 	const subscription = await subscribe({ key: VAPID_PUBLIC_KEY })
  * 	await fetch("/api/push/register", {
  * 		method: "POST",
  * 		headers: { "Content-Type": "application/json" },
@@ -119,8 +132,8 @@ function to_json(subscription: PushSubscription): PushSubscriptionJSON {
  * }
  * ```
  */
-export async function subscribe_push(options: SubscribeOptions): Promise<PushSubscriptionJSON> {
-	if (!push_supported()) {
+async function subscribe_now(options: SubscribeOptions): Promise<PushSubscriptionJSON> {
+	if (!supported()) {
 		throw new PushSubscribeError("unsupported", "This browser does not support Web Push.")
 	}
 
@@ -185,12 +198,14 @@ export async function subscribe_push(options: SubscribeOptions): Promise<PushSub
 	}
 }
 
+export const subscribe = Object.assign(subscribe_now, { supported, permission, reason })
+
 /**
  * Unsubscribe this browser, returning the subscription that was removed so you can delete
  * your stored copy. Returns null when there was nothing subscribed.
  */
-export async function unsubscribe_push(): Promise<PushSubscriptionJSON | null> {
-	if (!push_supported()) return null
+export async function unsubscribe(): Promise<PushSubscriptionJSON | null> {
+	if (!supported()) return null
 	const registration = await navigator.serviceWorker.getRegistration()
 	const subscription = await registration?.pushManager.getSubscription()
 	if (!subscription) return null

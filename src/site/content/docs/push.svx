@@ -48,10 +48,10 @@ misbehaving traffic. `mailto:` or an https URL.
 ## Subscribing, in the browser
 
 ```typescript
-import { subscribe_push } from "postboi/react" // also /vue, or postboi/push-client
+import { subscribe } from "postboi/push"
 
 async function enable() {
-	const subscription = await subscribe_push({ key: VAPID_PUBLIC_KEY })
+	const subscription = await subscribe({ key: VAPID_PUBLIC_KEY })
 	await fetch("/api/push/register", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
@@ -59,6 +59,9 @@ async function enable() {
 	})
 }
 ```
+
+One import for every framework: `postboi/push` is plain DOM, so Svelte, React, Vue and no
+framework at all get the same line.
 
 **Call it from a click.** Browsers auto-deny a permission prompt that isn't tied to a user
 gesture, and once denied **you cannot ask again** — the user has to change it in site
@@ -68,20 +71,39 @@ The helper requests permission if needed, registers your service worker (`/sw.js
 default), waits for it to be *active* rather than merely registered, and reuses an existing
 subscription — so calling it on every page load is safe.
 
-Failures carry a `reason` you can branch on:
+Two questions a UI wants answered before it offers the button, neither of which prompts:
+`subscribe.supported()` and `subscribe.permission()` (`"granted"`, `"denied"`, `"default"`
+or `"unsupported"`). `unsubscribe()` removes the subscription and hands back the copy you
+stored, so you know which row to delete.
+
+`subscribe.reason(error)` says which wall was hit, the way `push.expired(error)` does on the
+server — null for anything that didn't come from the subscribe call, so it's safe on a bare
+`catch`:
 
 ```typescript
-import { PushSubscribeError } from "postboi/push-client"
+import { subscribe } from "postboi/push"
 
 try {
-	await subscribe_push({ key })
+	await subscribe({ key })
 } catch (error) {
-	if (error instanceof PushSubscribeError) {
-		if (error.reason === "permission_denied") show_settings_hint()
-		if (error.reason === "unsupported") hide_the_button()
+	switch (subscribe.reason(error)) {
+		case "permission_denied": show_settings_hint(); break
+		case "unsupported": hide_the_button(); break
+		default: throw error
 	}
 }
 ```
+
+| Reason | What happened |
+| --- | --- |
+| `permission_denied` | The user said no. The browser will not ask again. |
+| `permission_dismissed` | The prompt was closed without an answer. You can ask again later. |
+| `unsupported` | No Web Push in this browser. `subscribe.supported()` tells you first. |
+| `no_service_worker` | Your worker file didn't register — wrong path, or a 404. |
+| `failed` | The push service refused the subscription. |
+
+The reasons are a typed union, so a mistyped `case` is a compile error rather than a branch
+that never runs. `PushSubscribeError` is exported too if you prefer `instanceof`.
 
 ## Your service worker
 
