@@ -234,9 +234,29 @@ APNS_TOPIC=com.example.app
 `APNS_TOPIC` is your app's bundle ID. The key is the `.p8` you download **once** — Apple
 won't show it again — from Certificates, Identifiers & Profiles → Keys.
 
-A `.env` value is a single line, so the key's newlines go in as `\n` inside double quotes,
-exactly as an FCM service-account key does. `bunx postboi init --push` writes it that way
-for you.
+**Or don't type any of it.** `bunx postboi init --push` looks for the `AuthKey_*.p8` you
+just downloaded — in the current directory and in `~/Downloads` — and offers it. Pick one
+and it fills the key *and* `APNS_KEY_ID`, because Apple puts the key ID in the filename.
+It writes the PEM's newlines as `\n` inside double quotes too, since a `.env` value is a
+single line.
+
+Then it checks the credentials against APNs before writing anything, by sending to a
+device token that can't exist. Apple validates the key, team and topic before it looks at
+the device, so a rejected *token* means everything else was accepted — and if something is
+wrong, you're told which thing:
+
+```
+✓ read the key, and took APNS_KEY_ID from its filename
+
+Checking the credentials with APNs…
+! APNs rejected the topic — is com.example.app really the app's bundle ID?
+  Save them anyway? (y/N)
+```
+
+There is no OAuth to offer here and there won't be: Apple has no API that creates an APNs
+key, the App Store Connect API's own credential is another `.p8` you download by hand, and
+its terms forbid using it to provide services to third parties. Finding the file and
+checking what you typed is the ceiling.
 
 Set `APNS_ENVIRONMENT=sandbox` while you're testing against a development build. A token
 from a debug build is only valid against the sandbox and a TestFlight or App Store token is

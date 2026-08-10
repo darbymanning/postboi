@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { Readable, Writable } from "node:stream"
 import {
 	existsSync,
@@ -7,6 +7,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	readlinkSync,
+	utimesSync,
 	writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -67,6 +68,12 @@ import {
 	from_status,
 } from "./typegen.js"
 import { bundled_skill, offer_skill, refresh_skill } from "./skill.js"
+import { find_auth_keys, offer_auth_key, verify_apns } from "./apns.js"
+
+// verify_apns drives the real APNs provider, whose transport is HTTP/2 rather than
+// fetch — so this is the seam to stub, exactly as `fetch` is everywhere else.
+const http2_fetch = vi.hoisted(() => vi.fn())
+vi.mock("../library/push/http2.js", () => ({ http2_fetch, close_http2_sessions: () => {} }))
 
 describe("provider registry", () => {
 	it("lists the configurable providers with complete metadata", () => {
@@ -1096,5 +1103,97 @@ describe("poll_connect terminal statuses", () => {
 		)
 		expect(result?.webhook_url).toBe("https://hooks.slack.com/x")
 		expect(calls).toBe(2)
+	})
+})
+
+describe("apns init helpers", () => {
+	const P8 =
+		"-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgSlMr9cyykHQqjsba\nRE/NSK6k0equ5zgboyWxvPczWSmhRANCAAQwNJfPKRALk/I14IAp/WFlk+Mo1Mcr\nMSHpnAMiRM5wHhc4z+R9vOF0RaLBDpYdMV2HciCfJZBuJovIvGxngLHp\n-----END PRIVATE KEY-----\n"
+	const CREDS = {
+		key_id: "ABC1234567",
+		team_id: "TEAM123456",
+		topic: "com.example.app",
+		private_key: P8,
+	}
+	const apns_error = (status: number, reason: string) =>
+		({
+			ok: false,
+			status,
+			url: "",
+			headers: new Headers(),
+			text: async () => JSON.stringify({ reason }),
+		}) as unknown as Response
+
+	it("finds a downloaded key and reads its ID out of the filename", () => {
+		const dir = mkdtempSync(join(tmpdir(), "postboi-apns-"))
+		writeFileSync(join(dir, "AuthKey_ABC1234567.p8"), P8)
+		writeFileSync(join(dir, "notes.txt"), "not a key")
+		// A certificate is a different credential entirely — it must not be offered as one.
+		writeFileSync(join(dir, "aps.cer"), "")
+
+		expect(find_auth_keys([dir])).toEqual([
+			{ path: join(dir, "AuthKey_ABC1234567.p8"), key_id: "ABC1234567" },
+		])
+		expect(find_auth_keys([join(dir, "nope")])).toEqual([])
+	})
+
+	it("offers the newest key first, since that's the one just downloaded", () => {
+		const dir = mkdtempSync(join(tmpdir(), "postboi-apns-"))
+		writeFileSync(join(dir, "AuthKey_OLD0000000.p8"), P8)
+		utimesSync(join(dir, "AuthKey_OLD0000000.p8"), new Date(1e12), new Date(1e12))
+		writeFileSync(join(dir, "AuthKey_NEW1111111.p8"), P8)
+
+		expect(find_auth_keys([dir]).map((k) => k.key_id)).toEqual(["NEW1111111", "OLD0000000"])
+	})
+
+	it("fills both the key and its ID when one is picked", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "postboi-apns-"))
+		writeFileSync(join(dir, "AuthKey_ABC1234567.p8"), P8)
+		const prefilled: Record<string, string> = {}
+		// select() takes the first option — the found key.
+		await offer_auth_key({ select: async (_m, options) => options[0].value }, prefilled, [dir])
+
+		expect(prefilled.APNS_KEY_ID).toBe("ABC1234567")
+		expect(prefilled.APNS_PRIVATE_KEY).toBe(P8)
+	})
+
+	it("leaves the prompts alone when the key is declined", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "postboi-apns-"))
+		writeFileSync(join(dir, "AuthKey_ABC1234567.p8"), P8)
+		const prefilled: Record<string, string> = {}
+		// The last option is always "Paste the key instead".
+		await offer_auth_key(
+			{ select: async (_m, options) => options[options.length - 1].value },
+			prefilled,
+			[dir]
+		)
+		expect(prefilled).toEqual({})
+	})
+
+	it("reads BadDeviceToken as credentials accepted — the token was ours to invent", async () => {
+		http2_fetch.mockResolvedValue(apns_error(400, "BadDeviceToken"))
+		// APNs checks the provider token and topic before the device, so getting as far as
+		// a rejected *device* means everything else was right. Inverting this would tell
+		// people their working credentials are broken.
+		expect(await verify_apns(CREDS)).toBeUndefined()
+	})
+
+	it("names the wrong thing for each way the credentials can be wrong", async () => {
+		http2_fetch.mockResolvedValue(apns_error(403, "InvalidProviderToken"))
+		expect(await verify_apns(CREDS)).toMatch(/key ID and team ID/)
+
+		http2_fetch.mockResolvedValue(apns_error(400, "DeviceTokenNotForTopic"))
+		expect(await verify_apns(CREDS)).toMatch(/bundle ID/)
+
+		// A distinct key ID, because provider tokens are cached by it — reusing ABC1234567
+		// would hand back the JWT signed earlier and never look at this key at all.
+		expect(await verify_apns({ ...CREDS, key_id: "BADKEY0000", private_key: "not a key" })).toMatch(
+			/readable \.p8/
+		)
+	})
+
+	it("does not condemn the credentials when it simply couldn't reach Apple", async () => {
+		http2_fetch.mockRejectedValue(new Error("getaddrinfo ENOTFOUND"))
+		expect(await verify_apns(CREDS)).toMatch(/couldn't reach APNs/)
 	})
 })
