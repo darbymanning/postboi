@@ -54,9 +54,7 @@ currently-published version as an archived snapshot **before** you edit docs for
      {
      	"version": "PREV",
      	"slug": "vPREV",
-     	"nav": [
-     		/* … */
-     	]
+     	"nav": [/* … */]
      }
      ```
      For `nav`, copy the current sidebar structure from
