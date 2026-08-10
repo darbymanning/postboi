@@ -4,7 +4,8 @@ import Slack from "./slack.js"
 import Discord from "./discord.js"
 import Teams from "./teams.js"
 import Telegram from "./telegram.js"
-import { chat, platform_for_webhook, slack, discord, telegram } from "./send.js"
+import Bluesky from "./bluesky.js"
+import { chat, platform_for_webhook, slack, discord, telegram, bluesky } from "./send.js"
 import { configure, reset_config } from "../config.js"
 import type { Channel, PostboiError } from "../errors.js"
 
@@ -28,6 +29,8 @@ beforeEach(() => {
 afterEach(() => {
 	reset_config()
 	delete process.env.SLACK_WEBHOOK_URL
+	delete process.env.BLUESKY_HANDLE
+	delete process.env.BLUESKY_APP_PASSWORD
 })
 
 describe("prepare", () => {
@@ -168,6 +171,100 @@ describe("telegram", () => {
 	})
 })
 
+describe("bluesky", () => {
+	const session = { did: "did:plc:abc", accessJwt: "jwt-1" }
+	const created = { uri: "at://did:plc:abc/app.bsky.feed.post/xyz", cid: "bafy" }
+
+	/** Answer createSession once, then createRecord for every later call. */
+	const bsky_fetch = (record: unknown = created) =>
+		vi
+			.fn()
+			.mockResolvedValueOnce(respond({ body: session }))
+			.mockResolvedValue(respond({ body: record }))
+
+	it("logs in once, then posts to its own repo", async () => {
+		const fetch = bsky_fetch()
+		vi.stubGlobal("fetch", fetch)
+		const sky = new Bluesky({ identifier: "me.bsky.social", app_password: "pw" })
+
+		expect(await sky.send({ message: "hi" })).toEqual(created)
+		await sky.send({ message: "again" })
+
+		expect(fetch.mock.calls[0][0]).toBe("https://bsky.social/xrpc/com.atproto.server.createSession")
+		expect(fetch.mock.calls[1][0]).toBe("https://bsky.social/xrpc/com.atproto.repo.createRecord")
+		// The session is cached: three calls, not four.
+		expect(fetch.mock.calls).toHaveLength(3)
+		expect(fetch.mock.calls[1][1].headers.Authorization).toBe("Bearer jwt-1")
+		expect(JSON.parse(fetch.mock.calls[1][1].body as string)).toMatchObject({
+			repo: "did:plc:abc",
+			collection: "app.bsky.feed.post",
+			record: { text: "hi" },
+		})
+	})
+
+	it("puts a title on its own line, and links URLs by byte offset", async () => {
+		const fetch = bsky_fetch()
+		vi.stubGlobal("fetch", fetch)
+		await new Bluesky({ identifier: "me", app_password: "pw" }).send({
+			title: "Déployé",
+			message: "see https://postboi.email.",
+		})
+
+		const record = JSON.parse(fetch.mock.calls[1][1].body as string).record
+		expect(record.text).toBe("Déployé\n\nsee https://postboi.email.")
+		// "Déployé\n\nsee " is 13 characters but 15 bytes — each é is two.
+		expect(record.facets[0].index).toEqual({ byteStart: 15, byteEnd: 36 })
+		// The full stop is sentence, not URL.
+		expect(record.facets[0].features[0].uri).toBe("https://postboi.email")
+	})
+
+	it("rejects a post over 300 graphemes before the server does", async () => {
+		vi.stubGlobal("fetch", bsky_fetch())
+		await expect(
+			new Bluesky({ identifier: "me", app_password: "pw" }).send({ message: "a".repeat(301) })
+		).rejects.toMatchObject({ code: "too_long", channel: "chat" as Channel })
+	})
+
+	it("re-authenticates once when the cached session has expired", async () => {
+		const fetch = vi
+			.fn()
+			.mockResolvedValueOnce(respond({ body: session }))
+			.mockResolvedValueOnce(
+				respond({
+					ok: false,
+					status: 400,
+					body: { error: "ExpiredToken", message: "Token expired" },
+				})
+			)
+			.mockResolvedValueOnce(respond({ body: { ...session, accessJwt: "jwt-2" } }))
+			.mockResolvedValue(respond({ body: created }))
+		vi.stubGlobal("fetch", fetch)
+
+		expect(
+			await new Bluesky({ identifier: "me", app_password: "pw" }).send({ message: "hi" })
+		).toEqual(created)
+		expect(fetch.mock.calls[3][1].headers.Authorization).toBe("Bearer jwt-2")
+	})
+
+	it("does not cache a failed login", async () => {
+		const fetch = vi
+			.fn()
+			.mockResolvedValueOnce(
+				respond({ ok: false, status: 401, body: { error: "AuthenticationRequired" } })
+			)
+			.mockResolvedValueOnce(respond({ body: session }))
+			.mockResolvedValue(respond({ body: created }))
+		vi.stubGlobal("fetch", fetch)
+		const sky = new Bluesky({ identifier: "me", app_password: "pw" })
+
+		await expect(sky.send({ message: "hi" })).rejects.toMatchObject({
+			provider: "bluesky",
+			code: "AuthenticationRequired",
+		})
+		expect(await sky.send({ message: "hi" })).toEqual(created)
+	})
+})
+
 describe("zero-config chat()", () => {
 	it("resolves the configured provider and posts", async () => {
 		process.env.SLACK_WEBHOOK_URL = HOOK
@@ -234,6 +331,20 @@ describe("per-platform functions", () => {
 		await telegram({ to: "987654321", message: "Deploy finished" })
 		expect(fetch.mock.calls[0][0]).toContain("api.telegram.org/bot123:ABC")
 		expect(JSON.parse(fetch.mock.calls[0][1].body as string).chat_id).toBe("987654321")
+	})
+
+	it("bluesky() reads the handle and app password from env", async () => {
+		process.env.BLUESKY_HANDLE = "me.bsky.social"
+		process.env.BLUESKY_APP_PASSWORD = "pw"
+		const fetch = vi
+			.fn()
+			.mockResolvedValueOnce(respond({ body: { did: "did:plc:abc", accessJwt: "jwt" } }))
+			.mockResolvedValue(respond({ body: { uri: "at://x", cid: "y" } }))
+		vi.stubGlobal("fetch", fetch)
+
+		await bluesky({ message: "Deploy finished" })
+		expect(fetch.mock.calls[1][0]).toBe("https://bsky.social/xrpc/com.atproto.repo.createRecord")
+		expect(JSON.parse(fetch.mock.calls[1][1].body as string).record.text).toBe("Deploy finished")
 	})
 
 	it("names the missing env var outside development", async () => {

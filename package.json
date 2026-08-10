@@ -158,6 +158,10 @@
 			"types": "./dist/chat/telegram.d.ts",
 			"default": "./dist/chat/telegram.js"
 		},
+		"./bluesky": {
+			"types": "./dist/chat/bluesky.d.ts",
+			"default": "./dist/chat/bluesky.js"
+		},
 		"./chat-mock": {
 			"types": "./dist/chat/mock.d.ts",
 			"default": "./dist/chat/mock.js"
