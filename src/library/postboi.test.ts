@@ -20,7 +20,16 @@ const sent_init = () =>
 	fetch.mock.calls.at(-1)![1] as RequestInit & { headers: Record<string, string> }
 const sent_json = () => JSON.parse(sent_init().body as string)
 
-beforeEach(() => fetch.mockReset())
+beforeEach(() => {
+	fetch.mockReset()
+	// No inbox unless a test asks for one. Discovery falls back to
+	// node_modules/.postboi/inbox.json, which a dev server on this machine leaves behind —
+	// so without this the dev-mail tests deliver to a port from last week and see a `fetch`
+	// they assert never happens. Passing on CI and failing on a laptop is the worst way for
+	// a test to be wrong. Tests that want an inbox stub their own port inside the test body,
+	// which runs after this and wins.
+	vi.stubEnv("POSTBOI_INBOX", "off")
+})
 afterEach(() => vi.unstubAllEnvs())
 
 describe("the Postboi provider (zero-config)", () => {
