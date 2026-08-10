@@ -1,7 +1,7 @@
 ---
 title: Push
 name: Push
-description: Web Push and FCM with push() — the only channel that costs nothing per message, and the only one where the address has to be registered first.
+description: Web Push, FCM, APNs and Huawei with push() — the only channel that costs nothing per message, and the only one where the address has to be registered first.
 category: Channels
 ---
 
@@ -13,8 +13,8 @@ await push({ to: subscription, title: "Order shipped", message: "On its way" })
 
 Push is the odd one out in two ways, and both shape how you use it.
 
-**It costs nothing.** FCM, APNs and Web Push are free from Google, Apple and the browser
-vendors — there is no carrier and no termination fee anywhere in the chain. That's why push
+**It costs nothing.** FCM, APNs, Push Kit and Web Push are free from Google, Apple, Huawei
+and the browser vendors — there is no carrier and no termination fee anywhere in the chain. That's why push
 sits first in [`send()`'s cost ordering](/send#cheapest-first): routing a message to push
 instead of SMS doesn't save a percentage, it saves the entire cost.
 
@@ -43,7 +43,9 @@ misbehaving traffic. `mailto:` or an https URL.
 | Provider | Import | Reaches |
 | --- | --- | --- |
 | Web Push | `postboi/webpush` | Every modern browser, desktop and mobile |
-| FCM | `postboi/fcm` | Android and iOS apps — and the simplest route to APNs |
+| FCM | `postboi/fcm` | [Android](#android) apps — the only route to them, and it reaches iOS too |
+| APNs | `postboi/apns` | Apple apps, [direct](#ios) — no Firebase in the middle |
+| HMS | `postboi/hms` | [Huawei](#android) phones, which have no Play Services |
 
 ## Subscribing, in the browser
 
@@ -184,10 +186,92 @@ await push({
 `ttl` defaults to 28 days. For anything time-sensitive, set it low: a notification that
 arrives two days late is usually worse than one that never arrives.
 
+## Android
+
+**FCM** (`postboi/fcm`) is the only way to reach an Android phone. Not the recommended way —
+the only one. Push on Android goes through Google Play Services, and nothing else has access
+to that transport.
+
+Which leaves the phones that don't have Play Services. **Huawei** has shipped without it
+since 2020, and on those devices FCM doesn't fail loudly, it simply never arrives. Push Kit
+(`postboi/hms`) is the route to them:
+
+```bash
+# .env
+POSTBOI_PUSH_PROVIDER=hms
+HMS_APP_ID=…
+HMS_APP_SECRET=…
+```
+
+Both from AppGallery Connect. Same `push()` call, same `push.expired(error)` check.
+
+One quirk worth knowing about, though Postboi handles it for you: **Push Kit answers HTTP
+200 even when the send failed** — the real outcome is a result code in the body. Anything
+that only checked the status code would report a silent non-delivery as a success. Postboi
+reads the code, so a failure throws like it does everywhere else.
+
+Serving both? Store which one a device registered with, and pick the provider per device —
+a token from one is meaningless to the other.
+
 ## iOS
 
-Reaching iOS through **FCM** is the recommended route: one credential instead of two, and
-Firebase handles APNs for you. Direct APNs isn't implemented — say so if you need it.
+Two routes, and the difference is whether Google sits in the middle.
+
+**APNs** (`postboi/apns`) talks to Apple directly, with a `.p8` key from your developer
+account and nothing else in the chain. **FCM** forwards to APNs on your behalf, which is
+worth it if you're already sending to Android and would rather hold one credential than
+two. If iOS is all you ship, there's no reason to route it through Firebase.
+
+```bash
+# .env
+POSTBOI_PUSH_PROVIDER=apns
+APNS_KEY_ID=ABC1234567
+APNS_TEAM_ID=DEF1234567
+APNS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIGT…\n-----END PRIVATE KEY-----"
+APNS_TOPIC=com.example.app
+```
+
+`APNS_TOPIC` is your app's bundle ID. The key is the `.p8` you download **once** — Apple
+won't show it again — from Certificates, Identifiers & Profiles → Keys.
+
+**Or don't type any of it.** `bunx postboi init --push` looks for the `AuthKey_*.p8` you
+just downloaded — in the current directory and in `~/Downloads` — and offers it. Pick one
+and it fills the key *and* `APNS_KEY_ID`, because Apple puts the key ID in the filename.
+It writes the PEM's newlines as `\n` inside double quotes too, since a `.env` value is a
+single line.
+
+Then it checks the credentials against APNs before writing anything, by sending to a
+device token that can't exist. Apple validates the key, team and topic before it looks at
+the device, so a rejected *token* means everything else was accepted — and if something is
+wrong, you're told which thing:
+
+```
+✓ read the key, and took APNS_KEY_ID from its filename
+
+Checking the credentials with APNs…
+! APNs rejected the topic — is com.example.app really the app's bundle ID?
+  Save them anyway? (y/N)
+```
+
+There is no OAuth to offer here and there won't be: Apple has no API that creates an APNs
+key, the App Store Connect API's own credential is another `.p8` you download by hand, and
+its terms forbid using it to provide services to third parties. Finding the file and
+checking what you typed is the ceiling.
+
+Set `APNS_ENVIRONMENT=sandbox` while you're testing against a development build. A token
+from a debug build is only valid against the sandbox and a TestFlight or App Store token is
+only valid against production; cross them and every send fails as `BadDeviceToken`, which
+reads like a broken token rather than a wrong setting. It's the first thing to check.
+
+`push.expired(error)` covers APNs too. Apple reports a dead token two ways — `Unregistered`
+as a 410, and `BadDeviceToken` as a **400** — and both mean the same thing: delete your
+stored copy.
+
+One note on how this works, because it's the reason most libraries hand you Firebase
+instead. APNs refuses HTTP/1.1, and Node's built-in `fetch` only speaks HTTP/1.1 — so
+Postboi sends over `node:http2` on Node and Bun, and over the global `fetch` on Workers and
+Deno, where it already negotiates HTTP/2. There's nothing to configure, and no dependency
+either way.
 
 Web Push also works on iOS 16.4+, but **only for a home-screen web app**, and the user has
 to add it to their home screen first. Worth knowing before you build a flow around it.

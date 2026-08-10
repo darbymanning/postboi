@@ -585,7 +585,7 @@ export const PUSH_PROVIDERS = [
 		import: "postboi/fcm",
 		class: "FCM",
 		url: "https://console.firebase.google.com",
-		note: "Android and iOS via Firebase — also the simplest way to reach APNs",
+		note: "Android apps — the only route to them, and it reaches iOS too",
 		fields: [
 			{ env: "FCM_PROJECT_ID", arg: "project_id", label: "Firebase project id" },
 			{ env: "FCM_CLIENT_EMAIL", arg: "client_email", label: "Service account email" },
@@ -595,6 +595,46 @@ export const PUSH_PROVIDERS = [
 				label: "Service account private key",
 				secret: true,
 			},
+		],
+	},
+	{
+		key: "apns",
+		name: "Apple Push Notification service",
+		import: "postboi/apns",
+		class: "APNs",
+		url: "https://developer.apple.com/account/resources/authkeys/list",
+		note: "iOS, iPadOS, macOS and Safari — direct, with no Firebase in the middle",
+		fields: [
+			{ env: "APNS_KEY_ID", arg: "key_id", label: "Key ID of the .p8 auth key" },
+			{ env: "APNS_TEAM_ID", arg: "team_id", label: "Apple Developer team ID" },
+			{
+				env: "APNS_PRIVATE_KEY",
+				arg: "private_key",
+				label: "Contents of the .p8 file",
+				secret: true,
+			},
+			{ env: "APNS_TOPIC", arg: "topic", label: "App bundle ID (e.g. com.example.app)" },
+			{
+				env: "APNS_ENVIRONMENT",
+				arg: "environment",
+				// Defaulted rather than prompted: production is what a shipped app needs, and
+				// the wrong one here fails as `BadDeviceToken`, which reads like a bad token
+				// rather than a bad setting.
+				label: "APNs environment (production or sandbox)",
+				default: "production",
+			},
+		],
+	},
+	{
+		key: "hms",
+		name: "Huawei Push Kit",
+		import: "postboi/hms",
+		class: "HMS",
+		url: "https://developer.huawei.com/consumer/en/console",
+		note: "Huawei phones sold since 2020 — they have no Play Services, so FCM can't reach them",
+		fields: [
+			{ env: "HMS_APP_ID", arg: "app_id", label: "App ID from AppGallery Connect" },
+			{ env: "HMS_APP_SECRET", arg: "app_secret", label: "App secret", secret: true },
 		],
 	},
 ] as const satisfies ReadonlyArray<NotedProviderMeta>

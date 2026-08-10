@@ -58,6 +58,7 @@ import {
 	red,
 } from "./prompts.js"
 import { banner } from "./banner.js"
+import { offer_auth_key, verify_apns, key_search_paths } from "./apns.js"
 import {
 	cloud_base,
 	start_device_auth,
@@ -1070,9 +1071,17 @@ async function collect_credentials(
 		default?: string
 	}>,
 	prefilled: Record<string, string>
-): Promise<{ values: Record<string, string>; config_options: Record<string, string> }> {
+): Promise<{
+	values: Record<string, string>
+	config_options: Record<string, string>
+	args: Record<string, string>
+}> {
 	const values: Record<string, string> = {} // secrets → env file
 	const config_options: Record<string, string> = {} // non-secrets → config file
+	// The same answers keyed by constructor argument, secret or not — what you'd need to
+	// build the provider, which is exactly what a `verify` hook wants and neither of the
+	// other two maps can give it alone.
+	const args: Record<string, string> = {}
 	for (const field of fields) {
 		const value =
 			prefilled[field.env] ??
@@ -1080,12 +1089,13 @@ async function collect_credentials(
 				required: field.default === undefined,
 				default: field.default,
 			}))
+		if (value) args[field.arg] = value
 		if (field.secret) {
 			// Optional secrets (default "") left blank are omitted, not written empty.
 			if (value) values[field.env] = value
 		} else if (value) config_options[field.arg] = value
 	}
-	return { values, config_options }
+	return { values, config_options, args }
 }
 
 /**
@@ -1237,6 +1247,12 @@ type InitSpec = {
 		provider: ChannelProvider,
 		prefilled: Record<string, string>
 	) => Promise<void>
+	/**
+	 * Check the collected credentials actually work, before they're written anywhere.
+	 * Returns a sentence to show when something is wrong, undefined when it's fine —
+	 * declared by the channel, like `mint`, rather than branching the shared flow.
+	 */
+	verify?: (provider: ChannelProvider, args: Record<string, string>) => Promise<string | undefined>
 	defaults: (
 		prompts: Prompts,
 		provider: ChannelProvider,
@@ -1327,6 +1343,8 @@ const CHANNEL_INIT = {
 		// pair would orphan every subscription collected under the first (both halves sync —
 		// the public key is env-routed in the registry for exactly this reason).
 		async mint(prompts: Prompts, provider: ChannelProvider, prefilled: Record<string, string>) {
+			if (provider.key === "apns")
+				return offer_auth_key(prompts, prefilled, key_search_paths(cwd()))
 			if (provider.key !== "webpush" || prefilled.VAPID_PRIVATE_KEY !== undefined) return
 			if (!(await prompts.confirm("Generate a fresh VAPID key pair?"))) return
 			const pair = await generate_vapid_keys()
@@ -1335,6 +1353,16 @@ const CHANNEL_INIT = {
 			console.log(
 				`${green("✓")} generated — the public key also goes to the browser's \`subscribe({ key })\`:\n  ${dim(pair.public_key)}\n`
 			)
+		},
+		// APNs is the only provider here whose credentials can be checked without a real
+		// device, and the only one where a wrong answer is otherwise invisible until a
+		// notification silently fails to arrive.
+		async verify(provider: ChannelProvider, args: Record<string, string>) {
+			if (provider.key !== "apns") return undefined
+			console.log(dim("\nChecking the credentials with APNs…"))
+			const problem = await verify_apns(args)
+			if (!problem) console.log(`${green("✓")} APNs accepted the key, team and bundle ID`)
+			return problem
 		},
 		async defaults(): Promise<Record<string, string>> {
 			// A push target is per-device, so there is no global default worth committing.
@@ -1437,7 +1465,24 @@ async function channel_init(
 
 	// Self-minted credentials (Web Push's VAPID pair) — the channel's own hook.
 	await spec.mint?.(prompts, provider, prefilled)
-	const { values, config_options } = await collect_credentials(prompts, provider.fields, prefilled)
+	const { values, config_options, args } = await collect_credentials(
+		prompts,
+		provider.fields,
+		prefilled
+	)
+
+	// Check before anything is written: a credential that fails here would otherwise fail
+	// as a notification that silently never arrives, days later. Not fatal on its own —
+	// the check itself can fail for reasons that say nothing about the credentials — so
+	// the decision to keep them is the user's.
+	const problem = await spec.verify?.(provider, args)
+	if (problem) {
+		console.log(`${yellow("!")} ${problem}`)
+		if (!(await prompts.confirm("Save them anyway?"))) {
+			console.log(dim("\nNothing written. Fix the details and run init again."))
+			return
+		}
+	}
 
 	// Channel defaults, committed to the config's `default:` block — asked by the
 	// channel's own spec, so provider-key matching lives with the channel that owns it.
