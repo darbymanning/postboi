@@ -95,6 +95,11 @@ export abstract class PushProvider<TResponse = unknown> extends Transport<TRespo
 	 * exists for code holding a provider instance.
 	 */
 	static is_expired(error: unknown): boolean {
-		return error instanceof PostboiError && (error.status === 404 || error.status === 410)
+		if (!(error instanceof PostboiError)) return false
+		// A push service says "gone" with a status; APNs says it with a 400 and a reason
+		// (`BadDeviceToken`), which no status could distinguish from a malformed request.
+		// Providers normalize that case to this code, so the check stays one line here
+		// rather than a growing list of per-provider special cases at every call site.
+		return error.status === 404 || error.status === 410 || error.code === "expired_subscription"
 	}
 }

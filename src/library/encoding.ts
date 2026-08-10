@@ -39,3 +39,22 @@ export function from_base64url(value: string): Bytes {
 export function to_base64url(bytes: Uint8Array): string {
 	return base64_encode(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 }
+
+/**
+ * Strip the PEM armour and decode the base64 body into DER bytes, ready for
+ * `subtle.importKey("pkcs8", …)`.
+ *
+ * Shared by FCM (an RSA service-account key, pasted out of the downloaded JSON) and APNs
+ * (an EC key, pasted out of a `.p8` file). Both arrive through the environment, and the
+ * `\n` case is why this is one function rather than two: a key that has been through
+ * JSON, a shell or a secrets UI carries literal backslash-n sequences instead of real
+ * newlines, and every byte of armour and whitespace has to come off either way.
+ */
+export function pem_to_der(pem: string): Bytes {
+	const body = pem
+		.replace(/-----BEGIN [^-]+-----/, "")
+		.replace(/-----END [^-]+-----/, "")
+		.replace(/\\n/g, "")
+		.replace(/\s/g, "")
+	return base64_decode(body)
+}

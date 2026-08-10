@@ -364,6 +364,17 @@ export abstract class Transport<TResponse = unknown, TPrepared = unknown> {
 		})
 	}
 
+	/**
+	 * The single HTTP call, isolated so a provider can swap the client without
+	 * re-implementing the timeout, retry and hook machinery wrapped around it.
+	 *
+	 * Exactly one provider needs this: APNs refuses HTTP/1.1, and Node's global `fetch`
+	 * only speaks HTTP/1.1. Everything else uses the global and should keep doing so.
+	 */
+	protected async send_request(url: string, init: RequestInit): Promise<Response> {
+		return fetch(url, init)
+	}
+
 	/** Perform the HTTP request with a timeout and opt-in retry/backoff. */
 	protected async request(spec: RequestSpec): Promise<Response> {
 		const init: RequestInit = {
@@ -376,7 +387,7 @@ export abstract class Transport<TResponse = unknown, TPrepared = unknown> {
 			const controller = new AbortController()
 			const timer = setTimeout(() => controller.abort(), this.#timeout)
 			try {
-				const response = await fetch(spec.url, { ...init, signal: controller.signal })
+				const response = await this.send_request(spec.url, { ...init, signal: controller.signal })
 				if (this.#should_retry(response.status) && attempt < this.#retries) {
 					const delay = this.#backoff(attempt + 1, response)
 					await this.observe(() =>
