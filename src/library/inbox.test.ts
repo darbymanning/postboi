@@ -523,7 +523,10 @@ async function until(predicate: () => boolean, ms = 1500): Promise<void> {
 }
 
 describe("channel captures", () => {
-	afterEach(() => set_inbox_port(null as unknown as number))
+	afterEach(() => {
+		set_inbox_port(null as unknown as number)
+		vi.unstubAllEnvs()
+	})
 
 	it("lands a dev-intercepted text in the inbox, normalised and tagged", async () => {
 		const inbox = await start_inbox()
@@ -547,6 +550,12 @@ describe("channel captures", () => {
 	})
 
 	it("falls back to the console when no inbox is listening", async () => {
+		// The only test that lets discovery run to the end, so it is the only one that reads
+		// node_modules/.postboi/inbox.json — which a hard-killed `postboi dev` leaves behind
+		// holding an ephemeral port. The full suite binds enough ephemeral ports for one of its
+		// own inbox servers to land on that stale number and take the capture, and then nothing
+		// prints. "No inbox" has to be stated, the way postboi.test.ts states it.
+		vi.stubEnv("POSTBOI_INBOX", "off")
 		const log = vi.spyOn(console, "log").mockImplementation(() => {})
 		const text = new MockSms({ log: true, sink: inbox_sink("sms"), default: { country: "GB" } })
 		await text.send({ to: "07788 223344", message: "Fallback text" })
