@@ -619,10 +619,23 @@ describe("channel captures", () => {
 		expect(html).toContain('id="poom-view"')
 		expect(html).toContain('id="poom-faces"')
 		expect(html).toContain('id="sc-poom"')
-		// All three moods ship, or the face can't change when something bites you.
-		for (const mood of ["avatar", "nervous", "crying"]) {
+		// Every mood ships, or the face can't change when something bites you — or when
+		// nothing can.
+		for (const mood of [
+			"face",
+			"nervous",
+			"crying",
+			"exhausted",
+			"celebrating",
+			"goat",
+			"wink",
+			"goatwink",
+		]) {
 			expect(DESKTOP[mood]).toBeDefined()
 		}
+		// The cheat, and the frame the weapon rests in when it isn't being fired.
+		expect(html).toContain('"iddqd"')
+		expect(html).toContain('"gunidle"')
 	})
 
 	it("keeps the platform on a chat capture so the window can dress as it", async () => {

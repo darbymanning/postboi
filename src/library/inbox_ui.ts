@@ -825,7 +825,10 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 #poomhud .stat { display: flex; flex-direction: column; align-items: center; line-height: 1.1 }
 #poomhud .stat b { font-size: 17px; color: #ff4b3a; text-shadow: 0 0 6px rgba(255,75,58,.5) }
 #poomhud .spacer { flex: 1 }
-#poomhud .keys { font-size: 10px; color: #b09a76; text-align: right; line-height: 1.35 }
+/* The hint clips rather than wraps: a narrow window turned it into a column of one-word
+   lines, which is worse than not reading it at all. */
+#poomhud { overflow: hidden }
+#poomhud .keys { font-size: 10px; color: #b09a76; text-align: right; line-height: 1.35; white-space: nowrap }
 /* The mug shot, in its recessed frame — the face is the Postboi mark, taking the hits. */
 #poom-faces {
 	position: relative; display: block; width: 46px; height: 44px; flex: none;
@@ -833,9 +836,11 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 	border-color: #241a10 #7a5f40 #7a5f40 #241a10; padding: 1px;
 }
 #poom-faces img { position: absolute; inset: 1px; width: 42px; height: 40px; object-fit: contain; display: none }
-#poom-faces.face-ok .f-ok, #poom-faces.face-hurt .f-hurt, #poom-faces.face-low .f-low { display: block }
-/* Out of health: the last face it made, drained of everything. */
-#poom-faces.gone img { filter: grayscale(1) brightness(.55) }
+#poom-faces.face-ok .f-ok, #poom-faces.face-hurt .f-hurt, #poom-faces.face-low .f-low,
+#poom-faces.face-dead .f-dead, #poom-faces.face-won .f-won, #poom-faces.face-god .f-god,
+#poom-faces.face-wink .f-wink, #poom-faces.face-godwink .f-godwink { display: block }
+/* God mode: nothing can touch you, and the face knows it. */
+#poom-faces.face-god, #poom-faces.face-godwink { background: #2a2410; box-shadow: inset 0 0 8px rgba(255,208,80,.55) }
 #poom-faces.hit { background: #5a1410; translate: 0 1px }
 
 /*
@@ -2521,7 +2526,7 @@ function poom_mob_frame(open) {
  * alone, which is the weapon lowered, so it is kept for the drop when you die and the cycle
  * runs fire → pump back → pump forward → ready.
  */
-var POOM_GUN_FRAMES = ["gunfire", "gunfire", "gunpump", "gunload"]
+var POOM_GUN_FRAMES = ["gunidle", "gunfire", "gunpump", "gunload"]
 var POOM_FLASH_FRAMES = ["flasha", "flashb"]
 /* Where each frame sits: the sprites carry no offsets, so the muzzle is lined up here. */
 var POOM_GUN_AT = {
@@ -2606,6 +2611,7 @@ function poom_start() {
 		health: 100, ammo: 40,
 		hurt: 0, flash: 0, kick: 0, pitch: 0, bob: 0, walk: 0,
 		note: "", note_at: 0,
+		god: false,
 		time: 0,
 		spam: POOM_SPAWNS.map(function (spot) {
 			return { x: spot.x, y: spot.y, dead: false, dying: 0, bite: 0, phase: spot.x + spot.y }
@@ -2694,6 +2700,7 @@ function poom_step(dt) {
 			// take a whole mouthful on a cooldown and the number visibly steps.
 			if (mob.bite <= 0) {
 				mob.bite = 0.7
+				if (poom.god) return
 				poom.health -= 13
 				poom.hurt = 1
 				poom_say("CHEWED ON")
@@ -3035,18 +3042,48 @@ function poom_hud() {
 	$("poom-health").textContent = Math.ceil(poom.health) + "%"
 	$("poom-ammo").textContent = poom.ammo
 	$("poom-spam").textContent = poom.spam.filter(function (mob) { return !mob.dead }).length
+	// In order of what matters most: how it ended, then whether anything can hurt you,
+	// then how much of you is left.
 	var mood = "ok"
-	if (poom.health <= 34) mood = "low"
+	if (poom.over === "dead") mood = "dead"
+	else if (poom.over === "clear") mood = "won"
+	else if (poom.god) mood = "god"
+	else if (poom.health <= 34) mood = "low"
 	else if (poom.hurt > 0.15) mood = "hurt"
-	$("poom-faces").className = "face-" + mood + (poom.health <= 0 ? " gone" : "") + (poom.hurt > 0.5 ? " hit" : "")
+	// A blink, off the same clock the game runs on: every five seconds, for a fifth of one.
+	// Only the two faces that have one to blink with — a wince does not wink.
+	if (poom.time % 5 < 0.2) {
+		if (mood === "ok") mood = "wink"
+		else if (mood === "god") mood = "godwink"
+	}
+	$("poom-faces").className = "face-" + mood + (poom.hurt > 0.5 && !poom.god ? " hit" : "")
 }
 
 var POOM_KEYS = {
 	ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
 	w: "up", s: "down", a: "sleft", d: "sright", q: "left", e: "right",
 }
+/*
+ * The cheat. Typed, not pressed: the letters are collected as they come and the tail of
+ * what you have typed is checked against the code, so it fires the moment the last D lands
+ * and nothing has to be cleared first. It is the one from 1993 because it is the only one
+ * anybody remembers.
+ */
+var POOM_TYPED = ""
+function poom_cheat(key) {
+	if (key.length !== 1) return false
+	POOM_TYPED = (POOM_TYPED + key.toLowerCase()).slice(-8)
+	if (POOM_TYPED.slice(-5) !== "iddqd") return false
+	POOM_TYPED = ""
+	poom.god = !poom.god
+	poom.health = poom.god ? 100 : poom.health
+	poom_say(poom.god ? "GOD MODE ON \u2014 NOBODY DELIVERS LIKE YOU" : "GOD MODE OFF")
+	return true
+}
+
 document.addEventListener("keydown", function (event) {
 	if (focused !== "poom" || !poom) return
+	if (poom_cheat(event.key)) return
 	if (event.key === "Enter" && poom.over) { event.preventDefault(); return poom_start() }
 	if (event.key === " ") { event.preventDefault(); return poom_fire() }
 	var name = POOM_KEYS[event.key]
@@ -3781,9 +3818,14 @@ $("m-app").querySelector("img").src = api + "/desktop/icon"
 $("m-face").src = api + "/desktop/avatar"
 // The three moods of the status bar, loaded up front: a face that arrives from the network
 // the first time something bites you is a face that arrives after the moment has passed.
-$("poom-faces").querySelector(".f-ok").src = api + "/desktop/avatar"
-$("poom-faces").querySelector(".f-hurt").src = api + "/desktop/nervous"
-$("poom-faces").querySelector(".f-low").src = api + "/desktop/crying"
+var POOM_FACES = {
+	ok: "face", hurt: "nervous", low: "crying",
+	dead: "exhausted", won: "celebrating", god: "goat",
+	wink: "wink", godwink: "goatwink",
+}
+Object.keys(POOM_FACES).forEach(function (mood) {
+	$("poom-faces").querySelector(".f-" + mood).src = api + "/desktop/" + POOM_FACES[mood]
+})
 $("introwordmark").src = api + "/art/logo"
 var paper = new Image()
 paper.onload = function () {
@@ -4325,11 +4367,16 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 		</div>
 		<div id="poomstage"><canvas id="poom-view" width="320" height="176"></canvas></div>
 		<div id="poomhud">
-			<!-- Three faces, one showing: the mark, the mark worried, and the mark in tears. -->
+			<!-- Six faces, one showing. The status bar is the health bar you actually read. -->
 			<span id="poom-faces" class="face-ok">
 				<img class="f-ok" src="" alt="">
 				<img class="f-hurt" src="" alt="">
 				<img class="f-low" src="" alt="">
+				<img class="f-dead" src="" alt="">
+				<img class="f-won" src="" alt="">
+				<img class="f-god" src="" alt="">
+				<img class="f-wink" src="" alt="">
+				<img class="f-godwink" src="" alt="">
 			</span>
 			<span class="stat">AMMO<b id="poom-ammo">40</b></span>
 			<span class="stat">HEALTH<b id="poom-health">100%</b></span>
