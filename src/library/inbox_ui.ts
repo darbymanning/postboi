@@ -3677,7 +3677,7 @@ $("menubar").addEventListener("click", function (event) {
 	if (act === "mailbox") open_window("mailbox")
 	if (act === "check") { open_window("mailbox"); load() }
 	if (act === "print") window.print()
-	if (act === "docs") window.open("https://docs.postboi.email/dev-inbox", "_blank", "noopener")
+	if (act === "docs") window.open("https://docs.postboi.app/dev-inbox", "_blank", "noopener")
 	if (act === "restore") app_set("open")
 	if (act === "minimise") app_set("min")
 	if (act === "signoff") { app_set("open"); run_signon() }
@@ -3786,8 +3786,8 @@ function open_link(url) {
 	window.open(url, "_blank", "noopener")
 	set_menu(false)
 }
-$("m-docs").onclick = function () { open_link("https://docs.postboi.email") }
-$("m-help").onclick = function () { open_link("https://docs.postboi.email/dev-inbox") }
+$("m-docs").onclick = function () { open_link("https://docs.postboi.app") }
+$("m-help").onclick = function () { open_link("https://docs.postboi.app/dev-inbox") }
 $("m-dashboard").onclick = function () { open_link("https://postboi.email/dashboard") }
 $("m-site").onclick = function () { open_link("https://postboi.email") }
 $("m-wipe").onclick = function () { set_menu(false); wipe() }
@@ -4051,7 +4051,7 @@ $("so-go").onclick = function () {
 }
 
 $("so-help").onclick = function () {
-	window.open("https://docs.postboi.email/dev-inbox", "_blank", "noopener")
+	window.open("https://docs.postboi.app/dev-inbox", "_blank", "noopener")
 }
 `
 

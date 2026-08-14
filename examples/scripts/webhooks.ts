@@ -1,7 +1,7 @@
 import { receive, mock_request, type WebhookEvent } from "postboi/webhooks"
 
 // Receive provider delivery events — delivered, opened, clicked, bounced — normalized
-// across every provider, with signatures verified. See https://docs.postboi.email/webhooks.
+// across every provider, with signatures verified. See https://docs.postboi.app/webhooks.
 //
 // In a real app this handler lives on an HTTP endpoint, e.g. on SvelteKit:
 //

@@ -1,6 +1,6 @@
 # Next.js × Postboi
 
-A contact form that turns a submission into a tidy HTML email via [postboi](https://docs.postboi.email), running on the Postboi provider. The form carries a hidden `_reply_to` field mirrored from the submitted email, so replying to the notification reaches the person who filled it in.
+A contact form that turns a submission into a tidy HTML email via [postboi](https://docs.postboi.app), running on the Postboi provider. The form carries a hidden `_reply_to` field mirrored from the submitted email, so replying to the notification reaches the person who filled it in.
 
 ## Set up
 
@@ -33,4 +33,4 @@ Open http://localhost:3000.
 - **`app/actions.ts`** — a `"use server"` Server Action that just hands the whole `FormData` to `mail({ body })`.
 - **`postboi.config.ts`** — selects the provider (`postboi`, i.e. the Postboi provider) and the default recipient the contact-form notification lands at.
 
-Learn more in the [postboi docs](https://docs.postboi.email) or grab a token at [postboi.email](https://postboi.email).
+Learn more in the [postboi docs](https://docs.postboi.app) or grab a token at [postboi.email](https://postboi.email).

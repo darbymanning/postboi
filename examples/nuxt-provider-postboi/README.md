@@ -1,7 +1,7 @@
 # Nuxt (Vue) × Postboi
 
 A contact form that turns a submission into a tidy HTML email, sent with
-[postboi](https://docs.postboi.email) on the Postboi provider. A hidden `_reply_to`
+[postboi](https://docs.postboi.app) on the Postboi provider. A hidden `_reply_to`
 field (bound to the address the visitor typed) means you can reply straight from
 your inbox.
 
@@ -32,4 +32,4 @@ Then open http://localhost:3000.
 
 The `POSTBOI_TOKEN` in `.env` routes mail through
 [the Postboi provider](https://postboi.email). Swap the provider in `postboi.config.ts`
-for any of the [supported providers](https://docs.postboi.email/providers).
+for any of the [supported providers](https://docs.postboi.app/providers).

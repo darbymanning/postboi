@@ -7,7 +7,7 @@ description: Integrate the postboi email library — send email from any JS fram
 
 Framework-agnostic email library. One `mail()` call, 20 providers (Resend, SES, Mailgun, SMTP, its own Postboi provider, …), normalized errors and webhooks across all of them.
 
-Full docs: https://docs.postboi.email — every page is available as raw Markdown at `https://docs.postboi.email/raw/<slug>` (e.g. `/raw/webhooks`). Fetch those for anything not covered here. Complete docs in one file: `https://docs.postboi.email/llms-full.txt`.
+Full docs: https://docs.postboi.app — every page is available as raw Markdown at `https://docs.postboi.app/raw/<slug>` (e.g. `/raw/webhooks`). Fetch those for anything not covered here. Complete docs in one file: `https://docs.postboi.app/llms-full.txt`.
 
 ## Setup
 

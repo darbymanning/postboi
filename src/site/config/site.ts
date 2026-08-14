@@ -8,7 +8,7 @@ export const siteConfig = {
 	/** Compact site name for environments with strict length limits. */
 	shortName: "Postboi",
 	/** Public canonical URL used to build absolute links. */
-	url: "https://docs.postboi.email",
+	url: "https://docs.postboi.app",
 	/** Default SEO description for the homepage and fallback metadata. */
 	description:
 		"A framework-agnostic messaging library optimised for SvelteKit. Email, SMS, WhatsApp, push and chat behind one API — swappable providers, zero configuration.",

@@ -1,7 +1,7 @@
 # Remix × Postboi
 
 A minimal Remix (v2, Vite) contact form that turns a submission into a tidy HTML
-email via [postboi](https://docs.postboi.email) on the Postboi provider. A hidden
+email via [postboi](https://docs.postboi.app) on the Postboi provider. A hidden
 `_reply_to` field (mirrored from the submitted email) means you can reply
 straight from your inbox.
 
@@ -25,5 +25,5 @@ Then open http://localhost:5173.
 - **`postboi.config.ts`** — selects the provider (`postboi` = the Postboi provider) and
   the default recipient for contact-form notifications.
 
-Learn more at the [postboi docs](https://docs.postboi.email) and
+Learn more at the [postboi docs](https://docs.postboi.app) and
 [the Postboi provider](https://postboi.email).

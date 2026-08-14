@@ -1,6 +1,6 @@
 # Astro × Postboi
 
-A contact form that turns submissions into a tidy HTML email via [postboi](https://docs.postboi.email) on [the Postboi provider](https://postboi.email). A hidden `_reply_to` field (mirrored from the address the visitor typed) means replying goes straight back to them.
+A contact form that turns submissions into a tidy HTML email via [postboi](https://docs.postboi.app) on [the Postboi provider](https://postboi.email). A hidden `_reply_to` field (mirrored from the address the visitor typed) means replying goes straight back to them.
 
 ## Set up
 
