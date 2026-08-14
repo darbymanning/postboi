@@ -31,5 +31,5 @@ Then open http://localhost:3000.
   recipient for notifications.
 
 The `POSTBOI_TOKEN` in `.env` routes mail through
-[the Postboi provider](https://postboi.email). Swap the provider in `postboi.config.ts`
+[the Postboi provider](https://postboi.app). Swap the provider in `postboi.config.ts`
 for any of the [supported providers](https://docs.postboi.app/providers).

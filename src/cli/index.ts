@@ -119,7 +119,7 @@ ${bold("Usage")}
   ${dim("                          · --port <n> --demo --no-sound --no-intro")}
   ${dim("                          (Vite projects already serve it at /__postboi)")}
 
-${bold("Account")} ${dim("(Postboi provider — full reference: https://api.postboi.email)")}
+${bold("Account")} ${dim("(Postboi provider — full reference: https://api.postboi.app)")}
   ${cyan("bunx postboi whoami")}          The account behind your token
   ${cyan("bunx postboi send-address")}    Default sending address ${dim("· [name@yourdomain.com]")}
   ${cyan("bunx postboi lists")}           Lists ${dim("· add <name> · delete <ref>")}

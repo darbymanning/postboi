@@ -28,4 +28,4 @@ Then open http://localhost:3000.
   https://docs.postboi.app/providers to use a different one.
 
 Learn more at the [postboi docs](https://docs.postboi.app) and
-[the Postboi provider](https://postboi.email).
+[the Postboi provider](https://postboi.app).

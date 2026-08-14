@@ -1,6 +1,6 @@
 ---
 name: postboi
-description: Integrate the postboi email library — send email from any JS framework (SvelteKit, Next.js, Express, Hono, Remix, Nuxt, Astro), wire contact forms with FormData parsing and spam protection, receive delivery webhooks, schedule and track sends. Covers SvelteKit remote functions (postboi/remote) and migrating hand-rolled email code to postboi. Also covers full account setup and provider migration from the terminal: sending domains + DNS via `bunx postboi domains`, importing recipients and suppressions, webhooks, members, and the REST API at api.postboi.email. Use whenever a task involves postboi, adding email sending / contact forms, setting up or migrating an email provider/ESP, or replacing nodemailer/direct provider SDK calls in a project that has (or should have) postboi installed.
+description: Integrate the postboi email library — send email from any JS framework (SvelteKit, Next.js, Express, Hono, Remix, Nuxt, Astro), wire contact forms with FormData parsing and spam protection, receive delivery webhooks, schedule and track sends. Covers SvelteKit remote functions (postboi/remote) and migrating hand-rolled email code to postboi. Also covers full account setup and provider migration from the terminal: sending domains + DNS via `bunx postboi domains`, importing recipients and suppressions, webhooks, members, and the REST API at api.postboi.app. Use whenever a task involves postboi, adding email sending / contact forms, setting up or migrating an email provider/ESP, or replacing nodemailer/direct provider SDK calls in a project that has (or should have) postboi installed.
 ---
 
 # Postboi
@@ -198,7 +198,7 @@ bunx postboi messages                              # recent sends with delivery 
 bunx postboi webhooks deliveries <id>              # per-endpoint delivery log for debugging
 ```
 
-Anything richer than the CLI exposes, use the REST API directly — full interactive reference at https://api.postboi.email (OpenAPI spec at `/openapi.json`). Auth is `Authorization: Bearer $POSTBOI_TOKEN`; errors are always `{ "message", "code" }`.
+Anything richer than the CLI exposes, use the REST API directly — full interactive reference at https://api.postboi.app (OpenAPI spec at `/openapi.json`). Auth is `Authorization: Bearer $POSTBOI_TOKEN`; errors are always `{ "message", "code" }`.
 
 ### Fresh project playbook
 
@@ -214,7 +214,7 @@ Order matters — the old provider keeps sending until the new domain verifies:
 4. Import recipients. Bare emails: `recipients <list> add …`. With names/custom data, or in bulk (up to 10,000 per call), POST the API:
 
    ```bash
-   curl -X POST "https://api.postboi.email/v1/lists/Newsletter/recipients?status=subscribed" \
+   curl -X POST "https://api.postboi.app/v1/lists/Newsletter/recipients?status=subscribed" \
    	-H "Authorization: Bearer $POSTBOI_TOKEN" -H "Content-Type: application/json" \
    	-d '[{ "email": "a@b.co", "name": "Ada", "data": { "plan": "pro" } }]'
    ```

@@ -26,4 +26,4 @@ Then open http://localhost:5173.
   the default recipient for contact-form notifications.
 
 Learn more at the [postboi docs](https://docs.postboi.app) and
-[the Postboi provider](https://postboi.email).
+[the Postboi provider](https://postboi.app).

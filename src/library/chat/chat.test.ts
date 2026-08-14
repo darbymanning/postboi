@@ -207,15 +207,15 @@ describe("bluesky", () => {
 		vi.stubGlobal("fetch", fetch)
 		await new Bluesky({ identifier: "me", app_password: "pw" }).send({
 			title: "Déployé",
-			message: "see https://postboi.email.",
+			message: "see https://postboi.app.",
 		})
 
 		const record = JSON.parse(fetch.mock.calls[1][1].body as string).record
-		expect(record.text).toBe("Déployé\n\nsee https://postboi.email.")
+		expect(record.text).toBe("Déployé\n\nsee https://postboi.app.")
 		// "Déployé\n\nsee " is 13 characters but 15 bytes — each é is two.
-		expect(record.facets[0].index).toEqual({ byteStart: 15, byteEnd: 36 })
+		expect(record.facets[0].index).toEqual({ byteStart: 15, byteEnd: 34 })
 		// The full stop is sentence, not URL.
-		expect(record.facets[0].features[0].uri).toBe("https://postboi.email")
+		expect(record.facets[0].features[0].uri).toBe("https://postboi.app")
 	})
 
 	it("rejects a post over 300 graphemes before the server does", async () => {

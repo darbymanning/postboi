@@ -3788,8 +3788,8 @@ function open_link(url) {
 }
 $("m-docs").onclick = function () { open_link("https://docs.postboi.app") }
 $("m-help").onclick = function () { open_link("https://docs.postboi.app/dev-inbox") }
-$("m-dashboard").onclick = function () { open_link("https://postboi.email/dashboard") }
-$("m-site").onclick = function () { open_link("https://postboi.email") }
+$("m-dashboard").onclick = function () { open_link("https://postboi.app/dashboard") }
+$("m-site").onclick = function () { open_link("https://postboi.app") }
 $("m-wipe").onclick = function () { set_menu(false); wipe() }
 $("m-sound").onclick = function () { $("t-sound").click(); set_menu(false) }
 FOLDERS.forEach(function (name) {
@@ -4453,7 +4453,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			</ul>
 			<ul class="right">
 				<li id="m-dashboard"><span class="ico">&#128202;</span>Postboi Dashboard</li>
-				<li id="m-site"><span class="ico">&#127760;</span>postboi.email</li>
+				<li id="m-site"><span class="ico">&#127760;</span>postboi.app</li>
 				<li class="sep"></li>
 				<li id="m-docs"><span class="ico">&#128218;</span>Documentation</li>
 				<li id="m-help"><span class="ico">&#10067;</span>Help and Support</li>

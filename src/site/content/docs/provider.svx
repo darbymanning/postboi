@@ -62,7 +62,7 @@ await mail({
 })
 ```
 
-You can rename the address (once a day) from the [dashboard](https://postboi.email/dashboard).
+You can rename the address (once a day) from the [dashboard](https://postboi.app/dashboard).
 
 ## Replies
 
@@ -204,7 +204,7 @@ machine-readable `code`:
 
 ## Delivery status
 
-Every send appears in the [message log](https://postboi.email/dashboard/messages) with
+Every send appears in the [message log](https://postboi.app/dashboard/messages) with
 its delivery status: bounces and complaints are tracked automatically. High bounce or
 complaint rates pause sending to protect deliverability for everyone; the dashboard shows
 when that happens.

@@ -33,4 +33,4 @@ Open http://localhost:3000.
 - **`app/actions.ts`** — a `"use server"` Server Action that just hands the whole `FormData` to `mail({ body })`.
 - **`postboi.config.ts`** — selects the provider (`postboi`, i.e. the Postboi provider) and the default recipient the contact-form notification lands at.
 
-Learn more in the [postboi docs](https://docs.postboi.app) or grab a token at [postboi.email](https://postboi.email).
+Learn more in the [postboi docs](https://docs.postboi.app) or grab a token at [postboi.app](https://postboi.app).
