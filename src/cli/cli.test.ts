@@ -457,12 +457,12 @@ describe("cloud device flow", () => {
 			json: async () => body,
 		}) as Response
 
-	const start = { code: "abc123", url: "https://postboi.email/cli?code=abc123" }
+	const start = { code: "abc123", url: "https://postboi.app/cli?code=abc123" }
 
-	it("cloud_base defaults to postboi.email and honours POSTBOI_API_URL", () => {
+	it("cloud_base defaults to postboi.app and honours POSTBOI_API_URL", () => {
 		const original = process.env.POSTBOI_API_URL
 		delete process.env.POSTBOI_API_URL
-		expect(cloud_base()).toBe("https://postboi.email")
+		expect(cloud_base()).toBe("https://postboi.app")
 		process.env.POSTBOI_API_URL = "http://localhost:5173/"
 		expect(cloud_base()).toBe("http://localhost:5173") // trailing slash stripped
 		if (original === undefined) delete process.env.POSTBOI_API_URL
@@ -470,18 +470,18 @@ describe("cloud device flow", () => {
 	})
 
 	it("start_device_auth returns the code and claim URL with defaults filled in", async () => {
-		const result = await start_device_auth("https://postboi.email", async () => json(start))
+		const result = await start_device_auth("https://postboi.app", async () => json(start))
 		expect(result).toEqual({ ...start, expires_in: 600, interval: 2 })
 	})
 
 	it("start_device_auth wraps network and server failures in a friendly error", async () => {
 		await expect(
-			start_device_auth("https://postboi.email", async () => {
+			start_device_auth("https://postboi.app", async () => {
 				throw new Error("ECONNREFUSED")
 			})
 		).rejects.toBeInstanceOf(PostboiAuthError)
 		await expect(
-			start_device_auth("https://postboi.email", async () => json({}, 500))
+			start_device_auth("https://postboi.app", async () => json({}, 500))
 		).rejects.toBeInstanceOf(PostboiAuthError)
 	})
 
@@ -492,7 +492,7 @@ describe("cloud device flow", () => {
 			json({ status: "claimed", token: "pb_secret", send_address: "joe@send.postboi.email" }),
 		]
 		const claim = await poll_device_auth(
-			"https://postboi.email",
+			"https://postboi.app",
 			{ ...start, expires_in: 600, interval: 2 },
 			{ fetch: async () => responses.shift()!, sleep: async () => {}, now: () => 0 }
 		)
@@ -501,7 +501,7 @@ describe("cloud device flow", () => {
 
 	it("poll_device_auth tolerates servers that don't send send_address", async () => {
 		const claim = await poll_device_auth(
-			"https://postboi.email",
+			"https://postboi.app",
 			{ ...start, expires_in: 600, interval: 2 },
 			{ fetch: async () => json({ status: "claimed", token: "pb_secret" }), sleep: async () => {} }
 		)
@@ -511,7 +511,7 @@ describe("cloud device flow", () => {
 	it("poll_device_auth fails fast on an invalid or expired code", async () => {
 		await expect(
 			poll_device_auth(
-				"https://postboi.email",
+				"https://postboi.app",
 				{ ...start, expires_in: 600, interval: 2 },
 				{ fetch: async () => json({ error: "expired" }, 410), sleep: async () => {} }
 			)
@@ -522,7 +522,7 @@ describe("cloud device flow", () => {
 		let clock = 0
 		await expect(
 			poll_device_auth(
-				"https://postboi.email",
+				"https://postboi.app",
 				{ ...start, expires_in: 600, interval: 2 },
 				{
 					fetch: async () => json({ status: "pending", interval: 2 }),
@@ -579,8 +579,8 @@ describe("cloud domains & generated from types", () => {
 	]
 
 	it("fetch_domains parses the account and defaults missing statuses to pending", async () => {
-		const account = await fetch_domains("https://postboi.email", "pb_secret", async (url, init) => {
-			expect(url).toBe("https://postboi.email/v1/domains")
+		const account = await fetch_domains("https://postboi.app", "pb_secret", async (url, init) => {
+			expect(url).toBe("https://postboi.app/v1/domains")
 			expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer pb_secret")
 			return json({
 				send_address: "joe@send.postboi.email",
@@ -922,8 +922,8 @@ describe("synced credentials (postboi env)", () => {
 		({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response
 
 	it("fetch_env_vars parses the vars and drops non-string values", async () => {
-		const synced = await fetch_env_vars("https://postboi.email", "pb_secret", async (url, init) => {
-			expect(url).toBe("https://postboi.email/v1/env")
+		const synced = await fetch_env_vars("https://postboi.app", "pb_secret", async (url, init) => {
+			expect(url).toBe("https://postboi.app/v1/env")
 			expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer pb_secret")
 			return json({ vars: { RESEND_API_KEY: "re_123", BROKEN: 42 } })
 		})
@@ -932,18 +932,18 @@ describe("synced credentials (postboi env)", () => {
 
 	it("fetch_env_vars returns undefined on an API that predates the endpoint", async () => {
 		expect(
-			await fetch_env_vars("https://postboi.email", "pb_secret", async () => json({}, 404))
+			await fetch_env_vars("https://postboi.app", "pb_secret", async () => json({}, 404))
 		).toBeUndefined()
 	})
 
 	it("push_env_vars PUTs a merge, null deleting", async () => {
 		let sent: unknown
 		const ok = await push_env_vars(
-			"https://postboi.email",
+			"https://postboi.app",
 			"pb_secret",
 			{ SLACK_WEBHOOK_URL: "https://hooks.slack.com/x", OLD_KEY: null },
 			async (url, init) => {
-				expect(url).toBe("https://postboi.email/v1/env")
+				expect(url).toBe("https://postboi.app/v1/env")
 				expect(init?.method).toBe("PUT")
 				sent = JSON.parse(String(init?.body))
 				return json({ stored: 1, removed: 1 })
@@ -957,7 +957,7 @@ describe("synced credentials (postboi env)", () => {
 
 	it("push_env_vars relays the API's rejection reason instead of blaming the network", async () => {
 		const rejected = await push_env_vars(
-			"https://postboi.email",
+			"https://postboi.app",
 			"pb_secret",
 			{ RESEND_API_KEY: "re_123" },
 			async () => json({ message: "an account stores at most 100 env vars" }, 422)
@@ -967,7 +967,7 @@ describe("synced credentials (postboi env)", () => {
 
 	it("push_env_vars reports an unreachable API with no reason", async () => {
 		const failed = await push_env_vars(
-			"https://postboi.email",
+			"https://postboi.app",
 			"pb_secret",
 			{ RESEND_API_KEY: "re_123" },
 			async () => {
@@ -978,14 +978,14 @@ describe("synced credentials (postboi env)", () => {
 	})
 
 	it("start_connect posts the provider and reads the browser URL", async () => {
-		const result = await start_connect("https://postboi.email", "slack", async (url, init) => {
-			expect(url).toBe("https://postboi.email/api/connect/start")
+		const result = await start_connect("https://postboi.app", "slack", async (url, init) => {
+			expect(url).toBe("https://postboi.app/api/connect/start")
 			expect(JSON.parse(String(init?.body))).toEqual({ provider: "slack" })
-			return json({ code: "c0de", url: "https://postboi.email/connect/slack?code=c0de" })
+			return json({ code: "c0de", url: "https://postboi.app/connect/slack?code=c0de" })
 		})
 		expect(result).toEqual({
 			code: "c0de",
-			url: "https://postboi.email/connect/slack?code=c0de",
+			url: "https://postboi.app/connect/slack?code=c0de",
 			expires_in: 900,
 			interval: 2,
 		})
@@ -993,12 +993,12 @@ describe("synced credentials (postboi env)", () => {
 
 	it("start_connect degrades to undefined instead of throwing — paste is the fallback", async () => {
 		expect(
-			await start_connect("https://postboi.email", "discord", async () => {
+			await start_connect("https://postboi.app", "discord", async () => {
 				throw new Error("ECONNREFUSED")
 			})
 		).toBeUndefined()
 		expect(
-			await start_connect("https://postboi.email", "discord", async () => json({}, 404))
+			await start_connect("https://postboi.app", "discord", async () => json({}, 404))
 		).toBeUndefined()
 	})
 
@@ -1008,7 +1008,7 @@ describe("synced credentials (postboi env)", () => {
 			json({ status: "connected", webhook_url: "https://hooks.slack.com/x", label: "#alerts" }),
 		]
 		const result = await poll_connect(
-			"https://postboi.email",
+			"https://postboi.app",
 			{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
 			{ fetch: async () => responses.shift()!, sleep: async () => {}, now: () => 0 }
 		)
@@ -1018,7 +1018,7 @@ describe("synced credentials (postboi env)", () => {
 	it("poll_connect returns undefined on an expired code or timeout", async () => {
 		expect(
 			await poll_connect(
-				"https://postboi.email",
+				"https://postboi.app",
 				{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
 				{ fetch: async () => json({ error: "expired" }, 410), sleep: async () => {} }
 			)
@@ -1027,7 +1027,7 @@ describe("synced credentials (postboi env)", () => {
 		let clock = 0
 		expect(
 			await poll_connect(
-				"https://postboi.email",
+				"https://postboi.app",
 				{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
 				{
 					fetch: async () => json({ status: "pending", interval: 2 }),
@@ -1076,7 +1076,7 @@ describe("poll_connect terminal statuses", () => {
 	it("treats 404/410 as dead instead of polling out the TTL", async () => {
 		expect(
 			await poll_connect(
-				"https://postboi.email",
+				"https://postboi.app",
 				{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
 				{
 					fetch: async () => json_response({ error: "not_found" }, 404),
@@ -1097,7 +1097,7 @@ describe("poll_connect terminal statuses", () => {
 			} as Response,
 		]
 		const result = await poll_connect(
-			"https://postboi.email",
+			"https://postboi.app",
 			{ code: "c0de", url: "u", expires_in: 900, interval: 2 },
 			{ fetch: async () => responses[calls++], sleep: async () => {} }
 		)

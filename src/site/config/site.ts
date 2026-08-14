@@ -53,7 +53,7 @@ export const siteConfig = {
 	links: {
 		github: "https://github.com/postboi-mail/postboi",
 		twitter: "https://github.com/postboi-mail/postboi",
-		site: "https://postboi.email",
+		site: "https://postboi.app",
 	},
 	/** Package metadata used in installation snippets and docs helpers. */
 	package: {

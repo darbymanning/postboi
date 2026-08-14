@@ -57,7 +57,7 @@ await mail({ to: "contact@example.com", subject: "Hi", body: "<p>Hello</p>" })
 
 That's the whole setup. Mail goes out from your `you@send.postboi.email` address (set
 `reply_to` to get replies) until you verify a domain of your own in the
-[dashboard](https://postboi.email/dashboard). `init` also:
+[dashboard](https://postboi.app/dashboard). `init` also:
 
 - writes defaults, hooks and the publishable captcha key to a committed
   [`postboi.config.ts`](https://docs.postboi.app/config) — everything but the token lives in version control

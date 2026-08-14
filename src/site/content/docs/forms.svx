@@ -13,9 +13,9 @@ your inbox as the same tidy email the library renders. No backend, no JavaScript
 
 ## Create a form
 
-In the [dashboard](https://postboi.email/dashboard/forms), create a form: give it a name,
+In the [dashboard](https://postboi.app/dashboard/forms), create a form: give it a name,
 pick which team member's inbox receives submissions, and you get an endpoint URL like
-`https://postboi.email/f/form_k3v9x2m1p8q4`.
+`https://postboi.app/f/form_k3v9x2m1p8q4`.
 
 Submissions can only be delivered to a **team member's sign-in email**, an address
 verified at sign-in (magic link or SSO), so a public endpoint can never be pointed at
@@ -25,7 +25,7 @@ you point it at a current member.
 ## The HTML
 
 ```html
-<form action="https://postboi.email/f/form_k3v9x2m1p8q4" method="POST">
+<form action="https://postboi.app/f/form_k3v9x2m1p8q4" method="POST">
 	<input name="name" placeholder="Your name" required>
 	<input name="email" type="email" placeholder="Your email" required>
 	<textarea name="message" placeholder="Your message" required></textarea>
@@ -122,7 +122,7 @@ Errors come back as `{ ok: false, code, message }` with a matching HTTP status:
 ## Notes
 
 - Form submissions are ordinary sends: they appear in the dashboard's
-  [message log](https://postboi.email/dashboard/messages/sent) and count towards your
+  [message log](https://postboi.app/dashboard/messages/sent) and count towards your
   plan's volume. The free tier's 3,000/mo covers a lot of contact form.
 - Pause a form from the dashboard and its endpoint stops accepting immediately (410);
   resume it any time. Deleting a form kills the URL for good.

@@ -7,7 +7,7 @@
 import { captcha_key } from "./register.js"
 
 /** Where the managed-captcha loader script lives. */
-export const CAPTCHA_ORIGIN = "https://postboi.email"
+export const CAPTCHA_ORIGIN = "https://postboi.app"
 
 /** Inline styling that hides the honeypot from humans without `display: none` (which smarter bots detect). */
 export const honeypot_style = "position:absolute;left:-9999px;height:0;width:0;opacity:0"

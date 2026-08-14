@@ -9,12 +9,12 @@ Everything the Postboi dashboard can do is also a REST endpoint. Authenticate wi
 same `POSTBOI_TOKEN` the CLI writes (or any API key from **Dashboard → Keys**):
 
 ```bash
-curl https://api.postboi.email/v1/lists \
+curl https://api.postboi.app/v1/lists \
 	-H "Authorization: Bearer $POSTBOI_TOKEN"
 ```
 
 The full interactive reference lives at
-**[api.postboi.email](https://api.postboi.email)** — every endpoint with schemas and
+**[api.postboi.app](https://api.postboi.app)** — every endpoint with schemas and
 copy-paste examples in curl, JavaScript, Python, and more.
 
 Alongside the per-list `/v1/lists/{id}/recipients` endpoints, `/v1/contacts` is your
@@ -23,12 +23,12 @@ memberships:
 
 ```bash
 # Upsert a contact
-curl https://api.postboi.email/v1/contacts \
+curl https://api.postboi.app/v1/contacts \
 	-H "Authorization: Bearer $POSTBOI_TOKEN" \
 	-d '{"email":"ada@example.com","name":"Ada","data":{"plan":"pro"}}'
 
 # Which lists is Ada on?
-curl https://api.postboi.email/v1/contacts/ada@example.com/lists \
+curl https://api.postboi.app/v1/contacts/ada@example.com/lists \
 	-H "Authorization: Bearer $POSTBOI_TOKEN"
 ```
 
@@ -37,7 +37,7 @@ curl https://api.postboi.email/v1/contacts/ada@example.com/lists \
 message and its body:
 
 ```bash
-curl https://api.postboi.email/v1/inbound \
+curl https://api.postboi.app/v1/inbound \
 	-H "Authorization: Bearer $POSTBOI_TOKEN"
 ```
 

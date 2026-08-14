@@ -207,7 +207,7 @@ export const telegram: PlatformSend = platform("telegram")
  * ```ts
  * import { bluesky } from "postboi"
  *
- * await bluesky({ message: "Postboi 0.25 is out — https://postboi.email" })
+ * await bluesky({ message: "Postboi 0.25 is out — https://postboi.app" })
  * ```
  */
 export const bluesky: PlatformSend = platform("bluesky")

@@ -77,7 +77,7 @@ just lets `sync` refresh the key (and the generated `from` types) from the Postb
 Upgrading from an earlier init? Run `bunx postboi sync` once with your token and it
 writes the key into your config for you. If the component warns that no key is baked,
 re-run `bunx postboi sync` (and restart the dev server), or pass one explicitly with
-`pk="pk_…"` from your [dashboard](https://postboi.email/dashboard/keys).
+`pk="pk_…"` from your [dashboard](https://postboi.app/dashboard/keys).
 
 Props, all optional: `pk` (key override), `origin` (loader origin), and `honeypot`
 (`false` to render no honeypot field). Without any key the component is honeypot-only and
@@ -130,10 +130,10 @@ stays quiet.
 
 On [the Postboi provider](/provider), invisible captcha is fully managed: no Cloudflare account, no
 keys to create, no env vars. Grab the snippet from your
-[dashboard](https://postboi.email/dashboard/keys), drop it on the page, and mark the form:
+[dashboard](https://postboi.app/dashboard/keys), drop it on the page, and mark the form:
 
 ```html
-<script src="https://postboi.email/captcha.js" data-key="pk_…" async defer></script>
+<script src="https://postboi.app/captcha.js" data-key="pk_…" async defer></script>
 
 <form method="POST" data-captcha>
 	<!-- your fields… -->

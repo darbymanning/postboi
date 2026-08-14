@@ -32,7 +32,7 @@ export const Captcha = defineComponent({
 	props: {
 		/** Publishable key (`pk_…`) override. Defaults to the key baked by `bunx postboi sync`. */
 		pk: { type: String, required: false },
-		/** Origin serving the captcha loader. Defaults to https://postboi.email. */
+		/** Origin serving the captcha loader. Defaults to https://postboi.app. */
 		origin: { type: String, required: false },
 		/** Render the hidden 🍯 honeypot field. Defaults to true. */
 		honeypot: { type: Boolean, default: true },

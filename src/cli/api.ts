@@ -6,7 +6,7 @@ import { bold, cyan, dim, green, red, yellow } from "./prompts.js"
 /**
  * The resource commands (`postboi lists`, `postboi domains add …`) — thin wrappers over
  * the /v1 API, authed with the POSTBOI_TOKEN that `postboi init` wrote. Full reference:
- * https://api.postboi.email
+ * https://api.postboi.app
  */
 
 /** A failure with a message safe to print as-is — main() prints it red and exits 1. */
@@ -90,7 +90,7 @@ async function whoami(): Promise<void> {
 	console.log(
 		`  sends         ${account.sends_today} today, ${account.sends_this_month} this month`
 	)
-	if (account.suspended) console.log(`  ${red("suspended — contact support@postboi.email")}`)
+	if (account.suspended) console.log(`  ${red("suspended — contact support@postboi.app")}`)
 }
 
 /**

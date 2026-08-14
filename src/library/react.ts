@@ -28,7 +28,7 @@ import { activate_captcha, honeypot_style_object } from "./form.js"
 export interface CaptchaProps {
 	/** Publishable key (`pk_…`) override. Defaults to the key baked by `bunx postboi sync`. */
 	pk?: string
-	/** Origin serving the captcha loader. Defaults to https://postboi.email. */
+	/** Origin serving the captcha loader. Defaults to https://postboi.app. */
 	origin?: string
 	/** Render the hidden 🍯 honeypot field. Defaults to true. */
 	honeypot?: boolean

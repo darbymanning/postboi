@@ -16,7 +16,7 @@ import { read_env, env_defaults } from "./env.js"
 export type PostboiOptions = CommonProviderOptions & {
 	/** The Postboi provider token. Defaults to the `POSTBOI_TOKEN` environment variable. */
 	token?: string
-	/** Override the API base URL. Defaults to `POSTBOI_API_URL` or `https://postboi.email`. */
+	/** Override the API base URL. Defaults to `POSTBOI_API_URL` or `https://postboi.app`. */
 	base_url?: string
 }
 
@@ -326,7 +326,7 @@ export default class Postboi extends ProviderBase<SendResponse> {
 		// explicitly via `default` wins.
 		super({ ...options, default: { ...env_defaults(), ...options.default } })
 		this.#token = token ?? read_env("POSTBOI_TOKEN")
-		const host = base_url ?? read_env("POSTBOI_API_URL") ?? "https://postboi.email"
+		const host = base_url ?? read_env("POSTBOI_API_URL") ?? "https://postboi.app"
 		this.#host = host.replace(/\/$/, "")
 	}
 

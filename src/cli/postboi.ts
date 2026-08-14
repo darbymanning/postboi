@@ -13,7 +13,7 @@ import { setTimeout as delay } from "node:timers/promises"
  * configuration is needed for `mail()` to send through the Postboi provider.
  */
 
-const DEFAULT_BASE = "https://postboi.email"
+const DEFAULT_BASE = "https://postboi.app"
 
 /** API base URL — `POSTBOI_API_URL` overrides for staging/local development. */
 export function cloud_base(): string {
