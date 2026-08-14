@@ -1,2 +1,7 @@
+# Path rules only. Workers Static Assets rejects an absolute URL here —
+# "Only relative URLs are allowed" — so the docs.postboi.email → docs.postboi.app
+# forward cannot live in this file; it is a zone Redirect Rule on postboi.email.
+# (Absolute sources work on Pages, not on Workers. Different product, same filename.)
+
 # The Cloud → provider rename: keep old bookmarks working.
 /cloud /provider 301
