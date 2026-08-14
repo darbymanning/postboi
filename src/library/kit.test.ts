@@ -54,7 +54,7 @@ describe("postboi/kit action()", () => {
 
 	it("returns { success: true } on a tripped honeypot without sending (bots learn nothing)", async () => {
 		const provider = new Mock({ default: { from: "from@test.com", to: "to@test.com" } })
-		const result = await action(provider)(event({ "🍯": "cheap pills", message: "spam" }))
+		const result = await action(provider)(event({ _honey: "cheap pills", message: "spam" }))
 
 		expect(result).toEqual({ success: true })
 		expect(provider.sent).toHaveLength(0)

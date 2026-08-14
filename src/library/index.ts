@@ -83,7 +83,6 @@ export { configure, config, type PostboiConfig } from "./config.js"
 // Spam protection (honeypot + Turnstile) is part of the public surface too.
 export {
 	HONEYPOT_FIELD,
-	HONEYPOT_LEGACY_FIELD,
 	TURNSTILE_FIELD,
 	TURNSTILE_REMOTE_FIELD,
 	type CaptchaOptions,
@@ -283,7 +282,7 @@ export interface SendOptions {
 	tracking?: Tracking
 	/**
 	 * Per-send spam-protection overrides (see {@link CaptchaOptions}). Only applies to
-	 * FormData (or form-fields object) bodies. By default the `🍯` honeypot check is on, and
+	 * FormData (or form-fields object) bodies. By default the `_honey` honeypot check is on, and
 	 * Turnstile verification runs whenever `TURNSTILE_SECRET_KEY` is set.
 	 */
 	captcha?: CaptchaOptions

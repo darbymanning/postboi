@@ -1,6 +1,6 @@
 ---
 /**
- * `<Captcha>` for Astro. Drop-in spam protection for a native `<form>`: renders the 🍯
+ * `<Captcha>` for Astro. Drop-in spam protection for a native `<form>`: renders the hidden
  * honeypot field and, on the Postboi provider, activates the managed invisible captcha on the
  * surrounding form. The publishable key is baked in by `bunx postboi sync`, so no props
  * are needed.
@@ -16,6 +16,7 @@
  * </form>
  * ```
  */
+import { HONEYPOT_FIELD } from "./captcha.js"
 import { captcha_key } from "./register.js"
 
 interface Props {
@@ -23,7 +24,7 @@ interface Props {
 	pk?: string
 	/** Origin serving the captcha loader. Defaults to https://postboi.app. */
 	origin?: string
-	/** Render the hidden 🍯 honeypot field. Defaults to true. */
+	/** Render the hidden honeypot field. Defaults to true. */
 	honeypot?: boolean
 }
 
@@ -37,7 +38,7 @@ const marker = pk ? { "data-postboi-marker": "" } : {}
 	honeypot ? (
 		<input
 			type="text"
-			name="🍯"
+			name={HONEYPOT_FIELD}
 			tabindex="-1"
 			autocomplete="off"
 			aria-hidden="true"

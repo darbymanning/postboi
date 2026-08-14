@@ -1,6 +1,6 @@
 /**
  * `<Captcha>` for Vue — Nuxt or plain Vue 3. Drop-in spam protection for a native
- * `<form>`: renders the 🍯 honeypot field and, on the Postboi provider, activates the managed
+ * `<form>`: renders the hidden honeypot field and, on the Postboi provider, activates the managed
  * invisible captcha on the surrounding form. The publishable key is baked in by
  * `bunx postboi sync`, so no props are needed.
  *
@@ -34,7 +34,7 @@ export const Captcha = defineComponent({
 		pk: { type: String, required: false },
 		/** Origin serving the captcha loader. Defaults to https://postboi.app. */
 		origin: { type: String, required: false },
-		/** Render the hidden 🍯 honeypot field. Defaults to true. */
+		/** Render the hidden honeypot field. Defaults to true. */
 		honeypot: { type: Boolean, default: true },
 	},
 	setup(props) {

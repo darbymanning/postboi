@@ -55,7 +55,7 @@ The endpoint speaks the library's [FormData dialect](/formdata):
 | --------------- | ------------------------------------------------------------------- |
 | `_subject`      | Sets the email's subject line                                       |
 | `_reply_to`     | Sets Reply-To explicitly (wins over an `email` field)               |
-| `_honey`        | The honeypot (classic `🍯` too): include it hidden; filled submissions are dropped |
+| `_honey`        | The honeypot: include it hidden; filled submissions are dropped    |
 | `fieldset→field`| Groups fields into titled sections in the email                     |
 
 ```html

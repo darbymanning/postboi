@@ -110,7 +110,7 @@ The lean path, in order. At every step the goal is **deleting code**, not wrappi
    - `name="contact→email"` → `{...mail.fields.contact.email.as("email")}` (nesting replaces arrows).
    - `<input type="hidden" name="_subject" value=…>` → `{...mail.fields._subject.as("hidden", …)}`.
    - `let { form } = $props()` result handling → `mail.result` (`{ success: true }` or `{ success: false, error }`); pending UI → `mail.pending`.
-   - Manual honeypot input → keep `<Captcha />` or rename the raw input to `_honey` (remote forms reject `🍯` and other non-path names).
+   - Manual honeypot input → keep `<Captcha />` or rename the raw input to `_honey` (remote forms reject non-path field names).
    - Add `optimizeDeps: { exclude: ["postboi/remote"] }` to `vite.config` if `postboi init` hasn't already.
 4. **Never** hand-write what the library owns: FormData parsing, HTML tables, HTML escaping, honeypot/captcha checks, provider error normalisation, webhook signature verification. If migrated code still contains any of those, the migration isn't finished.
 
@@ -118,7 +118,7 @@ The lean path, in order. At every step the goal is **deleting code**, not wrappi
 
 Two invisible layers, automatic on every FormData send. Easiest: drop the prop-free `<Captcha />` component inside the form — `postboi/svelte`, `postboi/react`, `postboi/vue`, `postboi/astro`. It renders the honeypot and activates the managed invisible captcha (Postboi provider; key baked in by `bunx postboi sync`).
 
-Manual honeypot — a visually hidden input named `_honey` (default; the classic `🍯` is also accepted, but remote forms reject it — **don't** use `display: none`, bots detect it):
+Manual honeypot — a visually hidden input named `_honey` (**don't** use `display: none`, bots detect it):
 
 ```html
 <input

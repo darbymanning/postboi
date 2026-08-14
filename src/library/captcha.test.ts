@@ -52,15 +52,6 @@ describe("check_captcha — honeypot", () => {
 		expect(await check_captcha(form({ name: "Ada" }))).toEqual({ ok: true })
 	})
 
-	it("still flags the legacy 🍯 field, and strips it", async () => {
-		const spam = await check_captcha(form({ "🍯": "buy now" }))
-		expect(spam).toMatchObject({ ok: false, code: "spam" })
-
-		const data = form({ "🍯": "", name: "Ada" })
-		expect(await check_captcha(data)).toEqual({ ok: true })
-		expect(data.has("🍯")).toBe(false)
-	})
-
 	it("supports a custom field name", async () => {
 		const verdict = await check_captcha(form({ nectar: "spam" }), { honeypot: "nectar" })
 		expect(verdict).toMatchObject({ ok: false, code: "spam" })

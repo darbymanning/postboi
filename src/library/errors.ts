@@ -69,7 +69,7 @@ export class SkipSendError extends PostboiError {
 }
 
 /**
- * Thrown when a FormData body trips the spam checks — the honeypot field (`🍯` by default)
+ * Thrown when a FormData body trips the spam checks — the honeypot field (`_honey` by default)
  * was filled. A {@link SkipSendError} with `code: "spam"`, so like any intentional skip it
  * never reaches the `on.error` hook. `postboi/kit` turns it into a silent
  * `{ success: true }` so bots can't tell they were caught.

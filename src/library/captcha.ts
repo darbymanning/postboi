@@ -4,8 +4,8 @@ import { ensure_env_loaded, read_env } from "./env.js"
  * Invisible spam protection for FormData bodies. Two independent layers, both checked in
  * `prepare_send` before anything is rendered or sent:
  *
- * - **Honeypot** (zero config, always on): a hidden `🍯` field humans never see. Present and
- *   empty → human; filled → bot, and the send is skipped.
+ * - **Honeypot** (zero config, always on): a hidden `_honey` field humans never see. Present
+ *   and empty → human; filled → bot, and the send is skipped.
  * - **Cloudflare Turnstile** (one env var): when a secret key is configured, the
  *   `cf-turnstile-response` token the widget injects into the form is verified server-side
  *   before every FormData send.
@@ -19,9 +19,6 @@ import { ensure_env_loaded, read_env } from "./env.js"
  * a name SvelteKit remote forms accept (their field names must be valid JS paths).
  */
 export const HONEYPOT_FIELD = "_honey"
-
-/** The classic honeypot name — still checked, so forms rendered by older components stay protected. */
-export const HONEYPOT_LEGACY_FIELD = "🍯"
 
 /** The hidden input the Turnstile widget injects into its form. */
 export const TURNSTILE_FIELD = "cf-turnstile-response"
@@ -45,7 +42,7 @@ export type CaptchaOptions = {
 	 */
 	key?: string
 	/**
-	 * Honeypot field name checked in FormData bodies. Defaults to `"🍯"` — add a visually
+	 * Honeypot field name checked in FormData bodies. Defaults to `"_honey"` — add a visually
 	 * hidden input with that name to your form and any submission that fills it is treated
 	 * as spam (skipped, never sent). Pass a string to use a different field name, or `false`
 	 * to disable the check.
@@ -131,16 +128,14 @@ export async function check_captcha(
 	mode: CaptchaMode = "byo"
 ): Promise<CaptchaVerdict> {
 	if (options.honeypot !== false) {
-		const names = options.honeypot ? [options.honeypot] : [HONEYPOT_FIELD, HONEYPOT_LEGACY_FIELD]
-		for (const name of names) {
-			const value = form.get(name)
-			form.delete(name)
-			if (typeof value === "string" && value.trim() !== "") {
-				return {
-					ok: false,
-					code: "spam",
-					message: "Submission flagged as spam: the honeypot field was filled.",
-				}
+		const name = options.honeypot || HONEYPOT_FIELD
+		const value = form.get(name)
+		form.delete(name)
+		if (typeof value === "string" && value.trim() !== "") {
+			return {
+				ok: false,
+				code: "spam",
+				message: "Submission flagged as spam: the honeypot field was filled.",
 			}
 		}
 	}
