@@ -117,7 +117,7 @@ works once you've run `bunx postboi init`.
 - [`src/routes/+page.server.ts`](./src/routes/+page.server.ts) — the contact form's backend:
   `export const actions = { default: mail }`.
 - [`src/routes/+page.svelte`](./src/routes/+page.svelte) — the contact form. Field names use
-  the [`fieldset→field`](https://docs.postboi.email/formdata#grouped-fields) syntax, `_subject` sets
+  the [`fieldset→field`](https://docs.postboi.app/formdata#grouped-fields) syntax, `_subject` sets
   the subject, and `_reply_to` is bound to the sender's email.
 - [`src/routes/welcome/+page.server.ts`](./src/routes/welcome/+page.server.ts) — the same
   provider, sent via a hand-built top-level `mail()` call with a typed `from`.

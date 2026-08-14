@@ -25,7 +25,7 @@ Then open http://localhost:3000.
   which postboi renders as grouped sections in the email.
 - **`postboi.config.ts`** — picks the provider (the Postboi provider) and the default
   recipient for notifications. Swap `provider` for any of
-  https://docs.postboi.email/providers to use a different one.
+  https://docs.postboi.app/providers to use a different one.
 
-Learn more at the [postboi docs](https://docs.postboi.email) and
+Learn more at the [postboi docs](https://docs.postboi.app) and
 [the Postboi provider](https://postboi.email).

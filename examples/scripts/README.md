@@ -5,9 +5,9 @@ Plain Bun/Node scripts — no framework, no form. Just call `mail()` from your b
 - [`transactional.ts`](./transactional.ts) — the simplest send: one `mail({ to, subject, body })`
   (a welcome email, a receipt, a reset link).
 - [`bulk.ts`](./bulk.ts) — send an array of messages with bounded concurrency
-  ([Bulk sending](https://docs.postboi.email/bulk)).
+  ([Bulk sending](https://docs.postboi.app/bulk)).
 - [`scheduling.ts`](./scheduling.ts) — send later with `scheduled_at`
-  ([Scheduling](https://docs.postboi.email/scheduling)).
+  ([Scheduling](https://docs.postboi.app/scheduling)).
 
 ## Run
 
@@ -21,7 +21,7 @@ bun run schedule
 
 Both use the top-level `mail()`, which picks up the provider from
 [`postboi.config.ts`](./postboi.config.ts) — the Postboi provider by default. Swap `provider`
-there for any of the [supported providers](https://docs.postboi.email/providers) and set that
+there for any of the [supported providers](https://docs.postboi.app/providers) and set that
 provider's API key in `.env` instead.
 
 > Scheduling only takes effect on providers that support it (the Postboi provider, Resend, Brevo,

@@ -2,7 +2,7 @@ import { mail, cancel } from "postboi"
 
 // `scheduled_at` takes a relative duration ({ days, hours, … }), a Date, or an ISO 8601
 // string. Providers that support scheduling (the Postboi provider, Resend, Brevo, Mailgun, SendGrid)
-// honour it; every other provider sends immediately. See https://docs.postboi.email/scheduling.
+// honour it; every other provider sends immediately. See https://docs.postboi.app/scheduling.
 const result = await mail({
 	to: "contact@example.com",
 	subject: "Your weekly digest",

@@ -301,7 +301,7 @@ export const PROVIDERS = [
 		name: "SMTP (any server)",
 		import: "postboi/smtp",
 		class: "SMTP",
-		url: "https://docs.postboi.email/providers",
+		url: "https://docs.postboi.app/providers",
 		fields: [
 			{ env: "SMTP_HOST", arg: "host", label: "Host (e.g. smtp.example.com)" },
 			{ env: "SMTP_PORT", arg: "port", label: "Port", default: "587" },
