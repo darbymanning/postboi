@@ -38,7 +38,9 @@ subscribes with, so the two must match — mismatched keys are rejected on every
 401 that explains nothing.
 
 `VAPID_SUBJECT` is required by RFC 8292 so a push service operator can reach you about
-misbehaving traffic. `mailto:` or an https URL.
+misbehaving traffic. `mailto:` or an https URL — your address on its own is fine too and
+becomes a `mailto:`. Anything else throws when the provider is built, rather than reaching
+a push service that answers 401 without saying why.
 
 | Provider | Import | Reaches |
 | --- | --- | --- |

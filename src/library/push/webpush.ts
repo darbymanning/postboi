@@ -21,6 +21,38 @@ export function clear_vapid_cache(): void {
 	vapid_cache.clear()
 }
 
+/** An address on its own: what everyone types when asked for a contact. */
+const BARE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/**
+ * Normalise the VAPID contact into the URI RFC 8292 asks for.
+ *
+ * The `sub` claim is a URI, not an address, and a push service handed a bare
+ * `you@example.com` answers 401 with nothing in it that names the subject — on a channel
+ * that already fails silently, that is a very long afternoon. A bare address is the
+ * overwhelmingly common mistake (it's what a "contact" prompt invites), so prefix it
+ * rather than refuse it; anything that is neither an address nor an `https:` URL is a
+ * genuine mistake, and throwing here names it while the stack still points at the
+ * construction site rather than at some send hours later.
+ *
+ * `http:` is rejected with the rest: the RFC allows `mailto:` and `https:`, and a plain
+ * http URL is the sort of thing that works against one push service and 401s against the
+ * next.
+ */
+export function vapid_subject(subject: string, provider: string): string {
+	const value = (subject ?? "").trim()
+	if (/^mailto:/i.test(value) || /^https:\/\//i.test(value)) return value
+	if (BARE_EMAIL.test(value)) return `mailto:${value}`
+	throw new PostboiError({
+		provider,
+		channel: "push",
+		code: "invalid_subject",
+		message: `VAPID subject must be a mailto: or https: URI (RFC 8292), got ${
+			value ? `"${value}"` : "an empty string"
+		}. An email address on its own is fine — it becomes mailto:${value || "you@example.com"}.`,
+	})
+}
+
 /**
  * Web Push — VAPID (RFC 8292) plus `aes128gcm` payload encryption (RFC 8291).
  *
@@ -51,7 +83,7 @@ export default class WebPush extends PushProvider<SendResponse> {
 		super(options)
 		this.#public_key = public_key
 		this.#private_key = private_key
-		this.#subject = subject
+		this.#subject = vapid_subject(subject, this.provider)
 	}
 
 	/** The cached VAPID header for this endpoint's origin, re-signed when near expiry. */

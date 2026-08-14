@@ -575,7 +575,9 @@ export const PUSH_PROVIDERS = [
 			{
 				env: "VAPID_SUBJECT",
 				arg: "subject",
-				label: "Contact (mailto: or https URL)",
+				// A bare address is what this prompt invites, and the provider now turns one
+				// into a mailto: URI rather than letting it 401 at the push service.
+				label: "Contact (your email, or an https URL)",
 			},
 		],
 	},
