@@ -266,3 +266,5 @@ export async function receive(
 
 	return adapter.normalize(body, { headers: request.headers, url })
 }
+
+export { webhook, type RequestCarrier } from "./handler.js"

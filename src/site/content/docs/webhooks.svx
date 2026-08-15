@@ -39,16 +39,19 @@ Like `mail()`, `receive()` is zero-config: the provider comes from `POSTBOI_PROV
 const events = await receive(request, { provider: 'resend', secret: RESEND_WEBHOOK_SECRET })
 ```
 
-## SvelteKit
+## One line per framework
 
-On SvelteKit, use the ready-made handler from `postboi/kit`: it verifies, normalizes,
-calls your handler once per event, and answers the provider correctly (200 on success,
-401 on a bad signature, 400 on a bad payload, 500 when your handler throws so the
-provider retries):
+You rarely need to call `receive()` yourself: `webhook()` wraps it in the response
+contract providers expect — 200 on success, 401 on a bad signature, 400 on a bad
+payload, 500 when your handler throws so the provider retries — and takes the request
+in whichever shape your framework hands it over. A web `Request` (Next.js, Workers,
+plain fetch handlers) and a context object carrying `.request` (SvelteKit, Astro,
+Remix) both work, so the same line is the whole endpoint in all of them:
 
 ```typescript
-// src/routes/webhooks/email/+server.ts
-import { webhook } from 'postboi/kit'
+// Next.js app/webhooks/route.ts · an Astro APIRoute · a Remix action ·
+// a SvelteKit +server.ts · a Worker fetch branch — identical in each:
+import { webhook } from 'postboi/webhooks'
 
 export const POST = webhook(async (event) => {
 	if (event.type === 'opened') {
@@ -56,6 +59,16 @@ export const POST = webhook(async (event) => {
 	}
 })
 ```
+
+Hono keeps the raw request one level deeper — unwrap it in place:
+
+```typescript
+app.post('/webhooks', (c) => webhook(handler)(c.req.raw))
+```
+
+On SvelteKit, `postboi/kit` re-exports `webhook()` with the `RequestEvent` type
+already narrowed, so imports stay consistent with `mail` and `action` from the same
+module.
 
 ## The event shape
 
