@@ -2,13 +2,29 @@
 
 Runnable examples for [Postboi](https://github.com/postboi-mail/postboi).
 
-The framework apps all do the same thing — a `multipart/form-data` contact form whose
-submission becomes a tidy HTML email, with reply-to set to the sender's email so hitting
-**Reply** goes straight back to the person who filled it in. They're named
+The framework apps all start from the same thing — a `multipart/form-data` contact form
+whose submission becomes a tidy HTML email, with reply-to set to the sender's email so
+hitting **Reply** goes straight back to the person who filled it in. They're named
 `<framework>-provider-<provider>` so each framework can have one per provider.
 
 Every one is the same handful of lines: read the request's `FormData`, and pass it to the
 top-level `mail()`. The provider lives entirely in `postboi.config.ts`.
+
+Since postboi went multi-channel, each app also carries the rest, in its framework's own
+idiom — deliberately WET, so "postboi in `<framework>`" is one folder, complete:
+
+- **`POST /webhooks`** — provider delivery events, signature-verified and normalized.
+  This is where frameworks genuinely differ (Express must take the raw body or
+  verification fails; the web-standard frameworks hand `receive()` their `Request`;
+  SvelteKit gets the one-line `webhook()` from `postboi/kit`).
+- **`POST /notify`** — `sms()`, `whatsapp()` and `slack()` from one endpoint. The calls
+  are identical everywhere; the file shows where they live in each framework.
+- **`/push`** (SvelteKit and Next.js) — Web Push end to end: `subscribe()` in the
+  browser, the subscription stored, `push()` sending to it, and the service worker that
+  shows it.
+
+Every example is exercised by CI (`bun run ci` in each folder — a typecheck or build),
+so none of this rots quietly.
 
 ## SvelteKit
 

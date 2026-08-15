@@ -27,3 +27,14 @@ Then open http://localhost:5173.
 
 Learn more at the [postboi docs](https://docs.postboi.app) and
 [the Postboi provider](https://postboi.app).
+
+## Beyond the form
+
+The contact form is the classic; the rest of postboi wires in the same way:
+
+- **`POST /webhooks`** — provider delivery events (delivered, opened, bounced, …),
+  signature-verified and normalized. Set `<PROVIDER>_WEBHOOK_SECRET` and point your
+  provider's webhook here.
+- **`POST /notify`** — the other channels: `sms()`, `whatsapp()` and `slack()` from one
+  endpoint. `{ "channel": "sms", "to": "+447700900123", "message": "…" }` — in
+  development SMS and WhatsApp are logged, not sent.

@@ -5,13 +5,14 @@
 	"scripts": {
 		"dev": "nuxt dev",
 		"build": "nuxt build",
-		"postinstall": "nuxt prepare"
+		"postinstall": "nuxt prepare",
+		"ci": "nuxt build"
 	},
 	"dependencies": {
 		"nuxt": "^3.14",
 		"vue": "^3"
 	},
 	"devDependencies": {
-		"postboi": "^0.11.0"
+		"postboi": "^0.28.0"
 	}
 }

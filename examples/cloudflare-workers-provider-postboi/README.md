@@ -26,3 +26,14 @@ npm run deploy
 - **`wrangler.jsonc`** — Worker config, with `nodejs_compat` turned on. `POSTBOI_TOKEN` isn't declared here: secrets come from `.dev.vars` locally and `wrangler secret` in production, and Postboi picks the binding up either way.
 
 Full docs live at https://docs.postboi.app and the Postboi provider is at https://postboi.app.
+
+## Beyond the form
+
+The contact form is the classic; the rest of postboi wires in the same way:
+
+- **`POST /webhooks`** — provider delivery events (delivered, opened, bounced, …),
+  signature-verified and normalized. Set `<PROVIDER>_WEBHOOK_SECRET` and point your
+  provider's webhook here.
+- **`POST /notify`** — the other channels: `sms()`, `whatsapp()` and `slack()` from one
+  endpoint. `{ "channel": "sms", "to": "+447700900123", "message": "…" }` — in
+  development SMS and WhatsApp are logged, not sent.

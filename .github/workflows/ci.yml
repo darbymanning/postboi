@@ -43,3 +43,27 @@ jobs:
 
       - name: Build
         run: bun run build
+
+  # WET on purpose (each example is copy-paste-complete for its framework), which is
+  # only affordable if nothing rots silently — so every example installs and runs its
+  # own `ci` script (a typecheck or build, whichever is cheapest and meaningful).
+  examples:
+    name: Examples
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Check every example
+        run: |
+          set -e
+          for dir in examples/*/; do
+            echo "── $dir"
+            (cd "$dir" && bun install && bun run ci)
+          done
