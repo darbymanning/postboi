@@ -23,7 +23,9 @@
  * ```
  */
 
-import { defineComponent, h, onMounted, ref } from "vue"
+import { computed, defineComponent, h, onMounted, onUnmounted, ref } from "vue"
+import { push_controller } from "./push/controller.js"
+import type { PushControllerOptions, PushState } from "./push/controller.js"
 import { HONEYPOT_FIELD } from "./captcha.js"
 import { activate_captcha, honeypot_style } from "./form.js"
 
@@ -60,3 +62,41 @@ export const Captcha = defineComponent({
 })
 
 export default Captcha
+
+/**
+ * The push-toggle state machine as a composable — `postboi/push`'s `push_controller`,
+ * plugged into Vue. Call `enable` from a click: browsers auto-deny permission prompts
+ * that aren't tied to a user gesture, and once denied they never ask again.
+ *
+ * @example
+ * ```vue
+ * <script setup>
+ * import { use_push } from "postboi/vue"
+ * const push = use_push({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+ * </script>
+ *
+ * <template>
+ * 	<button :disabled="push.busy.value" @click="push.on.value ? push.disable() : push.enable()">
+ * 		{{ push.on.value ? "Unsubscribe" : "Subscribe" }}
+ * 	</button>
+ * </template>
+ * ```
+ */
+export function use_push(options: PushControllerOptions) {
+	const controller = push_controller(options)
+	const state = ref<PushState>(controller.now())
+
+	onMounted(() => {
+		const stop = controller.subscribe((next) => (state.value = next))
+		onUnmounted(stop)
+	})
+
+	return {
+		supported: computed(() => state.value.supported),
+		on: computed(() => state.value.on),
+		busy: computed(() => state.value.busy),
+		reason: computed(() => state.value.reason),
+		enable: controller.enable,
+		disable: controller.disable,
+	}
+}

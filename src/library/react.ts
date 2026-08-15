@@ -21,7 +21,9 @@
  * ```
  */
 
-import { createElement, useEffect, useRef } from "react"
+import { createElement, useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { push_controller } from "./push/controller.js"
+import type { PushControllerOptions, PushState } from "./push/controller.js"
 import { HONEYPOT_FIELD } from "./captcha.js"
 import { activate_captcha, honeypot_style_object } from "./form.js"
 
@@ -52,4 +54,27 @@ export function Captcha({ pk, origin, honeypot = true }: CaptchaProps) {
 				style: honeypot_style_object,
 			})
 		: createElement("span", { ref: marker, hidden: true })
+}
+
+/**
+ * The push-toggle state machine as a hook — `postboi/push`'s `push_controller`, plugged
+ * into React. Call `enable` from a click: browsers auto-deny permission prompts that
+ * aren't tied to a user gesture, and once denied they never ask again.
+ *
+ * @example
+ * ```tsx
+ * const push = use_push({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+ *
+ * <button onClick={push.on ? push.disable : push.enable} disabled={push.busy}>
+ * 	{push.on ? "Unsubscribe" : "Subscribe"}
+ * </button>
+ * ```
+ */
+export function use_push(options: PushControllerOptions): PushState & {
+	enable: () => Promise<void>
+	disable: () => Promise<void>
+} {
+	const [controller] = useState(() => push_controller(options))
+	const state = useSyncExternalStore(controller.subscribe, controller.now, controller.now)
+	return { ...state, enable: controller.enable, disable: controller.disable }
 }

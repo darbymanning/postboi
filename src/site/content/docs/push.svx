@@ -98,6 +98,40 @@ const on = Boolean(await subscribe.current())
 `unsubscribe()` removes the subscription and hands back the copy you stored, so you know
 which row to delete.
 
+### The toggle, without the choreography
+
+Every settings page that offers a push switch re-implements the same state machine:
+`current()` on mount, busy and error state, subscribe-then-register, rollback when the
+server never learned the address. `push_controller` is that machine written once — and
+because it implements the store contract, Svelte uses it bare:
+
+```svelte
+<script>
+	import { push_controller } from "postboi/push"
+	const push = push_controller({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+</script>
+
+<button onclick={() => ($push.on ? push.disable() : push.enable())} disabled={$push.busy}>
+	{$push.on ? "Unsubscribe" : "Subscribe"}
+</button>
+```
+
+React and Vue get it as `use_push` from `postboi/react` / `postboi/vue`:
+
+```tsx
+const push = use_push({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+
+<button onClick={push.on ? push.disable : push.enable} disabled={push.busy}>
+	{push.on ? "Unsubscribe" : "Subscribe"}
+</button>
+```
+
+`register` is a URL the subscription is POSTed to (or a function, for anything beyond
+that); `unregister`, when given, unfiles it on disable. A register call that fails rolls
+the browser subscription back, so there's never an address the server doesn't know.
+
+### When a subscribe fails
+
 `subscribe.reason(error)` says which wall was hit, the way `push.expired(error)` does on the
 server — null for anything that didn't come from the subscribe call, so it's safe on a bare
 `catch`:
