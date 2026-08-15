@@ -1,11 +1,3 @@
----
-// The public half of the VAPID pair — public by definition; the private half stays on
-// the server and signs every send. `bunx postboi init --push` mints the pair. It rides
-// to the client on a data attribute because Astro's bundled <script> below can't see
-// server env (and define:vars would un-bundle it, breaking the npm import).
-const key = import.meta.env.VAPID_PUBLIC_KEY ?? ""
----
-
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
@@ -26,64 +18,48 @@ const key = import.meta.env.VAPID_PUBLIC_KEY ?? ""
 		</style>
 	</head>
 	<body>
-		<main data-key={key}>
+		<main>
 			<h1>Web Push</h1>
-			{
-				key ? (
-					<>
-						<p>
-							Subscribe this browser, then have the server push to it — close the tab
-							first if you want proof it works with the site gone.
-						</p>
-						<button id="toggle" disabled>
-							Subscribe
-						</button>
-						<button id="test" disabled>
-							Send me one
-						</button>
-						<p id="status" />
-					</>
-				) : (
-					<p>
-						No VAPID keys yet — run <code>bunx postboi init --push</code> and restart.
-					</p>
-				)
-			}
+			<p>
+				Subscribe this browser, then have the server push to it — close the tab first if
+				you want proof it works with the site gone.
+			</p>
+			<button id="toggle">Subscribe</button>
+			<button id="test" disabled>Send me one</button>
+			<p id="status"></p>
 		</main>
 
 		<script>
 			import { push_controller } from "postboi/push"
 
-			// The whole toggle state machine lives in the controller — this script only
-			// wires it to the DOM. No framework required: subscribe() on the controller
-			// is a plain observable.
-			const key = document.querySelector("main")?.dataset.key
-			const toggle = document.getElementById("toggle") as HTMLButtonElement | null
-			const test = document.getElementById("test") as HTMLButtonElement | null
-			const status = document.getElementById("status")
+			// No key and no data-attribute smuggling: `bunx postboi init --push` (or sync)
+			// bakes the VAPID public key into the package, and Astro bundles this script,
+			// so the baked value is just here. The controller is the whole state machine —
+			// this script only wires it to the DOM; a missing bake shows as "missing_key".
+			const toggle = document.getElementById("toggle") as HTMLButtonElement
+			const test = document.getElementById("test") as HTMLButtonElement
+			const status = document.getElementById("status") as HTMLParagraphElement
 
-			if (key && toggle && test && status) {
-				const push = push_controller({ key, register: "/push/subscriptions" })
+			const push = push_controller({ register: "/push/subscriptions" })
 
-				push.subscribe((state) => {
-					toggle.textContent = state.on ? "Unsubscribe" : "Subscribe"
-					toggle.disabled = state.busy
-					test.disabled = !state.on || state.busy
-					if (state.reason) status.textContent = state.reason
-				})
+			push.subscribe((state) => {
+				toggle.textContent = state.on ? "Unsubscribe" : "Subscribe"
+				toggle.disabled = state.busy
+				test.disabled = !state.on || state.busy
+				if (state.reason) status.textContent = state.reason
+			})
 
-				toggle.addEventListener("click", () => {
-					void (push.now().on ? push.disable() : push.enable())
-				})
+			toggle.addEventListener("click", () => {
+				void (push.now().on ? push.disable() : push.enable())
+			})
 
-				test.addEventListener("click", async () => {
-					const response = await fetch("/push/subscriptions", { method: "PUT" })
-					const { sent } = await response.json()
-					status.textContent = sent
-						? "sent — check your notifications"
-						: "nothing subscribed on the server"
-				})
-			}
+			test.addEventListener("click", async () => {
+				const response = await fetch("/push/subscriptions", { method: "PUT" })
+				const { sent } = await response.json()
+				status.textContent = sent
+					? "sent — check your notifications"
+					: "nothing subscribed on the server"
+			})
 		</script>
 	</body>
 </html>

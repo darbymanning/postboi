@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { usePush } from "postboi/vue"
+import { use_push } from "postboi/vue"
 
-const key = useRuntimeConfig().public.vapidPublicKey
-
-// The whole toggle state machine — current() on mount, busy and error state,
-// subscribe-then-register with rollback when the server never learns the address —
-// lives in the composable. Destructured so the refs unwrap in the template.
-const { on, busy, reason, enable, disable } = usePush({
-	key,
+// No key, no runtimeConfig: `bunx postboi init --push` (or sync) bakes the VAPID
+// public key into the package. Destructured so the refs unwrap in the template; a
+// missing bake surfaces as reason === "missing_key".
+const { on, busy, reason, enable, disable } = use_push({
 	register: "/api/push/subscriptions",
 })
 
@@ -23,21 +20,16 @@ async function test() {
 	<main>
 		<h1>Web Push</h1>
 
-		<p v-if="!key">
-			No VAPID keys yet — run <code>bunx postboi init --push</code> and restart.
+		<p>
+			Subscribe this browser, then have the server push to it — close the tab first if
+			you want proof it works with the site gone.
 		</p>
-		<template v-else>
-			<p>
-				Subscribe this browser, then have the server push to it — close the tab first if
-				you want proof it works with the site gone.
-			</p>
-			<button :disabled="busy" @click="on ? disable() : enable()">
-				{{ on ? "Unsubscribe" : "Subscribe" }}
-			</button>
-			<button :disabled="!on" @click="test">Send me one</button>
-			<p v-if="reason">{{ reason }}</p>
-			<p v-else-if="status">{{ status }}</p>
-		</template>
+		<button :disabled="busy" @click="on ? disable() : enable()">
+			{{ on ? "Unsubscribe" : "Subscribe" }}
+		</button>
+		<button :disabled="!on" @click="test">Send me one</button>
+		<p v-if="reason">{{ reason }}</p>
+		<p v-else-if="status">{{ status }}</p>
 	</main>
 </template>
 

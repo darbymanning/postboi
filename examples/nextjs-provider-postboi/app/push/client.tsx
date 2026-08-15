@@ -3,25 +3,17 @@
 import { useState } from "react"
 import { usePush } from "postboi/react"
 
-export function PushClient({ vapidKey }: { vapidKey?: string }) {
-	// The whole toggle state machine — current() on mount, busy and error state,
-	// subscribe-then-register with rollback when the server never learns the address —
-	// lives in the hook.
-	const push = usePush({ key: vapidKey ?? "", register: "/push/subscriptions" })
+export function PushClient() {
+	// No key prop: `bunx postboi init --push` (or sync) bakes the VAPID public key into
+	// the package. The whole toggle state machine lives in the hook; a missing bake
+	// surfaces as push.reason === "missing_key".
+	const push = usePush({ register: "/push/subscriptions" })
 	const [status, setStatus] = useState("")
 
 	async function test() {
 		const response = await fetch("/push/subscriptions", { method: "PUT" })
 		const { sent } = await response.json()
 		setStatus(sent ? "sent — check your notifications" : "nothing subscribed on the server")
-	}
-
-	if (!vapidKey) {
-		return (
-			<p>
-				No VAPID keys yet — run <code>bunx postboi init --push</code> and restart.
-			</p>
-		)
 	}
 
 	return (

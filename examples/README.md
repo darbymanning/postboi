@@ -21,7 +21,9 @@ idiom — deliberately WET, so "postboi in `<framework>`" is one folder, complet
   are identical everywhere; the file shows where they live in each framework.
 - **`/push`** (every app with a client build: SvelteKit, Next.js, Astro, Nuxt, Remix) —
   Web Push end to end: `subscribe()` in the browser, the subscription stored, `push()`
-  sending to it, and the service worker that shows it. The server-only apps (Hono,
+  sending to it, and the service worker that shows it. No key plumbing anywhere —
+  `bunx postboi init --push` mints the VAPID pair and bakes the public half into the
+  package, so nothing carries it to the browser by hand. The server-only apps (Hono,
   Express, Workers) carry the full server surface and point here for the browser half.
 
 Every example is exercised by CI (`bun run ci` in each folder — a typecheck or build),
