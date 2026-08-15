@@ -52,61 +52,37 @@ const key = import.meta.env.VAPID_PUBLIC_KEY ?? ""
 		</main>
 
 		<script>
-			import { subscribe, unsubscribe } from "postboi/push"
+			import { push_controller } from "postboi/push"
 
+			// The whole toggle state machine lives in the controller — this script only
+			// wires it to the DOM. No framework required: subscribe() on the controller
+			// is a plain observable.
 			const key = document.querySelector("main")?.dataset.key
 			const toggle = document.getElementById("toggle") as HTMLButtonElement | null
 			const test = document.getElementById("test") as HTMLButtonElement | null
 			const status = document.getElementById("status")
 
-			// Permission alone can't answer "is this browser subscribed?" — granted-but-
-			// unsubscribed is what a browser looks like after someone turned it off again.
-			let on = false
-			if (key && toggle && test) {
-				subscribe.current().then((current) => {
-					on = Boolean(current)
-					render()
-					toggle.disabled = false
+			if (key && toggle && test && status) {
+				const push = push_controller({ key, register: "/push/subscriptions" })
+
+				push.subscribe((state) => {
+					toggle.textContent = state.on ? "Unsubscribe" : "Subscribe"
+					toggle.disabled = state.busy
+					test.disabled = !state.on || state.busy
+					if (state.reason) status.textContent = state.reason
 				})
 
-				// From a click: browsers auto-deny permission prompts that aren't tied to a
-				// user gesture, and once denied they never ask again.
-				toggle.addEventListener("click", async () => {
-					toggle.disabled = true
-					if (on) {
-						await unsubscribe()
-						on = false
-					} else {
-						try {
-							const subscription = await subscribe({ key })
-							await fetch("/push/subscriptions", {
-								method: "POST",
-								headers: { "content-type": "application/json" },
-								body: JSON.stringify(subscription),
-							})
-							on = true
-						} catch (error) {
-							if (status) status.textContent = subscribe.reason(error) ?? "failed"
-						}
-					}
-					render()
-					toggle.disabled = false
+				toggle.addEventListener("click", () => {
+					void (push.now().on ? push.disable() : push.enable())
 				})
 
 				test.addEventListener("click", async () => {
 					const response = await fetch("/push/subscriptions", { method: "PUT" })
 					const { sent } = await response.json()
-					if (status) {
-						status.textContent = sent
-							? "sent — check your notifications"
-							: "nothing subscribed on the server"
-					}
+					status.textContent = sent
+						? "sent — check your notifications"
+						: "nothing subscribed on the server"
 				})
-			}
-
-			function render() {
-				if (toggle) toggle.textContent = on ? "Unsubscribe" : "Subscribe"
-				if (test) test.disabled = !on
 			}
 		</script>
 	</body>

@@ -1,7 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node"
 import { useLoaderData } from "@remix-run/react"
-import { useEffect, useState } from "react"
-import { subscribe, unsubscribe } from "postboi/push"
+import { useState } from "react"
+import { usePush } from "postboi/react"
 
 // The loader hands the page the public half of the VAPID pair — public by definition;
 // the private half stays on the server and signs every send. `bunx postboi init --push`
@@ -12,40 +12,10 @@ export function loader(_args: LoaderFunctionArgs) {
 
 export default function Push() {
 	const { vapidKey } = useLoaderData<typeof loader>()
-	const [on, setOn] = useState(false)
-	const [busy, setBusy] = useState(false)
+	// The whole toggle state machine — current() on mount, busy and error state,
+	// subscribe-then-register with rollback — lives in the hook.
+	const push = usePush({ key: vapidKey ?? "", register: "/push/subscriptions" })
 	const [status, setStatus] = useState("")
-
-	useEffect(() => {
-		// Permission alone can't answer "is this browser subscribed?" — granted-but-
-		// unsubscribed is what a browser looks like after someone turned it off again.
-		subscribe.current().then((current) => setOn(Boolean(current)))
-	}, [])
-
-	// Call subscribe() from a click: browsers auto-deny permission prompts that aren't
-	// tied to a user gesture, and once denied they never ask again.
-	async function enable() {
-		if (!vapidKey) return
-		setBusy(true)
-		setStatus("")
-		try {
-			const subscription = await subscribe({ key: vapidKey })
-			await fetch("/push/subscriptions", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify(subscription),
-			})
-			setOn(true)
-		} catch (error) {
-			setStatus(subscribe.reason(error) ?? "failed")
-		}
-		setBusy(false)
-	}
-
-	async function disable() {
-		await unsubscribe()
-		setOn(false)
-	}
 
 	async function test() {
 		const response = await fetch("/push/subscriptions", { method: "PUT" })
@@ -68,13 +38,13 @@ export default function Push() {
 				Subscribe this browser, then have the server push to it — close the tab first if
 				you want proof it works with the site gone.
 			</p>
-			<button onClick={on ? disable : enable} disabled={busy}>
-				{on ? "Unsubscribe" : "Subscribe"}
+			<button onClick={push.on ? push.disable : push.enable} disabled={push.busy}>
+				{push.on ? "Unsubscribe" : "Subscribe"}
 			</button>{" "}
-			<button onClick={test} disabled={!on}>
+			<button onClick={test} disabled={!push.on}>
 				Send me one
 			</button>
-			{status ? <p>{status}</p> : null}
+			{push.reason ? <p>{push.reason}</p> : status ? <p>{status}</p> : null}
 		</main>
 	)
 }

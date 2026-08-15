@@ -1,6 +1,6 @@
 import express from "express"
 import { mail, sms, whatsapp, slack } from "postboi"
-import { receive, WebhookVerificationError } from "postboi/webhooks"
+import { webhook } from "postboi/webhooks"
 
 const app = express()
 app.use(express.urlencoded({ extended: true })) // parses form fields onto req.body — no multer needed
@@ -40,34 +40,16 @@ app.post("/contact", async ({ body }, res) => {
 	res.redirect(303, "/?sent=1")
 })
 
-// Provider delivery events — and the one place Express differs from every web-standard
-// framework: signatures verify over the EXACT raw bytes, so this route must take
-// `express.raw()` and rebuild a web Request. Let a body parser touch the payload first
-// and verification fails forever with nothing to say why. Set <PROVIDER>_WEBHOOK_SECRET
-// in .env and point the provider's webhook at POST /webhooks.
-app.post("/webhooks", express.raw({ type: "*/*" }), async (req, res) => {
-	const headers = new Headers()
-	for (const [name, value] of Object.entries(req.headers)) {
-		headers.set(name, Array.isArray(value) ? value.join(", ") : (value ?? ""))
-	}
-	try {
-		const events = await receive(
-			new Request(`http://localhost:3000${req.originalUrl}`, {
-				method: "POST",
-				headers,
-				body: req.body,
-			})
-		)
-		for (const event of events) console.log(`${event.type} — ${event.email ?? ""}`)
-		res.json({ received: events.length })
-	} catch (error) {
-		if (error instanceof WebhookVerificationError) {
-			res.status(401).json({ error: "bad signature" })
-		} else {
-			res.status(400).json({ error: "unparseable payload" })
-		}
-	}
-})
+// Provider delivery events. webhook.node() reads the raw stream itself — signatures
+// verify over the exact bytes, and a JSON body parser mounted ahead of this route
+// would rewrite them. (The global urlencoded parser never touches JSON, so it's fine.)
+// Set <PROVIDER>_WEBHOOK_SECRET in .env and point the provider's webhook here.
+app.post(
+	"/webhooks",
+	webhook.node(async (event) => {
+		console.log(`${event.type} — ${event.email ?? ""}`)
+	})
+)
 
 // The other channels — identical calls in every framework, Express only decides where
 // they sit. In development SMS/WhatsApp are logged, not sent (POSTBOI_SMS_DEV=send etc.

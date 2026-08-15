@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { mail, sms, whatsapp, slack } from "postboi"
-import { receive, WebhookVerificationError } from "postboi/webhooks"
+import { webhook } from "postboi/webhooks"
 
 const app = new Hono()
 
@@ -42,21 +42,13 @@ app.post("/contact", async function (c) {
 	return c.redirect("/?sent=1", 303)
 })
 
-// Provider delivery events. `receive()` wants the web Request — Hono keeps the raw one
-// at c.req.raw, untouched, which matters: signatures verify over the exact bytes.
+// Provider delivery events — webhook() wants the raw Request, which Hono keeps at
+// c.req.raw. Signature verified, payload normalized, provider answered correctly.
 // Point your provider's webhook at POST /webhooks and set <PROVIDER>_WEBHOOK_SECRET.
-app.post("/webhooks", async function (c) {
-	try {
-		const events = await receive(c.req.raw)
-		for (const event of events) console.log(`${event.type} — ${event.email ?? ""}`)
-		return c.json({ received: events.length })
-	} catch (error) {
-		if (error instanceof WebhookVerificationError) {
-			return c.json({ error: "bad signature" }, 401)
-		}
-		return c.json({ error: "unparseable payload" }, 400)
-	}
+const hooks = webhook(async (event) => {
+	console.log(`${event.type} — ${event.email ?? ""}`)
 })
+app.post("/webhooks", (c) => hooks(c.req.raw))
 
 // The other channels — identical calls in every framework, Hono only decides where
 // they sit. In development SMS/WhatsApp are logged, not sent (POSTBOI_SMS_DEV=send

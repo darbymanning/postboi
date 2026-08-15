@@ -1,38 +1,17 @@
 <script setup lang="ts">
-import { subscribe, unsubscribe } from "postboi/push"
+import { usePush } from "postboi/vue"
 
 const key = useRuntimeConfig().public.vapidPublicKey
 
-const on = ref(false)
-const busy = ref(false)
-const status = ref("")
-
-onMounted(async () => {
-	// Permission alone can't answer "is this browser subscribed?" — granted-but-
-	// unsubscribed is what a browser looks like after someone turned it off again.
-	on.value = Boolean(await subscribe.current())
+// The whole toggle state machine — current() on mount, busy and error state,
+// subscribe-then-register with rollback when the server never learns the address —
+// lives in the composable. Destructured so the refs unwrap in the template.
+const { on, busy, reason, enable, disable } = usePush({
+	key,
+	register: "/api/push/subscriptions",
 })
 
-// Call subscribe() from a click: browsers auto-deny permission prompts that aren't
-// tied to a user gesture, and once denied they never ask again.
-async function enable() {
-	if (!key) return
-	busy.value = true
-	status.value = ""
-	try {
-		const subscription = await subscribe({ key })
-		await $fetch("/api/push/subscriptions", { method: "POST", body: subscription })
-		on.value = true
-	} catch (error) {
-		status.value = subscribe.reason(error) ?? "failed"
-	}
-	busy.value = false
-}
-
-async function disable() {
-	await unsubscribe()
-	on.value = false
-}
+const status = ref("")
 
 async function test() {
 	const { sent } = await $fetch<{ sent: number }>("/api/push/subscriptions", { method: "PUT" })
@@ -56,7 +35,8 @@ async function test() {
 				{{ on ? "Unsubscribe" : "Subscribe" }}
 			</button>
 			<button :disabled="!on" @click="test">Send me one</button>
-			<p v-if="status">{{ status }}</p>
+			<p v-if="reason">{{ reason }}</p>
+			<p v-else-if="status">{{ status }}</p>
 		</template>
 	</main>
 </template>

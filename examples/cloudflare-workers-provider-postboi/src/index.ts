@@ -1,5 +1,5 @@
 import { mail, sms, whatsapp, slack } from "postboi"
-import { receive, WebhookVerificationError } from "postboi/webhooks"
+import { webhook } from "postboi/webhooks"
 
 function page(sent: boolean): Response {
 	return new Response(
@@ -33,6 +33,10 @@ function page(sent: boolean): Response {
 	)
 }
 
+const hooks = webhook(async (event) => {
+	console.log(`${event.type} — ${event.email ?? ""}`)
+})
+
 export default {
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url)
@@ -44,20 +48,11 @@ export default {
 			return Response.redirect(new URL("/?sent=1", url).toString(), 303)
 		}
 
-		// Provider delivery events. The Worker's Request goes straight into receive() —
-		// signatures verify over the exact bytes. Set <PROVIDER>_WEBHOOK_SECRET as a
-		// binding and point the provider's webhook at POST /webhooks.
+		// Provider delivery events. The Worker's Request goes straight into webhook()'s
+		// handler — signature verified, payload normalized, provider answered correctly.
+		// Set <PROVIDER>_WEBHOOK_SECRET as a binding.
 		if (request.method === "POST" && url.pathname === "/webhooks") {
-			try {
-				const events = await receive(request)
-				for (const event of events) console.log(`${event.type} — ${event.email ?? ""}`)
-				return Response.json({ received: events.length })
-			} catch (error) {
-				if (error instanceof WebhookVerificationError) {
-					return Response.json({ error: "bad signature" }, { status: 401 })
-				}
-				return Response.json({ error: "unparseable payload" }, { status: 400 })
-			}
+			return hooks(request)
 		}
 
 		// The other channels — identical calls in every framework. In development

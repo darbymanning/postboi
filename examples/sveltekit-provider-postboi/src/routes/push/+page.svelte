@@ -1,42 +1,14 @@
 <script lang="ts">
-	import { subscribe, unsubscribe } from "postboi/push"
+	import { push_controller } from "postboi/push"
 
 	let { data } = $props()
 
-	let on = $state(false)
-	let busy = $state(false)
+	// The whole toggle state machine — current() on mount, busy and error state,
+	// subscribe-then-register with rollback when the server never learns the address —
+	// is the controller's. It implements the store contract, so $push just works.
+	const push = push_controller({ key: data.vapid_public_key ?? "", register: "/push" })
+
 	let status = $state("")
-
-	$effect(() => {
-		// Permission alone can't answer "is this browser subscribed?" — granted-but-
-		// unsubscribed is what a browser looks like after someone turned it off again.
-		subscribe.current().then((current) => (on = Boolean(current)))
-	})
-
-	// Call subscribe() from a click: browsers auto-deny permission prompts that aren't
-	// tied to a user gesture, and once denied they never ask again.
-	async function enable() {
-		if (!data.vapid_public_key) return
-		busy = true
-		status = ""
-		try {
-			const subscription = await subscribe({ key: data.vapid_public_key })
-			await fetch("/push", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify(subscription),
-			})
-			on = true
-		} catch (error) {
-			status = subscribe.reason(error) ?? "failed"
-		}
-		busy = false
-	}
-
-	async function disable() {
-		await unsubscribe()
-		on = false
-	}
 
 	async function test() {
 		const response = await fetch("/push", { method: "PUT" })
@@ -50,18 +22,16 @@
 
 	{#if !data.vapid_public_key}
 		<p>No VAPID keys yet — run <code>bunx postboi init --push</code> and restart.</p>
-	{:else if !subscribe.supported()}
-		<p>This browser doesn't support Web Push.</p>
 	{:else}
 		<p>
 			Subscribe this browser, then have the server push to it — close the tab first if you
 			want proof it works with the site gone.
 		</p>
-		<button onclick={on ? disable : enable} disabled={busy}>
-			{on ? "Unsubscribe" : "Subscribe"}
+		<button onclick={() => ($push.on ? push.disable() : push.enable())} disabled={$push.busy}>
+			{$push.on ? "Unsubscribe" : "Subscribe"}
 		</button>
-		<button onclick={test} disabled={!on}>Send me one</button>
-		{#if status}<p>{status}</p>{/if}
+		<button onclick={test} disabled={!$push.on}>Send me one</button>
+		{#if $push.reason}<p>{$push.reason}</p>{:else if status}<p>{status}</p>{/if}
 	{/if}
 </main>
 

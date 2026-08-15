@@ -1,43 +1,14 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { subscribe, unsubscribe } from "postboi/push"
+import { useState } from "react"
+import { usePush } from "postboi/react"
 
 export function PushClient({ vapidKey }: { vapidKey?: string }) {
-	const [on, setOn] = useState(false)
-	const [busy, setBusy] = useState(false)
+	// The whole toggle state machine — current() on mount, busy and error state,
+	// subscribe-then-register with rollback when the server never learns the address —
+	// lives in the hook.
+	const push = usePush({ key: vapidKey ?? "", register: "/push/subscriptions" })
 	const [status, setStatus] = useState("")
-
-	useEffect(() => {
-		// Permission alone can't answer "is this browser subscribed?" — granted-but-
-		// unsubscribed is what a browser looks like after someone turned it off again.
-		subscribe.current().then((current) => setOn(Boolean(current)))
-	}, [])
-
-	// Call subscribe() from a click: browsers auto-deny permission prompts that aren't
-	// tied to a user gesture, and once denied they never ask again.
-	async function enable() {
-		if (!vapidKey) return
-		setBusy(true)
-		setStatus("")
-		try {
-			const subscription = await subscribe({ key: vapidKey })
-			await fetch("/push/subscriptions", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify(subscription),
-			})
-			setOn(true)
-		} catch (error) {
-			setStatus(subscribe.reason(error) ?? "failed")
-		}
-		setBusy(false)
-	}
-
-	async function disable() {
-		await unsubscribe()
-		setOn(false)
-	}
 
 	async function test() {
 		const response = await fetch("/push/subscriptions", { method: "PUT" })
@@ -60,13 +31,13 @@ export function PushClient({ vapidKey }: { vapidKey?: string }) {
 				Subscribe this browser, then have the server push to it — close the tab first if
 				you want proof it works with the site gone.
 			</p>
-			<button onClick={on ? disable : enable} disabled={busy}>
-				{on ? "Unsubscribe" : "Subscribe"}
+			<button onClick={push.on ? push.disable : push.enable} disabled={push.busy}>
+				{push.on ? "Unsubscribe" : "Subscribe"}
 			</button>{" "}
-			<button onClick={test} disabled={!on}>
+			<button onClick={test} disabled={!push.on}>
 				Send me one
 			</button>
-			{status ? <p>{status}</p> : null}
+			{push.reason ? <p>{push.reason}</p> : status ? <p>{status}</p> : null}
 		</main>
 	)
 }
