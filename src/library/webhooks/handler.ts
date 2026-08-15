@@ -44,7 +44,7 @@ function json(body: unknown, status: number): Response {
  * })
  * ```
  */
-export function webhook(
+function build(
 	handler: (event: WebhookEvent) => void | Promise<void>,
 	options?: ReceiveOptions
 ): (carrier: RequestCarrier) => Promise<Response> {
@@ -73,3 +73,73 @@ export function webhook(
 		return json({ received: events.length }, 200)
 	}
 }
+
+/**
+ * Node's request shape, structurally — an `IncomingMessage` matches, but nothing here
+ * imports node:http, so the module stays loadable on every runtime.
+ */
+export interface NodeRequest extends AsyncIterable<Uint8Array> {
+	method?: string
+	url?: string
+	headers: Record<string, string | Array<string> | undefined>
+}
+
+/** The slice of node's ServerResponse the adapter writes to. */
+export interface NodeResponse {
+	statusCode: number
+	setHeader(name: string, value: string): void
+	end(chunk: string): void
+}
+
+/**
+ * The same handler as `(req, res)` middleware for Express and plain node:http — reached
+ * as `webhook.node(handler)`.
+ *
+ * It exists because of one footgun: signatures verify over the request's **exact raw
+ * bytes**, and Express body parsers rewrite them — mount `express.json()` in front of a
+ * webhook route and verification fails forever, silently. This adapter reads the raw
+ * stream itself, so there's no parser to misconfigure:
+ *
+ * ```js
+ * app.post("/webhooks", webhook.node(async (event) => { … }))
+ * ```
+ *
+ * A JSON body slips past `express.urlencoded()` untouched (wrong content-type), so the
+ * common global parser is fine. Just never mount a *JSON* parser ahead of this route —
+ * a parser that has already drained the stream leaves no bytes to verify.
+ */
+function node(
+	handler: (event: WebhookEvent) => void | Promise<void>,
+	options?: ReceiveOptions
+): (req: NodeRequest, res: NodeResponse) => Promise<void> {
+	return async (req, res) => {
+		const chunks: Array<Uint8Array> = []
+		for await (const chunk of req) chunks.push(chunk)
+		const body = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0))
+		let offset = 0
+		for (const chunk of chunks) {
+			body.set(chunk, offset)
+			offset += chunk.length
+		}
+
+		const headers = new Headers()
+		for (const [name, value] of Object.entries(req.headers)) {
+			if (value === undefined) continue
+			headers.set(name, Array.isArray(value) ? value.join(", ") : value)
+		}
+
+		// The URL only matters to adapters that sign over it — the host is a stand-in.
+		const request = new Request(new URL(req.url ?? "/", "http://localhost"), {
+			method: req.method ?? "POST",
+			headers,
+			body: body.length ? body : undefined,
+		})
+
+		const response = await build(handler, options)(request)
+		res.statusCode = response.status
+		response.headers.forEach((value, name) => res.setHeader(name, value))
+		res.end(await response.text())
+	}
+}
+
+export const webhook = Object.assign(build, { node })
