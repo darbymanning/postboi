@@ -58,19 +58,21 @@ export function Captcha({ pk, origin, honeypot = true }: CaptchaProps) {
 
 /**
  * The push-toggle state machine as a hook — `postboi/push`'s `push_controller`, plugged
- * into React. Call `enable` from a click: browsers auto-deny permission prompts that
+ * into React. camelCase deliberately: the hooks linter and React Compiler recognize
+ * hooks by the /^use[A-Z0-9]/ name pattern, and a hook they can't see is a hook they
+ * can't protect (or worse, one the compiler memoizes). Call `enable` from a click: browsers auto-deny permission prompts that
  * aren't tied to a user gesture, and once denied they never ask again.
  *
  * @example
  * ```tsx
- * const push = use_push({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+ * const push = usePush({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
  *
  * <button onClick={push.on ? push.disable : push.enable} disabled={push.busy}>
  * 	{push.on ? "Unsubscribe" : "Subscribe"}
  * </button>
  * ```
  */
-export function use_push(options: PushControllerOptions): PushState & {
+export function usePush(options: PushControllerOptions): PushState & {
 	enable: () => Promise<void>
 	disable: () => Promise<void>
 } {

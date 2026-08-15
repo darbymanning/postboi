@@ -116,10 +116,10 @@ because it implements the store contract, Svelte uses it bare:
 </button>
 ```
 
-React and Vue get it as `use_push` from `postboi/react` / `postboi/vue`:
+React and Vue get it as `usePush` from `postboi/react` / `postboi/vue`:
 
 ```tsx
-const push = use_push({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+const push = usePush({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
 
 <button onClick={push.on ? push.disable : push.enable} disabled={push.busy}>
 	{push.on ? "Unsubscribe" : "Subscribe"}

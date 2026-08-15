@@ -71,8 +71,8 @@ export default Captcha
  * @example
  * ```vue
  * <script setup>
- * import { use_push } from "postboi/vue"
- * const push = use_push({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+ * import { usePush } from "postboi/vue"
+ * const push = usePush({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
  * </script>
  *
  * <template>
@@ -82,7 +82,7 @@ export default Captcha
  * </template>
  * ```
  */
-export function use_push(options: PushControllerOptions) {
+export function usePush(options: PushControllerOptions) {
 	const controller = push_controller(options)
 	const state = ref<PushState>(controller.now())
 
