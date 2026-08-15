@@ -49,6 +49,10 @@ a push service that answers 401 without saying why.
 | APNs | `postboi/apns` | Apple apps, [direct](#ios) — no Firebase in the middle |
 | HMS | `postboi/hms` | [Huawei](#android) phones, which have no Play Services |
 
+Those are the **server** imports — the senders. The browser half is a different import
+on purpose: `postboi/push`, next, carries no provider and no private key, so neither can
+end up in a client bundle by accident.
+
 ## Subscribing, in the browser
 
 ```typescript
