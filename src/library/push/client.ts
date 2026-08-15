@@ -71,6 +71,31 @@ function permission(): NotificationPermission | "unsupported" {
 }
 
 /**
+ * The subscription this browser already has, or null. Reached as `subscribe.current()`.
+ *
+ * Permission alone doesn't answer "is this browser subscribed?" — granted-but-unsubscribed
+ * is exactly what a browser looks like after someone turned notifications off again, and
+ * it's the state every toggle in every settings page has to render. Without this, callers
+ * reach past the helper into `navigator.serviceWorker.getRegistration()`, which is the
+ * fiddly `PushManager` API this module exists to cover.
+ *
+ * Never prompts and never registers a worker: it reports, it doesn't arrange.
+ */
+async function current(): Promise<PushSubscriptionJSON | null> {
+	const subscription = await existing()
+	return subscription ? to_json(subscription) : null
+}
+
+/** This browser's live subscription object, if it has one — the lookup `current()
+ * reports on and `unsubscribe()` acts on, so the two can't disagree about where a
+ * subscription is found. */
+async function existing(): Promise<PushSubscription | null> {
+	if (!supported()) return null
+	const registration = await navigator.serviceWorker.getRegistration()
+	return (await registration?.pushManager.getSubscription()) ?? null
+}
+
+/**
  * Why a subscribe failed, or null if the error didn't come from here. Reached as
  * `subscribe.reason(error)` — the same shape as `push.expired(error)`, spread over the
  * several walls this call can hit rather than the one. The return is a union, so a
@@ -114,9 +139,9 @@ function to_json(subscription: PushSubscription): PushSubscriptionJSON {
  * **Call it from a click or similar.** Browsers auto-deny a permission prompt that isn't
  * tied to a user gesture, and once denied you cannot ask again.
  *
- * `subscribe.supported()` and `subscribe.permission()` answer the two questions a UI asks
- * before offering the button, neither of which prompts. `subscribe.reason(error)` answers
- * the one it asks afterwards.
+ * `subscribe.supported()`, `subscribe.permission()` and `subscribe.current()` answer the
+ * three questions a UI asks before it can render the button, none of which prompt.
+ * `subscribe.reason(error)` answers the one it asks afterwards.
  *
  * @example
  * ```ts
@@ -198,16 +223,14 @@ async function subscribe_now(options: SubscribeOptions): Promise<PushSubscriptio
 	}
 }
 
-export const subscribe = Object.assign(subscribe_now, { supported, permission, reason })
+export const subscribe = Object.assign(subscribe_now, { supported, permission, current, reason })
 
 /**
  * Unsubscribe this browser, returning the subscription that was removed so you can delete
  * your stored copy. Returns null when there was nothing subscribed.
  */
 export async function unsubscribe(): Promise<PushSubscriptionJSON | null> {
-	if (!supported()) return null
-	const registration = await navigator.serviceWorker.getRegistration()
-	const subscription = await registration?.pushManager.getSubscription()
+	const subscription = await existing()
 	if (!subscription) return null
 	const json = to_json(subscription)
 	await subscription.unsubscribe()

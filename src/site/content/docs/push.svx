@@ -75,10 +75,24 @@ The helper requests permission if needed, registers your service worker (`/sw.js
 default), waits for it to be *active* rather than merely registered, and reuses an existing
 subscription — so calling it on every page load is safe.
 
-Two questions a UI wants answered before it offers the button, neither of which prompts:
-`subscribe.supported()` and `subscribe.permission()` (`"granted"`, `"denied"`, `"default"`
-or `"unsupported"`). `unsubscribe()` removes the subscription and hands back the copy you
-stored, so you know which row to delete.
+Three questions a UI wants answered before it can render the button, none of which prompt:
+
+| Call | Answers |
+| --- | --- |
+| `subscribe.supported()` | Is there any Web Push in this browser? |
+| `subscribe.permission()` | `"granted"`, `"denied"`, `"default"` or `"unsupported"` |
+| `subscribe.current()` | The subscription this browser already has, or null |
+
+The last one is the difference between a toggle that's right and one that lies: permission
+stays `"granted"` after someone unsubscribes, so a browser that is granted-but-not-subscribed
+looks identical to a subscribed one until you ask.
+
+```typescript
+const on = Boolean(await subscribe.current())
+```
+
+`unsubscribe()` removes the subscription and hands back the copy you stored, so you know
+which row to delete.
 
 `subscribe.reason(error)` says which wall was hit, the way `push.expired(error)` does on the
 server — null for anything that didn't come from the subscribe call, so it's safe on a bare
