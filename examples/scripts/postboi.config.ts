@@ -5,6 +5,7 @@ import { config } from "postboi"
 // in .env instead.
 export default config({
 	provider: "postboi",
+
 	default: {
 		from: "Acme <hello@acme.example>",
 	},

@@ -2,13 +2,32 @@
 
 Runnable examples for [Postboi](https://github.com/postboi-mail/postboi).
 
-The framework apps all do the same thing — a `multipart/form-data` contact form whose
-submission becomes a tidy HTML email, with reply-to set to the sender's email so hitting
-**Reply** goes straight back to the person who filled it in. They're named
+The framework apps all start from the same thing — a `multipart/form-data` contact form
+whose submission becomes a tidy HTML email, with reply-to set to the sender's email so
+hitting **Reply** goes straight back to the person who filled it in. They're named
 `<framework>-provider-<provider>` so each framework can have one per provider.
 
 Every one is the same handful of lines: read the request's `FormData`, and pass it to the
 top-level `mail()`. The provider lives entirely in `postboi.config.ts`.
+
+Since postboi went multi-channel, each app also carries the rest, in its framework's own
+idiom — deliberately WET, so "postboi in `<framework>`" is one folder, complete:
+
+- **`POST /webhooks`** — provider delivery events, signature-verified and normalized.
+  Since 0.29.0 the endpoint is `webhook()` from `postboi/webhooks` — the same one-liner
+  in every web-standard framework — and `webhook.node()` owns Express's raw-body
+  requirement, so the classic body-parser footgun can't be built.
+- **`POST /notify`** — `sms()`, `whatsapp()` and `slack()` from one endpoint. The calls
+  are identical everywhere; the file shows where they live in each framework.
+- **`/push`** (every app with a client build: SvelteKit, Next.js, Astro, Nuxt, Remix) —
+  Web Push end to end: `subscribe()` in the browser, the subscription stored, `push()`
+  sending to it, and the service worker that shows it. No key plumbing anywhere —
+  `bunx postboi init --push` mints the VAPID pair and bakes the public half into the
+  package, so nothing carries it to the browser by hand. The server-only apps (Hono,
+  Express, Workers) carry the full server surface and point here for the browser half.
+
+Every example is exercised by CI (`bun run ci` in each folder — a typecheck or build),
+so none of this rots quietly.
 
 ## SvelteKit
 
@@ -37,8 +56,11 @@ All on the Postboi provider, each using its framework's server handler to call `
 
 ## Scripts
 
-- [`scripts`](./scripts) — plain Bun/Node scripts, no framework:
-  [transactional](./scripts/transactional.ts), [bulk sending](./scripts/bulk.ts), and
-  [scheduling](./scripts/scheduling.ts).
+- [`scripts`](./scripts) — plain Bun/Node scripts, no framework. Email:
+  [transactional](./scripts/transactional.ts), [bulk sending](./scripts/bulk.ts),
+  [scheduling](./scripts/scheduling.ts). The other channels:
+  [SMS](./scripts/sms.ts), [WhatsApp](./scripts/whatsapp.ts),
+  [chat](./scripts/chat.ts), and [`send()` across all of them](./scripts/notify.ts) —
+  fan-out and the cheapest-first fallback chain.
 
 Want another framework or provider? PRs welcome.

@@ -5,6 +5,7 @@ import { config } from "postboi"
 // secret, so it's committed.
 export default config({
 	provider: "postboi",
+
 	default: {
 		// After `bunx postboi sync`, `from` is narrowed to your verified Postboi domains — a
 		// domain you don't own won't typecheck. See "Typed from" in the README.

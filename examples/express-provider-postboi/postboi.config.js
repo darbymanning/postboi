@@ -4,6 +4,7 @@ import { config } from "postboi"
 // https://docs.postboi.app/providers to use a different one.
 export default config({
 	provider: "postboi",
+
 	default: {
 		// Where contact-form notifications land.
 		to: "team@acme.example",

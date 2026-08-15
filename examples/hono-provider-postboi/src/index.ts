@@ -1,5 +1,6 @@
 import { Hono } from "hono"
-import { mail } from "postboi"
+import { mail, sms, whatsapp, slack } from "postboi"
+import { webhook } from "postboi/webhooks"
 
 const app = new Hono()
 
@@ -39,6 +40,40 @@ app.post("/contact", async function (c) {
 	// so the whole submission is handed straight to postboi — `body` accepts the promise.
 	await mail({ body: c.req.formData() })
 	return c.redirect("/?sent=1", 303)
+})
+
+// Provider delivery events — webhook() wants the raw Request, which Hono keeps at
+// c.req.raw. Signature verified, payload normalized, provider answered correctly.
+// Point your provider's webhook at POST /webhooks and set <PROVIDER>_WEBHOOK_SECRET.
+const hooks = webhook(async (event) => {
+	console.log(`${event.type} — ${event.email ?? ""}`)
+})
+app.post("/webhooks", (c) => hooks(c.req.raw))
+
+// The other channels — identical calls in every framework, Hono only decides where
+// they sit. In development SMS/WhatsApp are logged, not sent (POSTBOI_SMS_DEV=send
+// etc. for real delivery); chat needs SLACK_WEBHOOK_URL. For several channels in one
+// call — or a cheapest-first fallback chain — see send(): https://docs.postboi.app/send
+//
+//   curl -X POST localhost:3000/notify -H 'content-type: application/json' \
+//     -d '{"channel":"sms","to":"+447700900123","message":"Your code is 428 916"}'
+app.post("/notify", async function (c) {
+	const { channel, to, message } = await c.req.json()
+
+	switch (channel) {
+		case "sms":
+			return c.json(await sms({ to, message }))
+
+		case "whatsapp":
+			// Free-form only lands within 24h of their last reply — templates any time.
+			return c.json(await whatsapp({ to, message }))
+
+		case "chat":
+			return c.json(await slack({ message }))
+
+		default:
+			return c.json({ error: `unknown channel "${channel}"` }, 400)
+	}
 })
 
 export default app

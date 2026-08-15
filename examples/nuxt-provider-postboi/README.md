@@ -33,3 +33,17 @@ Then open http://localhost:3000.
 The `POSTBOI_TOKEN` in `.env` routes mail through
 [the Postboi provider](https://postboi.app). Swap the provider in `postboi.config.ts`
 for any of the [supported providers](https://docs.postboi.app/providers).
+
+## Beyond the form
+
+The contact form is the classic; the rest of postboi wires in the same way:
+
+- **`POST /webhooks`** — provider delivery events (delivered, opened, bounced, …),
+  signature-verified and normalized. Set `<PROVIDER>_WEBHOOK_SECRET` and point your
+  provider's webhook here.
+- **`POST /api/notify`** — the other channels: `sms()`, `whatsapp()` and `slack()` from one
+  endpoint. `{ "channel": "sms", "to": "+447700900123", "message": "…" }` — in
+  development SMS and WhatsApp are logged, not sent.
+- **`/push`** — Web Push end to end: `subscribe()` from `postboi/push` in the browser,
+  the subscription stored server-side, and `push()` sending to it. Mint the VAPID pair
+  with `bunx postboi init --push` first.

@@ -9,6 +9,19 @@ Plain Bun/Node scripts — no framework, no form. Just call `mail()` from your b
 - [`scheduling.ts`](./scheduling.ts) — send later with `scheduled_at`
   ([Scheduling](https://docs.postboi.app/scheduling)).
 
+Postboi went multi-channel, and so do the scripts — same shape, different import:
+
+- [`sms.ts`](./sms.ts) — one text with `sms()` ([SMS](https://docs.postboi.app/sms)).
+  In development texts are logged, not sent.
+- [`whatsapp.ts`](./whatsapp.ts) — a template send with `whatsapp()`
+  ([WhatsApp](https://docs.postboi.app/whatsapp)) — templates deliver outside the
+  24-hour reply window; free-form text doesn't.
+- [`chat.ts`](./chat.ts) — `slack()` and `discord()` with a webhook URL as the only
+  credential ([Chat](https://docs.postboi.app/slack)).
+- [`notify.ts`](./notify.ts) — `send()` in both modes: fan-out to every channel in
+  `to`, and the cheapest-first fallback chain
+  ([send()](https://docs.postboi.app/send)).
+
 ## Run
 
 ```bash

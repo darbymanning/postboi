@@ -6,9 +6,15 @@
 	"scripts": {
 		"transactional": "bun transactional.ts",
 		"bulk": "bun bulk.ts",
-		"schedule": "bun scheduling.ts"
+		"schedule": "bun scheduling.ts",
+		"sms": "bun sms.ts",
+		"whatsapp": "bun whatsapp.ts",
+		"chat": "bun chat.ts",
+		"notify": "bun notify.ts",
+		"ci": "bunx tsc --noEmit"
 	},
 	"devDependencies": {
-		"postboi": "^0.11.0"
+		"postboi": "^0.30.0",
+		"@types/bun": "^1.2.0"
 	}
 }

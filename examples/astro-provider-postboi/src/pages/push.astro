@@ -1,0 +1,65 @@
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Web Push</title>
+		<style>
+			main {
+				max-width: 32rem;
+				margin: 4rem auto;
+				padding: 0 1rem;
+				font-family: system-ui, sans-serif;
+			}
+			button {
+				font: inherit;
+				padding: 0.5rem 1rem;
+				margin-right: 0.5rem;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>Web Push</h1>
+			<p>
+				Subscribe this browser, then have the server push to it — close the tab first if
+				you want proof it works with the site gone.
+			</p>
+			<button id="toggle">Subscribe</button>
+			<button id="test" disabled>Send me one</button>
+			<p id="status"></p>
+		</main>
+
+		<script>
+			import { push_controller } from "postboi/push"
+
+			// No key and no data-attribute smuggling: `bunx postboi init --push` (or sync)
+			// bakes the VAPID public key into the package, and Astro bundles this script,
+			// so the baked value is just here. The controller is the whole state machine —
+			// this script only wires it to the DOM; a missing bake shows as "missing_key".
+			const toggle = document.getElementById("toggle") as HTMLButtonElement
+			const test = document.getElementById("test") as HTMLButtonElement
+			const status = document.getElementById("status") as HTMLParagraphElement
+
+			const push = push_controller({ register: "/push/subscriptions" })
+
+			push.subscribe((state) => {
+				toggle.textContent = state.on ? "Unsubscribe" : "Subscribe"
+				toggle.disabled = state.busy
+				test.disabled = !state.on || state.busy
+				if (state.reason) status.textContent = state.reason
+			})
+
+			toggle.addEventListener("click", () => {
+				void (push.now().on ? push.disable() : push.enable())
+			})
+
+			test.addEventListener("click", async () => {
+				const response = await fetch("/push/subscriptions", { method: "PUT" })
+				const { sent } = await response.json()
+				status.textContent = sent
+					? "sent — check your notifications"
+					: "nothing subscribed on the server"
+			})
+		</script>
+	</body>
+</html>

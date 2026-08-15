@@ -19,12 +19,15 @@ function handle_event(event: WebhookEvent) {
 				`${event.email} opened "${event.subject}" in ${event.client?.name} on ${event.client?.device}`
 			)
 			break
+
 		case "clicked":
 			console.log(`${event.email} clicked ${event.url}`)
 			break
+
 		case "bounced":
 			console.log(`${event.email} bounced (${event.bounce?.category}): ${event.bounce?.detail}`)
 			break
+
 		default:
 			console.log(`${event.type} — ${event.email}`)
 	}

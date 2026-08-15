@@ -94,3 +94,11 @@ domain). It accepts a display name: `"Acme <hello@yourdomain.com>"` arrives as *
   the subject, and `_reply_to` is bound to the sender's email.
 - [`src/routes/welcome/+page.server.ts`](./src/routes/welcome/+page.server.ts) — a hand-built
   top-level `mail()` call, again provider-agnostic.
+
+## Beyond the form
+
+The contact form is the classic; the rest of postboi wires in the same way:
+
+- **`POST /webhooks`** — provider delivery events (delivered, opened, bounced, …),
+  signature-verified and normalized. Set `<PROVIDER>_WEBHOOK_SECRET` and point your
+  provider's webhook here.
