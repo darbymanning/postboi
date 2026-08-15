@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import MockPush from "./mock.js"
 import WebPush, { clear_vapid_cache } from "./webpush.js"
+import { from_base64url } from "./crypto.js"
 import APNs, { clear_apns_tokens } from "./apns.js"
 import HMS from "./hms.js"
 import { clear_token_cache } from "./oauth.js"
@@ -55,6 +56,12 @@ const apns_respond = ({ ok = true, status = 200, body = "" } = {}) =>
 		headers: new Headers(ok ? { "apns-id": "1234-5678" } : {}),
 		text: async () => body,
 	}) as unknown as Response
+
+/** The `sub` claim out of a signed `vapid t=…, k=…` header, via the library's own decoder. */
+const sub_of = (header: string): string =>
+	JSON.parse(
+		new TextDecoder().decode(from_base64url(header.slice("vapid t=".length).split(".")[1]))
+	).sub
 
 const respond = ({ ok = true, status = 201, body = "" } = {}) =>
 	({
@@ -182,6 +189,43 @@ describe("webpush", () => {
 		await expect(
 			notify.send({ to: SUBSCRIPTION, message: "a".repeat(4200) })
 		).rejects.toMatchObject({ code: "payload_too_large" })
+	})
+
+	/**
+	 * The `sub` claim is the one part of a VAPID JWT nothing else validates: a push
+	 * service rejects a bad one with a 401 that names no field, on a channel that is
+	 * already silent when it fails. So the assertions read the signed token.
+	 */
+	it("turns a bare address into the mailto: URI RFC 8292 asks for", async () => {
+		clear_vapid_cache()
+		const fetch = vi.fn().mockResolvedValue(respond({}))
+		vi.stubGlobal("fetch", fetch)
+
+		const notify = new WebPush({ ...VAPID, subject: "you@example.com" })
+		await notify.send({ to: SUBSCRIPTION, message: "hi" })
+
+		expect(sub_of(fetch.mock.calls[0][1].headers.Authorization)).toBe("mailto:you@example.com")
+	})
+
+	it("leaves a mailto: or https subject alone", async () => {
+		for (const subject of ["mailto:ops@example.com", "https://example.com/contact"]) {
+			clear_vapid_cache()
+			const fetch = vi.fn().mockResolvedValue(respond({}))
+			vi.stubGlobal("fetch", fetch)
+
+			const notify = new WebPush({ ...VAPID, subject })
+			await notify.send({ to: SUBSCRIPTION, message: "hi" })
+
+			expect(sub_of(fetch.mock.calls[0][1].headers.Authorization)).toBe(subject)
+		}
+	})
+
+	it("throws at construction on a subject that is neither, rather than 401ing on every send", () => {
+		for (const subject of ["Postboi Support", "http://example.com/contact", ""]) {
+			expect(() => new WebPush({ ...VAPID, subject })).toThrowError(
+				expect.objectContaining({ code: "invalid_subject", channel: "push" })
+			)
+		}
 	})
 })
 

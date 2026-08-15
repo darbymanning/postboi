@@ -93,7 +93,9 @@ export type WebPushOptions = PushProviderOptions & {
 	private_key: string
 	/**
 	 * Contact for the push service, as `mailto:you@example.com` or an https URL. Required by
-	 * RFC 8292 so an operator can reach you about misbehaving traffic.
+	 * RFC 8292 so an operator can reach you about misbehaving traffic. A bare address is
+	 * accepted and becomes `mailto:`; anything else throws at construction rather than
+	 * 401ing on every send.
 	 */
 	subject: string
 }
