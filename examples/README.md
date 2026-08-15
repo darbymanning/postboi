@@ -37,8 +37,11 @@ All on the Postboi provider, each using its framework's server handler to call `
 
 ## Scripts
 
-- [`scripts`](./scripts) — plain Bun/Node scripts, no framework:
-  [transactional](./scripts/transactional.ts), [bulk sending](./scripts/bulk.ts), and
-  [scheduling](./scripts/scheduling.ts).
+- [`scripts`](./scripts) — plain Bun/Node scripts, no framework. Email:
+  [transactional](./scripts/transactional.ts), [bulk sending](./scripts/bulk.ts),
+  [scheduling](./scripts/scheduling.ts). The other channels:
+  [SMS](./scripts/sms.ts), [WhatsApp](./scripts/whatsapp.ts),
+  [chat](./scripts/chat.ts), and [`send()` across all of them](./scripts/notify.ts) —
+  fan-out and the cheapest-first fallback chain.
 
 Want another framework or provider? PRs welcome.
