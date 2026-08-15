@@ -74,6 +74,7 @@ describe("package exports", () => {
 			"push/http2.ts", // fetch-shaped HTTP/2 client, used by push/apns.ts
 			"push/oauth.ts", // shared access-token cache, used by push/fcm.ts and push/hms.ts
 			"push/send.ts", // the zero-config push(), re-exported from the root
+			"push/controller.ts", // the use_push state machine, re-exported through push/client.ts
 			"whatsapp/types.ts", // pure types, re-exported from the root
 			"whatsapp/provider.ts", // the WhatsApp base class, reached via each provider
 			"whatsapp/send.ts", // the zero-config whatsapp(), re-exported from the root
