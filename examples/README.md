@@ -19,9 +19,10 @@ idiom — deliberately WET, so "postboi in `<framework>`" is one folder, complet
   SvelteKit gets the one-line `webhook()` from `postboi/kit`).
 - **`POST /notify`** — `sms()`, `whatsapp()` and `slack()` from one endpoint. The calls
   are identical everywhere; the file shows where they live in each framework.
-- **`/push`** (SvelteKit and Next.js) — Web Push end to end: `subscribe()` in the
-  browser, the subscription stored, `push()` sending to it, and the service worker that
-  shows it.
+- **`/push`** (every app with a client build: SvelteKit, Next.js, Astro, Nuxt, Remix) —
+  Web Push end to end: `subscribe()` in the browser, the subscription stored, `push()`
+  sending to it, and the service worker that shows it. The server-only apps (Hono,
+  Express, Workers) carry the full server surface and point here for the browser half.
 
 Every example is exercised by CI (`bun run ci` in each folder — a typecheck or build),
 so none of this rots quietly.

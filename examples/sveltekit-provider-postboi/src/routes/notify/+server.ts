@@ -19,12 +19,15 @@ export async function POST({ request }) {
 	switch (channel) {
 		case "sms":
 			return json(await sms({ to, message }))
+
 		case "whatsapp":
 			// Free-form text only lands within 24h of the person's last reply — for
 			// anytime delivery, name a template: https://docs.postboi.app/whatsapp
 			return json(await whatsapp({ to, message }))
+
 		case "chat":
 			return json(await slack({ message }))
+
 		default:
 			return json({ error: `unknown channel "${channel}"` }, { status: 400 })
 	}

@@ -1,0 +1,113 @@
+---
+// The public half of the VAPID pair — public by definition; the private half stays on
+// the server and signs every send. `bunx postboi init --push` mints the pair. It rides
+// to the client on a data attribute because Astro's bundled <script> below can't see
+// server env (and define:vars would un-bundle it, breaking the npm import).
+const key = import.meta.env.VAPID_PUBLIC_KEY ?? ""
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Web Push</title>
+		<style>
+			main {
+				max-width: 32rem;
+				margin: 4rem auto;
+				padding: 0 1rem;
+				font-family: system-ui, sans-serif;
+			}
+			button {
+				font: inherit;
+				padding: 0.5rem 1rem;
+				margin-right: 0.5rem;
+			}
+		</style>
+	</head>
+	<body>
+		<main data-key={key}>
+			<h1>Web Push</h1>
+			{
+				key ? (
+					<>
+						<p>
+							Subscribe this browser, then have the server push to it — close the tab
+							first if you want proof it works with the site gone.
+						</p>
+						<button id="toggle" disabled>
+							Subscribe
+						</button>
+						<button id="test" disabled>
+							Send me one
+						</button>
+						<p id="status" />
+					</>
+				) : (
+					<p>
+						No VAPID keys yet — run <code>bunx postboi init --push</code> and restart.
+					</p>
+				)
+			}
+		</main>
+
+		<script>
+			import { subscribe, unsubscribe } from "postboi/push"
+
+			const key = document.querySelector("main")?.dataset.key
+			const toggle = document.getElementById("toggle") as HTMLButtonElement | null
+			const test = document.getElementById("test") as HTMLButtonElement | null
+			const status = document.getElementById("status")
+
+			// Permission alone can't answer "is this browser subscribed?" — granted-but-
+			// unsubscribed is what a browser looks like after someone turned it off again.
+			let on = false
+			if (key && toggle && test) {
+				subscribe.current().then((current) => {
+					on = Boolean(current)
+					render()
+					toggle.disabled = false
+				})
+
+				// From a click: browsers auto-deny permission prompts that aren't tied to a
+				// user gesture, and once denied they never ask again.
+				toggle.addEventListener("click", async () => {
+					toggle.disabled = true
+					if (on) {
+						await unsubscribe()
+						on = false
+					} else {
+						try {
+							const subscription = await subscribe({ key })
+							await fetch("/push/subscriptions", {
+								method: "POST",
+								headers: { "content-type": "application/json" },
+								body: JSON.stringify(subscription),
+							})
+							on = true
+						} catch (error) {
+							if (status) status.textContent = subscribe.reason(error) ?? "failed"
+						}
+					}
+					render()
+					toggle.disabled = false
+				})
+
+				test.addEventListener("click", async () => {
+					const response = await fetch("/push/subscriptions", { method: "PUT" })
+					const { sent } = await response.json()
+					if (status) {
+						status.textContent = sent
+							? "sent — check your notifications"
+							: "nothing subscribed on the server"
+					}
+				})
+			}
+
+			function render() {
+				if (toggle) toggle.textContent = on ? "Unsubscribe" : "Subscribe"
+				if (test) test.disabled = !on
+			}
+		</script>
+	</body>
+</html>

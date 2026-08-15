@@ -12,9 +12,11 @@ export const POST = webhook(async (event) => {
 		case "bounced":
 			console.log(`${event.email} bounced (${event.bounce?.category}): ${event.bounce?.detail}`)
 			break
+
 		case "opened":
 			console.log(`${event.email} opened "${event.subject}" in ${event.client?.name}`)
 			break
+
 		default:
 			console.log(`${event.type} — ${event.email}`)
 	}

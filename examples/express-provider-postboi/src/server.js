@@ -80,11 +80,14 @@ app.post("/notify", express.json(), async ({ body: { channel, to, message } }, r
 	switch (channel) {
 		case "sms":
 			return res.json(await sms({ to, message }))
+
 		case "whatsapp":
 			// Free-form only lands within 24h of their last reply — templates any time.
 			return res.json(await whatsapp({ to, message }))
+
 		case "chat":
 			return res.json(await slack({ message }))
+
 		default:
 			return res.status(400).json({ error: `unknown channel "${channel}"` })
 	}

@@ -17,12 +17,15 @@ export const POST: APIRoute = async ({ request }) => {
 	switch (channel) {
 		case "sms":
 			return Response.json(await sms({ to, message }))
+
 		case "whatsapp":
 			// Free-form text only lands within 24h of the person's last reply — for
 			// anytime delivery, name a template: https://docs.postboi.app/whatsapp
 			return Response.json(await whatsapp({ to, message }))
+
 		case "chat":
 			return Response.json(await slack({ message }))
+
 		default:
 			return Response.json({ error: `unknown channel "${channel}"` }, { status: 400 })
 	}

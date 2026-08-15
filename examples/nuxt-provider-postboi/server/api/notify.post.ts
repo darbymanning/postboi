@@ -16,12 +16,15 @@ export default defineEventHandler(async (event) => {
 	switch (channel) {
 		case "sms":
 			return sms({ to, message })
+
 		case "whatsapp":
 			// Free-form text only lands within 24h of the person's last reply — for
 			// anytime delivery, name a template: https://docs.postboi.app/whatsapp
 			return whatsapp({ to, message })
+
 		case "chat":
 			return slack({ message })
+
 		default:
 			throw createError({ statusCode: 400, statusMessage: `unknown channel "${channel}"` })
 	}

@@ -27,3 +27,6 @@ The contact form is the classic; the rest of postboi wires in the same way:
 - **`POST /notify`** — the other channels: `sms()`, `whatsapp()` and `slack()` from one
   endpoint. `{ "channel": "sms", "to": "+447700900123", "message": "…" }` — in
   development SMS and WhatsApp are logged, not sent.
+
+Web Push's browser half needs a client bundle, which this server-only example doesn't
+have — see the SvelteKit or Next.js example for push end to end.
