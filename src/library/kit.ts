@@ -1,6 +1,5 @@
 import {
 	fail,
-	json,
 	type RequestEvent,
 	type ActionFailure,
 	type RemoteForm,
@@ -230,28 +229,11 @@ export function webhook(
 	handler: (event: WebhookEvent) => void | Promise<void>,
 	options?: ReceiveOptions
 ): (event: RequestEvent) => Promise<Response> {
-	return async ({ request }) => {
-		const { receive, WebhookVerificationError } = await import("./webhooks/index.js")
-
-		let events: Array<WebhookEvent>
-		try {
-			events = await receive(request, options)
-		} catch (error) {
-			if (error instanceof WebhookVerificationError) {
-				return json({ error: error.message }, { status: 401 })
-			}
-			const message = is_error(error) ? error.message : String(error)
-			return json({ error: message }, { status: 400 })
-		}
-
-		try {
-			for (const event of events) await handler(event)
-		} catch (error) {
-			// A throwing handler returns 500 so the provider redelivers the event.
-			const message = error instanceof Error ? error.message : String(error)
-			return json({ error: message }, { status: 500 })
-		}
-
-		return json({ received: events.length })
+	// The universal handler in postboi/webhooks accepts anything carrying a .request —
+	// a SvelteKit RequestEvent included. This wrapper narrows the type for +server.ts
+	// exports and keeps the webhooks module out of kit's graph until a request arrives.
+	return async (event) => {
+		const { webhook: handle } = await import("./webhooks/handler.js")
+		return handle(handler, options)(event)
 	}
 }
