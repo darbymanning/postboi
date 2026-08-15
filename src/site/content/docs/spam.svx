@@ -246,7 +246,7 @@ export default config({
 | Option      | Values                               | Default                                                                    |
 | ----------- | ------------------------------------ | -------------------------------------------------------------------------- |
 | `key`       | your publishable `pk_…` key          | written by `postboi init`; feeds the `<Captcha />` bake                    |
-| `honeypot`  | field name, or `false` to disable    | `"_honey"` (the classic `🍯` is also accepted)                             |
+| `honeypot`  | field name, or `false` to disable    | `"_honey"`                                                                 |
 | `turnstile` | `{ secret_key }`, `true`, or `false` | auto: managed on the Postboi provider, local when `TURNSTILE_SECRET_KEY` is set |
 
 ## Error codes

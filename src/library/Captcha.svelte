@@ -1,6 +1,6 @@
 <!--
 	@component
-	Drop-in spam protection for a native `<form>`: renders the 🍯 honeypot field and, on
+	Drop-in spam protection for a native `<form>`: renders the hidden honeypot field and, on
 	the Postboi provider, activates the managed invisible captcha on the surrounding form. The
 	publishable key is baked in by `bunx postboi sync`, so no props are needed.
 
@@ -25,7 +25,7 @@
 		pk?: string
 		/** Origin serving the captcha loader. Defaults to https://postboi.app. */
 		origin?: string
-		/** Render the hidden 🍯 honeypot field. Defaults to true. */
+		/** Render the hidden honeypot field. Defaults to true. */
 		honeypot?: boolean
 	}
 
