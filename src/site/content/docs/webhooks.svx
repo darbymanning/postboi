@@ -66,6 +66,22 @@ Hono keeps the raw request one level deeper — unwrap it in place:
 app.post('/webhooks', (c) => webhook(handler)(c.req.raw))
 ```
 
+### Express and plain node:http
+
+Express is where webhook endpoints classically break: signatures verify over the
+request's **exact raw bytes**, and a body parser mounted in front of the route rewrites
+them — verification then fails forever, with nothing to say why. `webhook.node()` reads
+the raw stream itself, so there's no parser to misconfigure:
+
+```javascript
+app.post('/webhooks', webhook.node(async (event) => {
+	console.log(`${event.type} — ${event.email}`)
+}))
+```
+
+A global `express.urlencoded()` is fine (webhook bodies are JSON, so it never touches
+them) — just don't mount a JSON parser ahead of this route.
+
 On SvelteKit, `postboi/kit` re-exports `webhook()` with the `RequestEvent` type
 already narrowed, so imports stay consistent with `mail` and `action` from the same
 module.

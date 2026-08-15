@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { webhook } from "./handler.js"
+import { webhook, type NodeRequest } from "./handler.js"
 import { mock_request } from "./mock.js"
 
 /**
@@ -64,5 +64,63 @@ describe("postboi/webhooks webhook()", () => {
 			{ provider: "resend", secret }
 		)
 		expect((await handler(request)).status).toBe(500)
+	})
+})
+
+/** A signed web Request reshaped into what node's http server hands middleware. */
+async function as_node(request: Request): Promise<NodeRequest> {
+	const bytes = new Uint8Array(await request.arrayBuffer())
+	const headers: Record<string, string> = {}
+	request.headers.forEach((value, name) => (headers[name] = value))
+	return {
+		method: "POST",
+		url: "/webhooks",
+		headers,
+		async *[Symbol.asyncIterator]() {
+			yield bytes
+		},
+	}
+}
+
+function fake_response() {
+	return {
+		statusCode: 0,
+		headers: {} as Record<string, string>,
+		body: "",
+		setHeader(name: string, value: string) {
+			this.headers[name] = value
+		},
+		end(chunk: string) {
+			this.body = chunk
+		},
+	}
+}
+
+describe("webhook.node()", () => {
+	it("reads the raw stream itself, so no body parser can break verification", async () => {
+		const { request, secret } = await mock_request({ provider: "resend", type: "opened" })
+
+		const seen: Array<string> = []
+		const middleware = webhook.node((event) => void seen.push(`${event.type}:${event.email}`), {
+			provider: "resend",
+			secret,
+		})
+		const res = fake_response()
+		await middleware(await as_node(request), res)
+
+		expect(res.statusCode).toBe(200)
+		expect(JSON.parse(res.body)).toEqual({ received: 1 })
+		expect(res.headers["content-type"]).toBe("application/json")
+		expect(seen).toEqual(["opened:recipient@example.com"])
+	})
+
+	it("answers 401 on a bad signature, same contract as the fetch handler", async () => {
+		const { request } = await mock_request({ provider: "resend", type: "delivered" })
+
+		const middleware = webhook.node(() => {}, { provider: "resend", secret: "whsec_d3JvbmchIQ==" })
+		const res = fake_response()
+		await middleware(await as_node(request), res)
+
+		expect(res.statusCode).toBe(401)
 	})
 })
