@@ -107,16 +107,19 @@ export function render_types(
 	if (!register) return null
 	return `${HEADER}${register}export declare const captcha_key: string | undefined
 export declare const whatsapp_templates: Record<string, string>
+export declare const vapid_public_key: string | undefined
 `
 }
 
-/** The generated `register.js` source: the baked publishable key and template SIDs. */
+/** The generated `register.js` source: the baked keys and template SIDs. */
 export function render_runtime(
 	captcha_key: string | undefined,
-	template_sids: Record<string, string> = {}
+	template_sids: Record<string, string> = {},
+	vapid_public_key: string | undefined = undefined
 ): string {
 	return `${HEADER}export const captcha_key = ${JSON.stringify(captcha_key)}
 export const whatsapp_templates = ${JSON.stringify(template_sids)}
+export const vapid_public_key = ${JSON.stringify(vapid_public_key)}
 `
 }
 
@@ -150,14 +153,20 @@ export function parse_from(source: string): Array<string> {
 export function parse_runtime(source: string): {
 	captcha_key?: string
 	sids: Record<string, string>
+	vapid_public_key?: string
 } {
 	const key = /captcha_key = "([^"]*)"/.exec(source)?.[1]
+	const vapid = /vapid_public_key = "([^"]*)"/.exec(source)?.[1]
 	const map = /whatsapp_templates = (\{.*\})/.exec(source)?.[1]
 	try {
-		return { captcha_key: key, sids: map ? (JSON.parse(map) as Record<string, string>) : {} }
+		return {
+			captcha_key: key,
+			vapid_public_key: vapid,
+			sids: map ? (JSON.parse(map) as Record<string, string>) : {},
+		}
 	} catch {
 		// A hand-edited or half-written file is no worse than none — fall back to empty.
-		return { captcha_key: key, sids: {} }
+		return { captcha_key: key, vapid_public_key: vapid, sids: {} }
 	}
 }
 
@@ -198,17 +207,19 @@ export function write_types(
  */
 export function write_runtime(
 	captcha_key: string | undefined,
-	template_sids: Record<string, string> = {}
+	template_sids: Record<string, string> = {},
+	vapid_public_key: string | undefined = undefined
 ): string | null {
 	if (!existsSync(RUNTIME_TARGET)) return null
 	const current = parse_runtime(installed(RUNTIME_TARGET))
 	const key = captcha_key ?? current.captcha_key
+	const vapid = vapid_public_key ?? current.vapid_public_key
 	// An empty map means this run resolved no templates — a Meta project, or a fetch that
 	// failed — not that the account's templates are gone. Keeping the last good map is what
 	// stops a blip from turning every named Twilio template into an invalid ContentSid.
 	const sids = Object.keys(template_sids).length > 0 ? template_sids : current.sids
-	if (!key && Object.keys(sids).length === 0) return null
-	replace(RUNTIME_TARGET, render_runtime(key, sids))
+	if (!key && !vapid && Object.keys(sids).length === 0) return null
+	replace(RUNTIME_TARGET, render_runtime(key, sids, vapid))
 	return RUNTIME_TARGET
 }
 

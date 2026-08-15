@@ -80,3 +80,42 @@ describe("unsubscribe", () => {
 		expect(await subscribe.current()).toBeNull()
 	})
 })
+
+describe("subscribe() key resolution", () => {
+	it("throws missing_key when no key is passed and none was baked", async () => {
+		browser({ subscription: null })
+		const error = await subscribe().catch((caught) => caught)
+		expect(subscribe.reason(error)).toBe("missing_key")
+		expect(String(error)).toContain("bunx postboi sync")
+	})
+
+	it("an explicit key wins over the (absent) baked one and reaches pushManager", async () => {
+		// A real P-256 point, so the key decodes; the fake pushManager records what it got.
+		const KEY =
+			"BMOvqNa2X4FY7RtGBfHn0Lpg1II-PafsAq1IdktdxwU3y9sKm2YyP_r9kt-B11odlAj62DeC3v5qYUFTbMrLiA4"
+		const seen: Array<unknown> = []
+		const registration = {
+			active: { state: "activated" },
+			pushManager: {
+				getSubscription: async () => null,
+				subscribe: async (options: unknown) => {
+					seen.push(options)
+					return fake_subscription()
+				},
+			},
+		}
+		vi.stubGlobal("window", { PushManager: class {}, Notification: { permission: "granted" } })
+		vi.stubGlobal("Notification", { permission: "granted" })
+		vi.stubGlobal("navigator", {
+			serviceWorker: {
+				getRegistration: async () => registration,
+				register: async () => registration,
+				ready: Promise.resolve(registration),
+			},
+		})
+
+		expect(await subscribe({ key: KEY })).toEqual(STORED)
+		expect(seen).toHaveLength(1)
+		expect((seen[0] as { userVisibleOnly: boolean }).userVisibleOnly)
+	})
+})

@@ -11,6 +11,7 @@
  * Svelte, React, Vue or no framework at all, and it touches no browser API until called.
  */
 import { from_base64url } from "./crypto.js"
+import { vapid_public_key } from "../register.js"
 
 /** What `subscribe` hands back — post this to your server and store it. */
 export interface PushSubscriptionJSON {
@@ -21,8 +22,12 @@ export interface PushSubscriptionJSON {
 
 /** Options for {@link subscribe}. */
 export interface SubscribeOptions {
-	/** Your VAPID **public** key, base64url. Must match the private key the server signs with. */
-	key: string
+	/**
+	 * Your VAPID **public** key, base64url. Must match the private key the server signs
+	 * with. Optional once `bunx postboi sync` has baked it from `VAPID_PUBLIC_KEY` —
+	 * then `subscribe()` needs no options at all.
+	 */
+	key?: string
 	/**
 	 * Path to your service worker. Defaults to `/sw.js`. Ignored when one is already
 	 * registered for the scope.
@@ -34,6 +39,7 @@ export interface SubscribeOptions {
 export class PushSubscribeError extends Error {
 	readonly reason:
 		| "unsupported"
+		| "missing_key"
 		| "permission_denied"
 		| "permission_dismissed"
 		| "no_service_worker"
@@ -157,9 +163,18 @@ function to_json(subscription: PushSubscription): PushSubscriptionJSON {
  * }
  * ```
  */
-async function subscribe_now(options: SubscribeOptions): Promise<PushSubscriptionJSON> {
+async function subscribe_now(options: SubscribeOptions = {}): Promise<PushSubscriptionJSON> {
 	if (!supported()) {
 		throw new PushSubscribeError("unsupported", "This browser does not support Web Push.")
+	}
+
+	// Explicit key, else the one `bunx postboi sync` baked from VAPID_PUBLIC_KEY.
+	const key = options.key ?? vapid_public_key
+	if (!key) {
+		throw new PushSubscribeError(
+			"missing_key",
+			"No VAPID public key. Pass { key }, or run `bunx postboi sync` with VAPID_PUBLIC_KEY in your env to bake it in."
+		)
 	}
 
 	if (Notification.permission !== "granted") {
@@ -201,7 +216,7 @@ async function subscribe_now(options: SubscribeOptions): Promise<PushSubscriptio
 	// dropped and remade rather than handed back as if valid.
 	const existing = await registration.pushManager.getSubscription()
 	if (existing) {
-		if (same_key(existing.options?.applicationServerKey ?? null, options.key)) {
+		if (same_key(existing.options?.applicationServerKey ?? null, key)) {
 			return to_json(existing)
 		}
 		await existing.unsubscribe()
@@ -212,7 +227,7 @@ async function subscribe_now(options: SubscribeOptions): Promise<PushSubscriptio
 			// Required by Chrome, and refusing anything else is the honest default: a push
 			// the user never sees is exactly what the permission was granted to prevent.
 			userVisibleOnly: true,
-			applicationServerKey: vapid_key_to_bytes(options.key) as BufferSource,
+			applicationServerKey: vapid_key_to_bytes(key) as BufferSource,
 		})
 		return to_json(subscription)
 	} catch (cause) {
