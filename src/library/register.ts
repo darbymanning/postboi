@@ -22,3 +22,7 @@ export const captcha_key: string | undefined = undefined
  * Twilio as it does on Meta.
  */
 export const whatsapp_templates: Record<string, string> = {}
+
+/** The account's VAPID **public** key, baked by `bunx postboi sync` — what lets the
+ * browser half of push (`subscribe()`, the toggle controller) need no key passed in. */
+export const vapid_public_key: string | undefined = undefined

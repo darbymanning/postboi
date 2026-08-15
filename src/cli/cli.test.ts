@@ -661,8 +661,16 @@ describe("cloud domains & generated from types", () => {
 		expect(render_types(undefined, [], ["ping"])!).not.toContain("template_variables")
 	})
 
-	it("render_runtime bakes the key and the template SIDs", () => {
+	it("render_runtime bakes the keys and the template SIDs", () => {
 		expect(render_runtime("pk_123")).toContain('export const captcha_key = "pk_123"')
+		expect(render_runtime("pk_123", {}, "BKEY")).toContain('export const vapid_public_key = "BKEY"')
+		// Round trip: what render writes, parse reads — including the vapid key, so a
+		// later sync that has no opinion on it carries it forward instead of erasing it.
+		expect(parse_runtime(render_runtime("pk_123", { a: "HX1" }, "BKEY"))).toEqual({
+			captcha_key: "pk_123",
+			vapid_public_key: "BKEY",
+			sids: { a: "HX1" },
+		})
 		const source = render_runtime(undefined, { order_shipped: "HX1" })
 		expect(source).toContain('export const whatsapp_templates = {"order_shipped":"HX1"}')
 	})
@@ -686,7 +694,11 @@ describe("cloud domains & generated from types", () => {
 			sids: { order_shipped: "HX1" },
 		})
 		// the shipped placeholder parses as "nothing baked yet", not as garbage
-		expect(parse_runtime(render_runtime(undefined))).toEqual({ captcha_key: undefined, sids: {} })
+		expect(parse_runtime(render_runtime(undefined))).toEqual({
+			captcha_key: undefined,
+			vapid_public_key: undefined,
+			sids: {},
+		})
 	})
 
 	it("config_captcha_key reads the committed key", () => {

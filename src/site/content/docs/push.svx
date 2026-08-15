@@ -59,7 +59,7 @@ end up in a client bundle by accident.
 import { subscribe } from "postboi/push"
 
 async function enable() {
-	const subscription = await subscribe({ key: VAPID_PUBLIC_KEY })
+	const subscription = await subscribe()
 	await fetch("/api/push/register", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
@@ -67,6 +67,12 @@ async function enable() {
 	})
 }
 ```
+
+No key in sight because `bunx postboi sync` bakes `VAPID_PUBLIC_KEY` from your env into
+the package — the same trick that makes `<Captcha />` prop-free. That kills the whole
+per-framework ceremony of smuggling the public key to the browser (server-component
+props, loaders, runtime config, data attributes). Pass `{ key }` to override, and rerun
+sync after rotating the pair.
 
 One import for every framework: `postboi/push` is plain DOM, so Svelte, React, Vue and no
 framework at all get the same line.
@@ -108,7 +114,7 @@ because it implements the store contract, Svelte uses it bare:
 ```svelte
 <script>
 	import { push_controller } from "postboi/push"
-	const push = push_controller({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+	const push = push_controller({ register: "/push/subscriptions" })
 </script>
 
 <button onclick={() => ($push.on ? push.disable() : push.enable())} disabled={$push.busy}>
@@ -116,10 +122,13 @@ because it implements the store contract, Svelte uses it bare:
 </button>
 ```
 
-React and Vue get it as `usePush` from `postboi/react` / `postboi/vue`:
+React gets it as `usePush` from `postboi/react` — camelCase because the hooks linter
+and the React Compiler recognize hooks by the `/^use[A-Z]/ ` name pattern, and a hook
+they can't see is a hook they can't protect. Vue has no such enforcement, so
+`postboi/vue` keeps house style with `use_push`:
 
 ```tsx
-const push = usePush({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+const push = usePush({ register: "/push/subscriptions" })
 
 <button onClick={push.on ? push.disable : push.enable} disabled={push.busy}>
 	{push.on ? "Unsubscribe" : "Subscribe"}
@@ -155,6 +164,7 @@ try {
 | `permission_denied` | The user said no. The browser will not ask again. |
 | `permission_dismissed` | The prompt was closed without an answer. You can ask again later. |
 | `unsupported` | No Web Push in this browser. `subscribe.supported()` tells you first. |
+| `missing_key` | No `{ key }` and nothing baked — run `bunx postboi sync` with `VAPID_PUBLIC_KEY` set. |
 | `no_service_worker` | Your worker file didn't register — wrong path, or a 404. |
 | `failed` | The push service refused the subscription. |
 

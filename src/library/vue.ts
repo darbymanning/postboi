@@ -65,14 +65,16 @@ export default Captcha
 
 /**
  * The push-toggle state machine as a composable — `postboi/push`'s `push_controller`,
- * plugged into Vue. Call `enable` from a click: browsers auto-deny permission prompts
+ * plugged into Vue. snake_case where React's can't be: the hooks linter and React
+ * Compiler force usePush there by name pattern; Vue enforces nothing, so house style
+ * holds. Call `enable` from a click: browsers auto-deny permission prompts
  * that aren't tied to a user gesture, and once denied they never ask again.
  *
  * @example
  * ```vue
  * <script setup>
- * import { usePush } from "postboi/vue"
- * const push = usePush({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+ * import { use_push } from "postboi/vue"
+ * const push = use_push({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
  * </script>
  *
  * <template>
@@ -82,7 +84,7 @@ export default Captcha
  * </template>
  * ```
  */
-export function usePush(options: PushControllerOptions) {
+export function use_push(options: PushControllerOptions) {
 	const controller = push_controller(options)
 	const state = ref<PushState>(controller.now())
 

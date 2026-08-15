@@ -24,8 +24,11 @@ export interface PushState {
 }
 
 export interface PushControllerOptions {
-	/** VAPID public key — the same one the server signs with. */
-	key: string
+	/**
+	 * VAPID public key — the same one the server signs with. Optional once
+	 * `bunx postboi sync` has baked it; subscribe() resolves the default.
+	 */
+	key?: string
 	/**
 	 * Where to file the subscription the browser mints: a URL it's POSTed to as JSON,
 	 * or a function for anything beyond that. Without it the subscription is only held

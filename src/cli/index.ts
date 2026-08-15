@@ -825,8 +825,12 @@ async function sync(): Promise<void> {
 	const templates_promise = fetch_whatsapp_templates()
 	const bake = async (key: string | undefined, source: string) => {
 		const { sids } = await templates_promise
-		if (write_runtime(key, sids)) {
+		// The VAPID public key rides along from local env — public by definition, and
+		// baking it is what lets subscribe() and the push toggle need no key at all.
+		const vapid = read_env("VAPID_PUBLIC_KEY")
+		if (write_runtime(key, sids, vapid)) {
 			console.log(`${green("✓")} captcha key baked for <Captcha /> ${dim(`(from ${source})`)}`)
+			if (vapid) console.log(`${green("✓")} VAPID public key baked — subscribe() needs no key`)
 		}
 	}
 	/** Say what got typed, once, however sync got here. */
@@ -1035,7 +1039,7 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 			`${green("✓")} typed ${bold("from")} to your addresses ${dim(`(generated into ${types_file})`)}`
 		)
 	}
-	if (write_runtime(cloud_account?.captcha_key)) {
+	if (write_runtime(cloud_account?.captcha_key, {}, read_env("VAPID_PUBLIC_KEY"))) {
 		console.log(`${green("✓")} baked your captcha key — drop ${bold("<Captcha />")} into any form`)
 	}
 	if (types_file || cloud_account?.captcha_key) ensure_prepare()
@@ -1493,6 +1497,15 @@ async function channel_init(
 	ensure_install(files)
 	write_channel_config(channel, provider.key, config_defaults, config_options)
 	if (channel === "whatsapp") await type_templates(provider, { ...config_options, ...values })
+
+	// A fresh VAPID pair was just minted (or supplied) — bake the public half so the
+	// browser side needs no key plumbing from the first subscribe.
+	if (channel === "push" && values.VAPID_PUBLIC_KEY && existsSync(TYPES_TARGET)) {
+		if (write_runtime(undefined, {}, values.VAPID_PUBLIC_KEY)) {
+			console.log(`${green("✓")} VAPID public key baked — subscribe() needs no key`)
+			ensure_prepare()
+		}
+	}
 
 	console.log(`\n${green(bold("Done!"))}\n`)
 	for (const line of spec.done(provider)) console.log(dim(line) + "\n")
