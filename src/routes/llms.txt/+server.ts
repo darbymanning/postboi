@@ -24,9 +24,9 @@ const detailParagraphs = [
 	"Use `/sitemap.xml` for URL discovery and `/robots.txt` for crawl guidance.",
 ]
 
-const buildContentEntry = (origin: string, entry: ContentEntry) => {
+const buildContentEntry = async (origin: string, entry: ContentEntry) => {
 	const pagePath = getContentSectionHref(entry.sectionId, entry.slug)
-	const metadata = getContentSectionMetadata(entry.sectionId, pagePath)
+	const metadata = await getContentSectionMetadata(entry.sectionId, pagePath)
 	const title = metadata?.title ?? entry.fallbackTitle
 	const description = metadata?.description ?? `${entry.sectionLabel} page for ${title}.`
 	const rawPath = getContentSectionRawHref(entry.sectionId, entry.slug)
@@ -50,14 +50,15 @@ const buildSection = (title: string, items: string[]) => {
 	return [`## ${title}`, "", ...items]
 }
 
-export const GET: RequestHandler = () => {
+export const GET: RequestHandler = async () => {
 	const canonicalOrigin = new URL(siteConfig.url).origin
 	const optionalLinks = [
 		`- [GitHub](${siteConfig.links.github}): Source code, issues, and discussions.`,
 		`- [Package](https://www.npmjs.com/package/${siteConfig.package.name}): Installation and release metadata.`,
 	]
 
-	const sectionBlocks = contentSections.flatMap((section) => {
+	const sectionBlocks: string[] = []
+	for (const section of contentSections) {
 		const entries = dedupeEntries(
 			getContentSectionManifest(section.id).map((item) => ({
 				sectionId: section.id,
@@ -67,11 +68,13 @@ export const GET: RequestHandler = () => {
 			}))
 		)
 
-		return buildSection(
-			section.label,
-			entries.map((entry) => buildContentEntry(canonicalOrigin, entry))
+		sectionBlocks.push(
+			...buildSection(
+				section.label,
+				await Promise.all(entries.map((entry) => buildContentEntry(canonicalOrigin, entry)))
+			)
 		)
-	})
+	}
 
 	const lines = [
 		`# ${siteConfig.name}`,

@@ -139,7 +139,10 @@ export const GET: RequestHandler = async ({ params }) => {
 	const rawSlug = params.slug.replace(/^\/+|\/+$/g, "")
 	const slug = rawSlug === "" || rawSlug === "index" ? "" : rawSlug
 
-	const metadata = getContentSectionMetadata(sectionId, getContentSectionHref(sectionId, slug))
+	const metadata = await getContentSectionMetadata(
+		sectionId,
+		getContentSectionHref(sectionId, slug)
+	)
 	if (!metadata) {
 		error(404, "Document not found")
 	}

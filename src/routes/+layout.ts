@@ -10,13 +10,13 @@ import { resolveTocSelector } from "$site/config/content-ui"
 
 export const prerender = true
 
-export const load: LayoutLoad = ({ url }) => {
+export const load: LayoutLoad = async ({ url }) => {
 	const { sectionId, slug } = resolveSection(url.pathname)
 	const { previous, next } = getContentSectionAdjacentItems(sectionId, slug)
-	const metadata = getContentSectionMetadata(sectionId, url.pathname)
+	const metadata = await getContentSectionMetadata(sectionId, url.pathname)
 	const sectionUi = getContentSectionUiConfig(sectionId)
 	const tocSelector = resolveTocSelector(sectionUi.toc, slug)
-	const tocHeadings = getContentSectionTocHeadings(sectionId, slug, tocSelector)
+	const tocHeadings = await getContentSectionTocHeadings(sectionId, slug, tocSelector)
 
 	return {
 		sectionId,

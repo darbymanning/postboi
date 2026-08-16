@@ -3,17 +3,18 @@ import { siteConfig } from "$site"
 import { contentSections } from "$site/config/navigation"
 import { getContentSectionManifest, getContentSectionRawSource } from "$site/content/sections"
 
-export const GET: RequestHandler = () => {
+export const GET: RequestHandler = async () => {
 	const seen = new Set<string>()
-	const documents = contentSections.flatMap((section) =>
-		getContentSectionManifest(section.id).flatMap((item) => {
+	const documents: string[] = []
+	for (const section of contentSections) {
+		for (const item of getContentSectionManifest(section.id)) {
 			const key = `${section.id}:${item.slug}`
-			if (seen.has(key)) return []
+			if (seen.has(key)) continue
 			seen.add(key)
-			const content = getContentSectionRawSource(section.id, item.slug)
-			return content ? [content.trim()] : []
-		})
-	)
+			const content = await getContentSectionRawSource(section.id, item.slug)
+			if (content) documents.push(content.trim())
+		}
+	}
 
 	const preamble = [
 		`# ${siteConfig.name}`,

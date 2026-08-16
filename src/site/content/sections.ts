@@ -58,24 +58,22 @@ const contentManifests = Object.fromEntries(
 	allSections.map((section) => [section.id, flattenNavigationToManifest(section.navigation)])
 ) as Record<ContentSectionId, ContentItem[]>
 
+// Lazy on purpose — these globs cover every archived version snapshot, and eager they
+// all land in ONE chunk that every visitor downloads and that grows with every release.
+// It crossed Workers' 25 MiB static-asset limit at 33 versions and broke deploys; lazy,
+// each page is its own chunk, fetched when someone actually opens it.
 const allSvxRaw = import.meta.glob<string>("/src/site/content/**/*.svx", {
 	query: "?raw",
-	eager: true,
 	import: "default",
 })
 
-const allSvxModules = import.meta.glob<ContentModule>("/src/site/content/**/*.svx", {
-	eager: true,
-})
+const allSvxModules = import.meta.glob<ContentModule>("/src/site/content/**/*.svx")
 
-const allSvelteModules = import.meta.glob<ContentModule>("/src/site/content/**/*.svelte", {
-	eager: true,
-})
+const allSvelteModules = import.meta.glob<ContentModule>("/src/site/content/**/*.svelte")
 
 const allSvelteMetadatas = import.meta.glob<Record<string, unknown>>(
 	"/src/site/content/**/*.svelte",
 	{
-		eager: true,
 		import: "metadata",
 	}
 )
@@ -127,10 +125,10 @@ export function getContentSectionSlug(sectionId: ContentSectionId, pathname: str
 	return pathToSlug(basePathFor(sectionId), pathname)
 }
 
-export function getContentSectionMetadata(
+export async function getContentSectionMetadata(
 	sectionId: ContentSectionId,
 	pathname: string
-): ContentMetadata | null {
+): Promise<ContentMetadata | null> {
 	const section = contentSectionsById[sectionId]
 	const normalizedPath = normalizePath(pathname)
 	const slug = pathToSlug(basePathFor(sectionId), normalizedPath)
@@ -148,12 +146,12 @@ export function getContentSectionMetadata(
 	const sourceType: ContentMetadata["sourceType"] = svxKey ? "svx" : "svelte"
 
 	if (svxKey) {
-		const rawSource = allSvxRaw[svxKey]
+		const rawSource = await allSvxRaw[svxKey]()
 		const { metadata } = parseContentSource(rawSource)
 		title = metadata.name ?? metadata.title ?? title
 		description = metadata.description
 	} else if (svelteKey) {
-		const meta = allSvelteMetadatas[svelteKey]
+		const meta = await allSvelteMetadatas[svelteKey]()
 		title =
 			(typeof meta.name === "string" ? meta.name : undefined) ??
 			(typeof meta.title === "string" ? meta.title : undefined) ??
@@ -170,38 +168,43 @@ export function getContentSectionMetadata(
 	}
 }
 
-export function getContentSectionModule(
+export async function getContentSectionModule(
 	sectionId: ContentSectionId,
 	slug: string
-): ContentModule | null {
+): Promise<ContentModule | null> {
 	const svxKey = findSvxKey(sectionId, slug)
 	if (svxKey) {
-		return allSvxModules[svxKey] ?? null
+		return allSvxModules[svxKey]()
 	}
 
 	const svelteKey = findSvelteKey(sectionId, slug)
 	if (svelteKey) {
-		return allSvelteModules[svelteKey] ?? null
+		return allSvelteModules[svelteKey]()
 	}
 
 	return null
 }
 
-export function getContentSectionRawSource(
+export async function getContentSectionRawSource(
 	sectionId: ContentSectionId,
 	slug: string
-): string | null {
+): Promise<string | null> {
 	const svxKey = findSvxKey(sectionId, slug)
 	if (!svxKey) return null
-	return allSvxRaw[svxKey] ?? null
+	return allSvxRaw[svxKey]()
 }
 
-export function getContentSectionTocHeadings(
+/** Whether raw source exists for a slug — sync, for prerender entry lists. */
+export function hasContentSectionRawSource(sectionId: ContentSectionId, slug: string): boolean {
+	return findSvxKey(sectionId, slug) !== null
+}
+
+export async function getContentSectionTocHeadings(
 	sectionId: ContentSectionId,
 	slug: string,
 	selector: string
-): ContentTocHeading[] {
-	const rawSource = getContentSectionRawSource(sectionId, slug)
+): Promise<ContentTocHeading[]> {
+	const rawSource = await getContentSectionRawSource(sectionId, slug)
 	if (!rawSource) return []
 
 	const { body } = parseContentSource(rawSource)

@@ -21,13 +21,13 @@ export const entries = () => [
 	...Object.keys(MOVED).map((slug) => ({ slug })),
 ]
 
-export const load: PageLoad = ({ params }) => {
+export const load: PageLoad = async ({ params }) => {
 	const moved = MOVED[params.slug]
 	if (moved) redirect(308, moved)
 
 	const { sectionId, slug } = resolveSection(`/${params.slug}`)
 
-	const mod = getContentSectionModule(sectionId, slug)
+	const mod = await getContentSectionModule(sectionId, slug)
 	if (!mod) {
 		error(404, "Page not found")
 	}

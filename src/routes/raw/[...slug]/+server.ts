@@ -1,6 +1,10 @@
 import { error } from "@sveltejs/kit"
 import type { RequestHandler } from "./$types"
-import { getContentSectionRawSource, getContentSectionManifest } from "$site/content/sections"
+import {
+	getContentSectionRawSource,
+	getContentSectionManifest,
+	hasContentSectionRawSource,
+} from "$site/content/sections"
 import { contentSections } from "$site/config/navigation"
 
 const normalize = (value: string) => value.replace(/^\/+|\/+$/g, "")
@@ -12,14 +16,14 @@ const sectionId = contentSections[0].id
 
 export const entries = () =>
 	getContentSectionManifest(sectionId)
-		.filter((item) => getContentSectionRawSource(sectionId, item.slug))
+		.filter((item) => hasContentSectionRawSource(sectionId, item.slug))
 		.map((item) => ({ slug: item.slug || "index" }))
 
-export const GET: RequestHandler = ({ params }) => {
+export const GET: RequestHandler = async ({ params }) => {
 	const slugParam = normalize(params.slug)
 	const targetSlug = slugParam === "" || slugParam === "index" ? "" : slugParam
 
-	const content = getContentSectionRawSource(sectionId, targetSlug)
+	const content = await getContentSectionRawSource(sectionId, targetSlug)
 
 	if (!content) {
 		error(404, "Document not found")

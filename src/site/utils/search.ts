@@ -60,11 +60,17 @@ function parseContentIndex() {
 	const index: ContentSearchEntry[] = []
 
 	// Glob from lib/content which mirrors the route structure.
-	const modules = import.meta.glob<string>("/src/site/content/**/*.svx", {
-		query: "?raw",
-		eager: true,
-		import: "default",
-	})
+	// Archived version snapshots (v*) are excluded up front: the runtime filter below
+	// already drops them, but with them in the glob their raw text ships to the client
+	// anyway — and this runs in the command palette.
+	const modules = import.meta.glob<string>(
+		["/src/site/content/**/*.svx", "!/src/site/content/v*/**"],
+		{
+			query: "?raw",
+			eager: true,
+			import: "default",
+		}
+	)
 
 	for (const path in modules) {
 		const rawContent = modules[path]
