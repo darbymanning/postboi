@@ -12,7 +12,7 @@ const client = vi.hoisted(() => {
 })
 vi.mock("./client.js", () => client)
 
-import { push_controller } from "./controller.js"
+import { subscription } from "./controller.js"
 
 const SUBSCRIPTION = {
 	endpoint: "https://push.example/abc",
@@ -31,9 +31,9 @@ beforeEach(() => {
 	client.subscribe.reason.mockReturnValue(null)
 })
 
-describe("push_controller", () => {
+describe("subscription", () => {
 	it("touches no browser API until something listens, then reports reality", async () => {
-		const controller = push_controller({ key: "k" })
+		const controller = subscription({ key: "k" })
 		expect(client.subscribe.supported).not.toHaveBeenCalled()
 
 		client.subscribe.current.mockResolvedValue(SUBSCRIPTION as never)
@@ -48,7 +48,7 @@ describe("push_controller", () => {
 		const fetch = vi.fn(async () => ({ ok: true }))
 		vi.stubGlobal("fetch", fetch)
 
-		const controller = push_controller({ key: "k", register: "/push/subscriptions" })
+		const controller = subscription({ key: "k", register: "/push/subscriptions" })
 		await controller.enable()
 
 		expect(fetch).toHaveBeenCalledWith("/push/subscriptions", {
@@ -66,7 +66,7 @@ describe("push_controller", () => {
 			vi.fn(async () => ({ ok: false, status: 500 }))
 		)
 
-		const controller = push_controller({ key: "k", register: "/push/subscriptions" })
+		const controller = subscription({ key: "k", register: "/push/subscriptions" })
 		await controller.enable()
 
 		expect(client.unsubscribe).toHaveBeenCalled()
@@ -77,7 +77,7 @@ describe("push_controller", () => {
 		client.subscribe.mockRejectedValue(new Error("dismissed"))
 		client.subscribe.reason.mockReturnValue("permission_dismissed" as never)
 
-		const controller = push_controller({ key: "k" })
+		const controller = subscription({ key: "k" })
 		await controller.enable()
 		expect(controller.now()).toMatchObject({ on: false, busy: false })
 		expect(controller.now().reason).toBe("permission_dismissed")
@@ -88,7 +88,7 @@ describe("push_controller", () => {
 		const fetch = vi.fn(async () => ({ ok: true }))
 		vi.stubGlobal("fetch", fetch)
 
-		const controller = push_controller({ key: "k", unregister: "/push/subscriptions" })
+		const controller = subscription({ key: "k", unregister: "/push/subscriptions" })
 		await controller.disable()
 
 		expect(fetch).toHaveBeenCalledWith("/push/subscriptions", {
@@ -97,5 +97,28 @@ describe("push_controller", () => {
 			body: JSON.stringify({ endpoint: SUBSCRIPTION.endpoint }),
 		})
 		expect(controller.now()).toMatchObject({ on: false, busy: false })
+	})
+
+	it("toggle subscribes when off and unsubscribes when on", async () => {
+		client.subscribe.mockResolvedValue(SUBSCRIPTION as never)
+		client.unsubscribe.mockResolvedValue(SUBSCRIPTION as never)
+
+		const controller = subscription({ key: "k" })
+		await controller.toggle()
+		expect(controller.now().on).toBe(true)
+
+		await controller.toggle()
+		expect(controller.now().on).toBe(false)
+		expect(client.unsubscribe).toHaveBeenCalled()
+	})
+
+	it("toggle survives being handed straight to an event handler", async () => {
+		client.subscribe.mockResolvedValue(SUBSCRIPTION as never)
+
+		// `onclick={push.toggle}` calls it unbound — it must not need its object.
+		const { toggle } = subscription({ key: "k" })
+		await toggle()
+
+		expect(client.subscribe).toHaveBeenCalled()
 	})
 })

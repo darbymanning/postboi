@@ -1,4 +1,5 @@
 import { ensure_env_loaded, read_env } from "./env.js"
+import { HONEYPOT_FIELD } from "./form.js"
 
 /**
  * Invisible spam protection for FormData bodies. Two independent layers, both checked in
@@ -17,8 +18,12 @@ import { ensure_env_loaded, read_env } from "./env.js"
 /**
  * The default honeypot field name. Underscore-prefixed like the other special fields, and
  * a name SvelteKit remote forms accept (their field names must be valid JS paths).
+ *
+ * Defined in `form.ts` so the browser components can have it without this module's
+ * `node:fs` chain; re-exported here because this is where it's checked, and where the
+ * package root has always taken it from.
  */
-export const HONEYPOT_FIELD = "_honey"
+export { HONEYPOT_FIELD }
 
 /** The hidden input the Turnstile widget injects into its form. */
 export const TURNSTILE_FIELD = "cf-turnstile-response"

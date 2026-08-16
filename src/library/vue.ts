@@ -24,10 +24,9 @@
  */
 
 import { computed, defineComponent, h, onMounted, onUnmounted, ref } from "vue"
-import { push_controller } from "./push/controller.js"
-import type { PushControllerOptions, PushState } from "./push/controller.js"
-import { HONEYPOT_FIELD } from "./captcha.js"
-import { activate_captcha, honeypot_style } from "./form.js"
+import { subscription } from "./push/controller.js"
+import type { SubscriptionOptions, PushState } from "./push/controller.js"
+import { HONEYPOT_FIELD, activate_captcha, honeypot_style } from "./form.js"
 
 export const Captcha = defineComponent({
 	name: "Captcha",
@@ -64,28 +63,28 @@ export const Captcha = defineComponent({
 export default Captcha
 
 /**
- * The push-toggle state machine as a composable — `postboi/push`'s `push_controller`,
+ * The push-toggle state machine as a composable — `postboi/push`'s `subscription`,
  * plugged into Vue. snake_case where React's can't be: the hooks linter and React
  * Compiler force usePush there by name pattern; Vue enforces nothing, so house style
- * holds. Call `enable` from a click: browsers auto-deny permission prompts
+ * holds. Call `toggle` from a click: browsers auto-deny permission prompts
  * that aren't tied to a user gesture, and once denied they never ask again.
  *
  * @example
  * ```vue
  * <script setup>
  * import { use_push } from "postboi/vue"
- * const push = use_push({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+ * const push = use_push({ register: "/push/subscriptions" })
  * </script>
  *
  * <template>
- * 	<button :disabled="push.busy.value" @click="push.on.value ? push.disable() : push.enable()">
+ * 	<button :disabled="push.busy.value" @click="push.toggle">
  * 		{{ push.on.value ? "Unsubscribe" : "Subscribe" }}
  * 	</button>
  * </template>
  * ```
  */
-export function use_push(options: PushControllerOptions) {
-	const controller = push_controller(options)
+export function use_push(options: SubscriptionOptions) {
+	const controller = subscription(options)
 	const state = ref<PushState>(controller.now())
 
 	onMounted(() => {
@@ -100,5 +99,6 @@ export function use_push(options: PushControllerOptions) {
 		reason: computed(() => state.value.reason),
 		enable: controller.enable,
 		disable: controller.disable,
+		toggle: controller.toggle,
 	}
 }

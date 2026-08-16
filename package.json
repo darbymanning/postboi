@@ -226,9 +226,9 @@
 			"default": "./dist/mail.remote.js"
 		},
 		"./svelte": {
-			"types": "./dist/Captcha.svelte.d.ts",
-			"svelte": "./dist/Captcha.svelte",
-			"default": "./dist/Captcha.svelte"
+			"types": "./dist/svelte.d.ts",
+			"svelte": "./dist/svelte.js",
+			"default": "./dist/svelte.js"
 		},
 		"./react": {
 			"types": "./dist/react.d.ts",

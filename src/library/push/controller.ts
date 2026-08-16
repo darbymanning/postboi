@@ -3,8 +3,10 @@
  * push toggle re-implements the same dance — `current()` on mount, busy/error state,
  * subscribe-then-register, the user-gesture rule — so it lives here instead.
  *
- * `use_push` in `postboi/react` and `postboi/vue` wrap it. Svelte needs no wrapper:
- * the controller implements the store contract, so `$push.on` just works.
+ * Framework-neutral on purpose: it owns the logic and publishes changes through the
+ * store contract, and each ecosystem's wrapper owns the reactivity. `usePush`
+ * (`postboi/react`), `use_push` (`postboi/vue`) and the runes `subscription`
+ * (`postboi/svelte`) are all a few lines around this file.
  */
 import { subscribe, unsubscribe } from "./client.js"
 import type { PushSubscriptionJSON } from "./client.js"
@@ -23,7 +25,7 @@ export interface PushState {
 	reason: PushReason | null
 }
 
-export interface PushControllerOptions {
+export interface SubscriptionOptions {
 	/**
 	 * VAPID public key — the same one the server signs with. Optional once
 	 * `bunx postboi sync` has baked it; subscribe() resolves the default.
@@ -62,24 +64,26 @@ async function file(
 }
 
 /**
- * Build the toggle's state machine. Safe to construct anywhere, including during SSR —
- * no browser API is touched until something subscribes to the state or calls
- * {@link enable}. Call `enable()` from a click: browsers auto-deny permission prompts
- * that aren't tied to a user gesture, and once denied they never ask again.
+ * This browser's push subscription as a state machine — supported, on, busy, why the
+ * last attempt failed, and the calls that change it. Safe to construct anywhere,
+ * including during SSR: no browser API is touched until something subscribes to the
+ * state or calls {@link enable}.
+ *
+ * Svelte, React and Vue each have a wrapper that makes this reactive in their idiom —
+ * reach for this one directly from vanilla JS, or from a framework we don't ship a
+ * wrapper for. Call `toggle()`/`enable()` from a click: browsers auto-deny permission
+ * prompts that aren't tied to a user gesture, and once denied they never ask again.
  *
  * @example
- * ```svelte
- * <script>
- * 	import { push_controller } from "postboi/push"
- * 	const push = push_controller({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
- * </script>
+ * ```ts
+ * import { subscription } from "postboi/push"
  *
- * <button onclick={() => ($push.on ? push.disable() : push.enable())} disabled={$push.busy}>
- * 	{$push.on ? "Unsubscribe" : "Subscribe"}
- * </button>
+ * const push = subscription({ register: "/push/subscriptions" })
+ * push.subscribe((state) => button.replaceChildren(state.on ? "Unsubscribe" : "Subscribe"))
+ * button.addEventListener("click", push.toggle)
  * ```
  */
-export function push_controller(options: PushControllerOptions) {
+export function subscription(options: SubscriptionOptions = {}) {
 	let state: PushState = { supported: false, on: false, busy: false, reason: null }
 	const listeners = new Set<(state: PushState) => void>()
 	let refreshed = false
@@ -133,6 +137,15 @@ export function push_controller(options: PushControllerOptions) {
 		set({ busy: false, on: false })
 	}
 
+	/**
+	 * Flip it: subscribe if this browser isn't, unsubscribe if it is. What a switch in a
+	 * settings page actually wants, and safe to hand straight to a click handler —
+	 * `onclick={push.toggle}` rather than a ternary that has to read the state itself.
+	 */
+	async function toggle(): Promise<void> {
+		return state.on ? disable() : enable()
+	}
+
 	return {
 		/** Svelte store contract: called with the state now and on every change. */
 		subscribe(listener: (state: PushState) => void): () => void {
@@ -149,7 +162,8 @@ export function push_controller(options: PushControllerOptions) {
 		refresh,
 		enable,
 		disable,
+		toggle,
 	}
 }
 
-export type PushController = ReturnType<typeof push_controller>
+export type PushSubscriptionStore = ReturnType<typeof subscription>

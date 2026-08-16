@@ -31,7 +31,7 @@ Postboi is a framework-agnostic messaging library optimised for SvelteKit — **
 - 🍯 **Invisible spam protection** - a zero-config [honeypot](https://docs.postboi.app/spam), plus invisible captcha — fully managed on the Postboi provider, or bring your own Turnstile key
 - 🧩 **`<Captcha />` component** - one prop-free tag inside your own form, for [Svelte, React, Vue and Astro](https://docs.postboi.app/spam#the-captcha-component) — `postboi sync` bakes in the key
 - 🛡️ **Type-safe** - full TypeScript support with normalized error handling
-- 💬 **Every channel, one shape** - [`sms()`](https://docs.postboi.app/sms), [`whatsapp()`](https://docs.postboi.app/whatsapp), [`push()`](https://docs.postboi.app/push), [`slack()`, `discord()`, `teams()` and `telegram()`](https://docs.postboi.app/chat) resolve, hook and error exactly like `mail()` — Twilio, The SMS Works, Meta, Web Push, FCM and friends behind them
+- 💬 **Every channel, one shape** - [`sms()`](https://docs.postboi.app/sms), [`whatsapp()`](https://docs.postboi.app/whatsapp), [`push()`](https://docs.postboi.app/push), [`slack()`, `discord()`, `teams()`, `telegram()` and `bluesky()`](https://docs.postboi.app/slack) resolve, hook and error exactly like `mail()` — Twilio, The SMS Works, Meta, Web Push, FCM and friends behind them
 - 📡 **Multi-channel `send()`** - [one call](https://docs.postboi.app/send) fans out to everything in `to`, or walks `channels: "cheapest"` (push → chat → email → whatsapp → sms) and stops at the first success — the fan-out runs in your process, so nobody meters it
 
 ## Quick start
@@ -181,7 +181,7 @@ stricter, because a stray text costs money and can't be recalled.
 | SMS (and RCS)            | [docs.postboi.app/sms](https://docs.postboi.app/sms)           |
 | WhatsApp                 | [docs.postboi.app/whatsapp](https://docs.postboi.app/whatsapp) |
 | Push (Web Push, FCM)     | [docs.postboi.app/push](https://docs.postboi.app/push)         |
-| Chat (Slack, Discord, …) | [docs.postboi.app/chat](https://docs.postboi.app/chat)         |
+| Chat (Slack, Discord, …) | [docs.postboi.app/slack](https://docs.postboi.app/slack)       |
 
 ## Development
 

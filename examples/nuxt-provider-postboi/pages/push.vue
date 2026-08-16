@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { use_push } from "postboi/vue"
 
-// No key, no runtimeConfig: `bunx postboi init --push` (or sync) bakes the VAPID
-// public key into the package. Destructured so the refs unwrap in the template; a
-// missing bake surfaces as reason === "missing_key".
-const { on, busy, reason, enable, disable } = use_push({
+// postboi bakes the VAPID public key into the package, so neither runtimeConfig nor the
+// page has to carry it. `register` is where the subscription the browser mints gets
+// filed — the endpoint below — which is how the server learns where to push.
+// Destructured so the refs unwrap in the template.
+const { on, busy, reason, toggle } = use_push({
 	register: "/api/push/subscriptions",
 })
 
@@ -24,7 +25,7 @@ async function test() {
 			Subscribe this browser, then have the server push to it — close the tab first if
 			you want proof it works with the site gone.
 		</p>
-		<button :disabled="busy" @click="on ? disable() : enable()">
+		<button :disabled="busy" @click="toggle">
 			{{ on ? "Unsubscribe" : "Subscribe" }}
 		</button>
 		<button :disabled="!on" @click="test">Send me one</button>

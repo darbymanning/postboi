@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { push_controller } from "postboi/push"
+	import { subscription } from "postboi/svelte"
 
-	// No key in sight: `bunx postboi init --push` (or sync) bakes the VAPID public key
-	// into the package. The whole toggle state machine is the controller's, and it
-	// implements the store contract, so $push just works.
-	const push = push_controller({ register: "/push" })
+	// postboi bakes the VAPID public key into the package, so nothing has to carry it to
+	// the browser. `register` is where the subscription the browser mints gets filed —
+	// the /push endpoint below — which is how the server learns where to push. `on`,
+	// `busy` and `reason` are runes, so read them straight off it.
+	const push = subscription({ register: "/push" })
 
 	let status = $state("")
 
@@ -22,12 +23,12 @@
 		Subscribe this browser, then have the server push to it — close the tab first if you
 		want proof it works with the site gone.
 	</p>
-	<button onclick={() => ($push.on ? push.disable() : push.enable())} disabled={$push.busy}>
-		{$push.on ? "Unsubscribe" : "Subscribe"}
+	<button onclick={push.toggle} disabled={push.busy}>
+		{push.on ? "Unsubscribe" : "Subscribe"}
 	</button>
-	<button onclick={test} disabled={!$push.on}>Send me one</button>
+	<button onclick={test} disabled={!push.on}>Send me one</button>
 	<!-- missing_key lands here too — run `bunx postboi init --push`, then restart. -->
-	{#if $push.reason}<p>{$push.reason}</p>{:else if status}<p>{status}</p>{/if}
+	{#if push.reason}<p>{push.reason}</p>{:else if status}<p>{status}</p>{/if}
 </main>
 
 <style>
