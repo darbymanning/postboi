@@ -1,11 +1,11 @@
 ---
 name: postboi
-description: Integrate the postboi email library — send email from any JS framework (SvelteKit, Next.js, Express, Hono, Remix, Nuxt, Astro), wire contact forms with FormData parsing and spam protection, receive delivery webhooks, schedule and track sends. Covers SvelteKit remote functions (postboi/remote) and migrating hand-rolled email code to postboi. Also covers full account setup and provider migration from the terminal: sending domains + DNS via `bunx postboi domains`, importing recipients and suppressions, webhooks, members, and the REST API at api.postboi.app. Use whenever a task involves postboi, adding email sending / contact forms, setting up or migrating an email provider/ESP, or replacing nodemailer/direct provider SDK calls in a project that has (or should have) postboi installed.
+description: Integrate the postboi messaging library — send email, SMS, WhatsApp, push and chat (Slack, Discord, Teams, Telegram, Bluesky) from any JS framework (SvelteKit, Next.js, Express, Hono, Remix, Nuxt, Astro), plus multi-channel `send()` that fans out or falls back across them. Wire contact forms with FormData parsing and spam protection, receive delivery webhooks, schedule and track sends. Covers SvelteKit remote functions (postboi/remote) and migrating hand-rolled email code to postboi. Also covers full account setup and provider migration from the terminal — sending domains + DNS via `bunx postboi domains`, importing recipients and suppressions, webhooks, members, and the REST API at api.postboi.app. Use whenever a task involves postboi, adding email / SMS / WhatsApp / push / chat sending or contact forms, setting up or migrating an email or SMS provider/ESP, or replacing nodemailer/direct provider SDK calls in a project that has (or should have) postboi installed.
 ---
 
 # Postboi
 
-Framework-agnostic email library. One `mail()` call, 20 providers (Resend, SES, Mailgun, SMTP, its own Postboi provider, …), normalized errors and webhooks across all of them.
+Framework-agnostic messaging library. One `mail()` call, 20 email providers (Resend, SES, Mailgun, SMTP, its own Postboi provider, …), normalized errors and webhooks across all of them — and the same shape for SMS, WhatsApp, push and chat, plus a `send()` that reaches someone across all of them.
 
 Full docs: https://docs.postboi.app — every page is available as raw Markdown at `https://docs.postboi.app/raw/<slug>` (e.g. `/raw/webhooks`). Fetch those for anything not covered here. Complete docs in one file: `https://docs.postboi.app/llms-full.txt`.
 
@@ -14,7 +14,7 @@ Full docs: https://docs.postboi.app — every page is available as raw Markdown 
 Always start with the CLI — it picks a provider, writes secrets to `.env` and everything else to a committed `postboi.config.ts`, and installs the package:
 
 ```bash
-bunx postboi init   # or npx
+bunx postboi init   # or npx — email; add --sms, --whatsapp, --push or --chat for a channel
 ```
 
 Don't hand-write provider wiring unless the runtime demands it (see Edge runtimes).
@@ -46,6 +46,59 @@ await mail({ to: "contact@example.com", subject: "Hi", body: "<p>Hello</p>" })
 - `to`/`from`/`cc`/`bcc`/`reply_to` accept `"a@b.c"`, `"Name <a@b.c>"`, `{ address, name }`, or arrays.
 - A plain-text alternative is derived from the HTML automatically (`auto_text`, on by default).
 - Other `SendOptions`: `attachments: File | File[]`, `headers`, `tags`, `idempotency_key`, `scheduled_at`, `tracking`, `unsubscribe_url`, `captcha`. Reference: `/raw/api`.
+
+## Other channels — SMS, WhatsApp, push, chat
+
+Same shape as `mail()`: a zero-config function off the package root, provider resolved from
+env then `postboi.config.ts`, the same `PostboiError`, and an array argument for batches.
+Set one up with `bunx postboi init --sms` (or `--whatsapp`, `--push`, `--chat`).
+
+```ts
+import { sms, whatsapp, push, slack } from "postboi"
+
+await sms({ to: "+447788223344", message: "Your code is 123456" })
+await whatsapp({ to: "+447788223344", template: "order_shipped", variables: { name: "Ada" } })
+await push({ to: subscription, title: "Deployed", message: "main is live" })
+await slack({ message: "Deploy finished" }) // also discord, teams, telegram, bluesky
+```
+
+- **SMS** — `to` takes one number or many, plus `from`, `country` (ISO code, resolves national numbers), `scheduled_at`, `tags`, `idempotency_key`. Providers: `twilio`, `smsworks`, `sns`. `/raw/sms`
+- **WhatsApp** — a free-form `message` only delivers **within 24h of the user's last reply**; outside it use `template` + `variables` (`header`, `buttons`, `language`) or the send fails `outside_window`. Providers: `twilio`, `meta`. `bunx postboi sync` narrows the `template` type to the names approved on the account. `/raw/whatsapp`
+- **Push** — `to` is a Web Push subscription or a device token, so a target must be registered first: `subscribe()` from `postboi/push` in the browser (`sync` bakes in `VAPID_PUBLIC_KEY`, so it needs no options), `unsubscribe()` to drop it. Providers: `webpush`, `fcm`, `apns`, `hms`. `/raw/push`
+- **Chat** — one function per platform, there is no generic `chat` export. `to` is a webhook URL (Slack, Discord, Teams) or a chat id (Telegram), normally configured once and omitted per message. `/raw/slack`, `/raw/discord`, `/raw/teams`, `/raw/telegram`, `/raw/bluesky`
+
+Config mirrors email — `sms` / `whatsapp` / `push` / `chat` sections in `postboi.config.ts`
+(`provider`, `default`, non-secret `options`), credentials in env, and `POSTBOI_<CHANNEL>_*`
+always wins: `POSTBOI_SMS_PROVIDER|FROM|TO|COUNTRY`, `POSTBOI_WHATSAPP_PROVIDER|FROM|TO|COUNTRY|LANGUAGE`,
+`POSTBOI_PUSH_PROVIDER|TO|ICON`, `POSTBOI_CHAT_PROVIDER|TO|USERNAME`.
+
+**Development intercepts rather than sends.** SMS and WhatsApp are _always_ captured in
+development — a stray one costs money and reaches a real handset — and unconfigured chat
+and push fall back to capture too. It all lands in the dev inbox at `/__postboi`. For real
+delivery set `POSTBOI_SMS_DEV=send` / `POSTBOI_WHATSAPP_DEV=send`, or `dev: { sms: false }`
+in the config.
+
+### One call, every channel — `send()`
+
+```ts
+import { send } from "postboi"
+
+const result = await send({
+	to: { email: "ada@example.com", sms: "+447788223344", push: subscription },
+	subject: "Order shipped",
+	message: "Your order is on its way",
+	channels: "cheapest", // push → chat → email → whatsapp → sms, stop at first success
+})
+```
+
+Omit `channels` and it **fans out** to everything in `to`; pass an array or `"cheapest"` and
+it walks them in order, stopping at the first success. `message` is the plain text every
+channel gets (and email's `text` part), `subject` is the email subject plus the chat/push
+title, `body` the email HTML. Per-channel overrides live under `email` / `sms` / `chat` /
+`push` / `whatsapp` — that's where WhatsApp's `template` belongs, so it stays deliverable
+outside the 24h window while the rest carry the plain message. Returns
+`{ ok, results, delivered }` and never rejects once a channel was attempted. The fan-out
+runs in your process, so nobody meters it. `/raw/send`
 
 ## Contact forms (FormData)
 
@@ -154,7 +207,7 @@ Elsewhere use `receive(request)` from `postboi/webhooks` — returns normalized 
 
 ## Errors & retries
 
-Every provider throws the same normalised `PostboiError` (`provider`, `status?`, `code?`, `message`, `raw`); check with `mail.is_error(e)`. Retries are **off by default on purpose** — enable `retries` only alongside an `idempotency_key` where supported, or you risk duplicate sends. `/raw/errors`
+Every provider on every channel throws the same normalised `PostboiError` (`provider`, `channel?`, `status?`, `code?`, `message`, `raw`); check with `mail.is_error(e)`. `channel` is what tells you which leg of a fan-out failed. Retries are **off by default on purpose** — enable `retries` only alongside an `idempotency_key` where supported, or you risk duplicate sends. `/raw/errors`
 
 ## Testing
 
@@ -167,6 +220,10 @@ const mail = new Mock({ default: { from: "no-reply@example.com" } })
 await mail.send({ to: "a@b.c", subject: "Hi", body: "<p>x</p>" })
 // mail.sent[0], mail.canceled
 ```
+
+Every channel has one: `postboi/sms-mock`, `postboi/whatsapp-mock`, `postboi/push-mock`,
+`postboi/chat-mock` — same `sent` array, same normalisation. Or set `provider: "mock"` in
+that channel's config section to route the zero-config function through it.
 
 ## Edge runtimes (Cloudflare Workers, …)
 
@@ -229,14 +286,18 @@ Cautions: deletes are immediate and unprompted (`lists delete` takes the recipie
 
 ## Quick reference
 
-| Task                                 | Import                                                                                           |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| Zero-config send / cancel            | `mail`, `cancel` from `postboi`                                                                  |
-| Explicit provider                    | `postboi/resend`, `postboi/ses`, `postboi/smtp`, … (`/raw/providers` for all 20 + env var names) |
-| SvelteKit action & webhook handler   | `mail`, `action`, `webhook` from `postboi/kit`                                                   |
-| SvelteKit remote form (experimental) | `mail` from `postboi/remote`; factory `remote` from `postboi/kit`                                |
-| Webhooks anywhere                    | `receive`, `mock_event`, `mock_request` from `postboi/webhooks`                                  |
-| Captcha component                    | `postboi/svelte`, `postboi/react`, `postboi/vue`, `postboi/astro`                                |
-| Maizzle templates                    | `postboi/maizzle`                                                                                |
-| Tests                                | `postboi/mock`                                                                                   |
-| Spam helpers                         | `is_spam`, `SkipSendError` from `postboi`                                                        |
+| Task                                 | Import                                                                                                                                                                                       |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Zero-config send / cancel            | `mail`, `cancel` from `postboi`                                                                                                                                                              |
+| Other channels                       | `sms`, `whatsapp`, `push`, `slack`, `discord`, `teams`, `telegram`, `bluesky` from `postboi`                                                                                                 |
+| Multi-channel fan-out / fallback     | `send` from `postboi`                                                                                                                                                                        |
+| Browser push subscription            | `subscribe`, `unsubscribe` from `postboi/push`                                                                                                                                               |
+| Explicit provider                    | `postboi/resend`, `postboi/ses`, `postboi/smtp`, … (`/raw/providers` for all 20 + env var names)                                                                                             |
+| Explicit channel provider            | `postboi/twilio`, `postboi/smsworks`, `postboi/sns`, `postboi/webpush`, `postboi/fcm`, `postboi/apns`, `postboi/hms`, `postboi/whatsapp-twilio`, `postboi/whatsapp-meta`, `postboi/slack`, … |
+| SvelteKit action & webhook handler   | `mail`, `action`, `webhook` from `postboi/kit`                                                                                                                                               |
+| SvelteKit remote form (experimental) | `mail` from `postboi/remote`; factory `remote` from `postboi/kit`                                                                                                                            |
+| Webhooks anywhere                    | `receive`, `mock_event`, `mock_request` from `postboi/webhooks`                                                                                                                              |
+| Captcha component                    | `postboi/svelte`, `postboi/react`, `postboi/vue`, `postboi/astro`                                                                                                                            |
+| Maizzle templates                    | `postboi/maizzle`                                                                                                                                                                            |
+| Tests                                | `postboi/mock`, `postboi/sms-mock`, `postboi/whatsapp-mock`, `postboi/push-mock`, `postboi/chat-mock`                                                                                        |
+| Spam helpers                         | `is_spam`, `SkipSendError` from `postboi`                                                                                                                                                    |
