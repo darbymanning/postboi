@@ -103,7 +103,23 @@ commit and trigger the Publish workflow manually on `main` instead
 (`workflow_dispatch`) — it derives the tag from `package.json` and creates
 both the tag and the release itself.
 
-### C. Verify
+### C. Point the examples at it
+
+Each `examples/*/package.json` pins `"postboi": "^X.Y.Z"`, and pre-1.0 a caret
+doesn't cross the minor — `^0.30.0` can never install `0.31.0`. So until they're
+bumped the examples keep building against the previous release, and the CI
+**Examples** job on `main` goes red the moment one of them uses something the
+release added.
+
+```sh
+sed -i '' 's/"postboi": "\^0\.30\.0"/"postboi": "^0.31.0"/' examples/*/package.json
+(cd examples && for dir in */; do (cd "$dir" && bun install && bun run ci); done)
+```
+
+That loop is exactly what the CI job runs, so a green one here is a green one
+there.
+
+### D. Verify
 
 - The [Publish run](https://github.com/postboi-mail/postboi/actions/workflows/publish.yml) is green.
 - `npm view postboi version` shows `X.Y.Z`.
