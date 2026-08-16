@@ -114,3 +114,7 @@ await send({
 Each leg runs through the [hooks](/hooks) for its own channel, so a `before.send` sees three
 separate calls for a three-channel fan-out — each with its own `ctx.channel`. That's what
 you want for suppression: skipping the SMS leg shouldn't skip the email.
+
+**Runnable example:** [`examples/scripts/notify.ts`](https://github.com/postboi-mail/postboi/tree/main/examples/scripts/notify.ts) runs both
+modes against real providers — the fan-out, and the cheapest-first chain — printing which
+leg delivered.

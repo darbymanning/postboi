@@ -108,17 +108,22 @@ which row to delete.
 
 Every settings page that offers a push switch re-implements the same state machine:
 `current()` on mount, busy and error state, subscribe-then-register, rollback when the
-server never learned the address. `push_controller` is that machine written once — and
-because it implements the store contract, Svelte uses it bare:
+server never learned the address. `subscription` is that machine written once, with one
+wrapper per framework so the state is reactive in each one's own idiom.
+
+Svelte's is reactive properties — `on`, `busy`, `supported` and `reason` read plainly,
+no `$` prefix and nothing to unwrap, and they only start watching when something
+actually renders them:
 
 ```svelte
-<script>
-	import { push_controller } from "postboi/push"
-	const push = push_controller({ register: "/push/subscriptions" })
+<script lang="ts">
+	import { subscription } from "postboi/svelte"
+
+	const push = subscription({ register: "/push/subscriptions" })
 </script>
 
-<button onclick={() => ($push.on ? push.disable() : push.enable())} disabled={$push.busy}>
-	{$push.on ? "Unsubscribe" : "Subscribe"}
+<button onclick={push.toggle} disabled={push.busy}>
+	{push.on ? "Unsubscribe" : "Subscribe"}
 </button>
 ```
 
@@ -130,14 +135,34 @@ they can't see is a hook they can't protect. Vue has no such enforcement, so
 ```tsx
 const push = usePush({ register: "/push/subscriptions" })
 
-<button onClick={push.on ? push.disable : push.enable} disabled={push.busy}>
+<button onClick={push.toggle} disabled={push.busy}>
 	{push.on ? "Unsubscribe" : "Subscribe"}
 </button>
 ```
 
+`toggle()` is the one a switch wants — subscribe if this browser isn't, unsubscribe if it
+is — and handing it to a click handler by name is safe. `enable()` and
+`disable()` are there when the UI is two buttons rather than one. Call whichever **from a
+click**, for the same reason `subscribe()` has to be.
+
 `register` is a URL the subscription is POSTed to (or a function, for anything beyond
 that); `unregister`, when given, unfiles it on disable. A register call that fails rolls
 the browser subscription back, so there's never an address the server doesn't know.
+
+| Framework | Import | Shape |
+| --- | --- | --- |
+| Svelte | `subscription` from `postboi/svelte` | Reactive — `push.on` |
+| React | `usePush` from `postboi/react` | Hook — `push.on` |
+| Vue | `use_push` from `postboi/vue` | Composable — `on.value` |
+| Anything else | `subscription` from `postboi/push` | Store contract — `push.subscribe(fn)`, plain `push.on` reads |
+
+The last row is the machine the other three wrap, framework-neutral and plain DOM. Reach
+for it from vanilla JS, or from a framework we don't ship a wrapper for.
+
+**Runnable example:** [`examples/sveltekit-provider-postboi`](https://github.com/postboi-mail/postboi/tree/main/examples/sveltekit-provider-postboi)
+does Web Push end to end — the toggle above, the endpoint it registers with, the send, and
+the service worker that shows the notification. Nuxt, Next.js, Astro and Remix carry the
+same page in their own idiom.
 
 ### When a subscribe fails
 

@@ -9,6 +9,15 @@ import { captcha_key } from "./register.js"
 /** Where the managed-captcha loader script lives. */
 export const CAPTCHA_ORIGIN = "https://postboi.app"
 
+/**
+ * The honeypot input's name. It lives here rather than in `captcha.ts` — which owns the
+ * checking half and re-exports it — because every `<Captcha>` needs it and `captcha.ts`
+ * reaches for `node:fs` through `env.js`. A component that imported the name from there
+ * dragged the whole server-side chain into the browser graph, and each bundler said so
+ * in its own way.
+ */
+export const HONEYPOT_FIELD = "_honey"
+
 /** Inline styling that hides the honeypot from humans without `display: none` (which smarter bots detect). */
 export const honeypot_style = "position:absolute;left:-9999px;height:0;width:0;opacity:0"
 

@@ -226,9 +226,9 @@
 			"default": "./dist/mail.remote.js"
 		},
 		"./svelte": {
-			"types": "./dist/Captcha.svelte.d.ts",
-			"svelte": "./dist/Captcha.svelte",
-			"default": "./dist/Captcha.svelte"
+			"types": "./dist/svelte.d.ts",
+			"svelte": "./dist/svelte.js",
+			"default": "./dist/svelte.js"
 		},
 		"./react": {
 			"types": "./dist/react.d.ts",
@@ -248,7 +248,7 @@
 		"@maizzle/framework": "^6.0.0",
 		"@sveltejs/kit": "^2.0.0",
 		"react": ">=18",
-		"svelte": "^5.0.0",
+		"svelte": "^5.7.0",
 		"vue": ">=3.3"
 	},
 	"peerDependenciesMeta": {

@@ -12,7 +12,7 @@ const client = vi.hoisted(() => {
 })
 vi.mock("./client.js", () => client)
 
-import { push_controller } from "./controller.js"
+import { subscription } from "./controller.js"
 
 const SUBSCRIPTION = {
 	endpoint: "https://push.example/abc",
@@ -31,9 +31,9 @@ beforeEach(() => {
 	client.subscribe.reason.mockReturnValue(null)
 })
 
-describe("push_controller", () => {
+describe("subscription", () => {
 	it("touches no browser API until something listens, then reports reality", async () => {
-		const controller = push_controller({ key: "k" })
+		const controller = subscription({ key: "k" })
 		expect(client.subscribe.supported).not.toHaveBeenCalled()
 
 		client.subscribe.current.mockResolvedValue(SUBSCRIPTION as never)
@@ -48,7 +48,7 @@ describe("push_controller", () => {
 		const fetch = vi.fn(async () => ({ ok: true }))
 		vi.stubGlobal("fetch", fetch)
 
-		const controller = push_controller({ key: "k", register: "/push/subscriptions" })
+		const controller = subscription({ key: "k", register: "/push/subscriptions" })
 		await controller.enable()
 
 		expect(fetch).toHaveBeenCalledWith("/push/subscriptions", {
@@ -66,7 +66,7 @@ describe("push_controller", () => {
 			vi.fn(async () => ({ ok: false, status: 500 }))
 		)
 
-		const controller = push_controller({ key: "k", register: "/push/subscriptions" })
+		const controller = subscription({ key: "k", register: "/push/subscriptions" })
 		await controller.enable()
 
 		expect(client.unsubscribe).toHaveBeenCalled()
@@ -77,7 +77,7 @@ describe("push_controller", () => {
 		client.subscribe.mockRejectedValue(new Error("dismissed"))
 		client.subscribe.reason.mockReturnValue("permission_dismissed" as never)
 
-		const controller = push_controller({ key: "k" })
+		const controller = subscription({ key: "k" })
 		await controller.enable()
 		expect(controller.now()).toMatchObject({ on: false, busy: false })
 		expect(controller.now().reason).toBe("permission_dismissed")
@@ -88,7 +88,7 @@ describe("push_controller", () => {
 		const fetch = vi.fn(async () => ({ ok: true }))
 		vi.stubGlobal("fetch", fetch)
 
-		const controller = push_controller({ key: "k", unregister: "/push/subscriptions" })
+		const controller = subscription({ key: "k", unregister: "/push/subscriptions" })
 		await controller.disable()
 
 		expect(fetch).toHaveBeenCalledWith("/push/subscriptions", {
@@ -97,5 +97,83 @@ describe("push_controller", () => {
 			body: JSON.stringify({ endpoint: SUBSCRIPTION.endpoint }),
 		})
 		expect(controller.now()).toMatchObject({ on: false, busy: false })
+	})
+
+	it("toggle subscribes when off and unsubscribes when on", async () => {
+		client.subscribe.mockResolvedValue(SUBSCRIPTION as never)
+		client.unsubscribe.mockResolvedValue(SUBSCRIPTION as never)
+
+		const controller = subscription({ key: "k" })
+		await controller.toggle()
+		expect(controller.now().on).toBe(true)
+
+		await controller.toggle()
+		expect(controller.now().on).toBe(false)
+		expect(client.unsubscribe).toHaveBeenCalled()
+	})
+
+	it("toggle survives being handed straight to an event handler", async () => {
+		client.subscribe.mockResolvedValue(SUBSCRIPTION as never)
+
+		// `onclick={push.toggle}` calls it unbound — it must not need its object.
+		const { toggle } = subscription({ key: "k" })
+		await toggle()
+
+		expect(client.subscribe).toHaveBeenCalled()
+	})
+
+	it("a click that beats the initial read still lands on the right side", async () => {
+		// The browser is already subscribed, but nothing has listened yet, so `on` is
+		// still its initial false. The click must wait for the read, not enable again.
+		client.subscribe.current.mockResolvedValue(SUBSCRIPTION as never)
+		client.unsubscribe.mockResolvedValue(SUBSCRIPTION as never)
+
+		const controller = subscription({ key: "k" })
+		await controller.toggle()
+
+		expect(client.unsubscribe).toHaveBeenCalled()
+		expect(client.subscribe).not.toHaveBeenCalled()
+		expect(controller.now().on).toBe(false)
+	})
+
+	it("a failed unsubscribe releases busy instead of wedging the toggle", async () => {
+		client.subscribe.current.mockResolvedValue(SUBSCRIPTION as never)
+		client.unsubscribe.mockRejectedValue(new DOMException("push service unreachable"))
+
+		const controller = subscription({ key: "k" })
+		await controller.toggle()
+
+		// The browser still holds the subscription, and the machine must still be usable.
+		expect(controller.now()).toMatchObject({ on: true, busy: false })
+	})
+
+	it("a failed rollback still reports register_failed", async () => {
+		client.subscribe.mockResolvedValue(SUBSCRIPTION as never)
+		client.unsubscribe.mockRejectedValue(new DOMException("gone"))
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => ({ ok: false, status: 500 }))
+		)
+
+		const controller = subscription({ key: "k", register: "/push/subscriptions" })
+		await controller.enable()
+
+		// The register call is the story; the rollback failing too must not eat it.
+		expect(controller.now()).toMatchObject({ busy: false, reason: "register_failed" })
+	})
+
+	it("a slow initial read can't overwrite the enable that finished first", async () => {
+		let answer!: (value: null) => void
+		client.subscribe.current.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+		client.subscribe.mockResolvedValue(SUBSCRIPTION as never)
+
+		const controller = subscription({ key: "k" })
+		controller.subscribe(() => {}) // kicks off the read, which hangs
+		await controller.enable()
+		expect(controller.now().on).toBe(true)
+
+		answer(null) // the read finally resolves, with a snapshot from before the enable
+		await vi.waitFor(() => expect(controller.now().supported).toBe(true))
+		expect(controller.now().on).toBe(true)
 	})
 })

@@ -22,10 +22,9 @@
  */
 
 import { createElement, useEffect, useRef, useState, useSyncExternalStore } from "react"
-import { push_controller } from "./push/controller.js"
-import type { PushControllerOptions, PushState } from "./push/controller.js"
-import { HONEYPOT_FIELD } from "./captcha.js"
-import { activate_captcha, honeypot_style_object } from "./form.js"
+import { subscription } from "./push/controller.js"
+import type { PushState, PushSubscriptionStore, SubscriptionOptions } from "./push/controller.js"
+import { HONEYPOT_FIELD, activate_captcha, honeypot_style_object } from "./form.js"
 
 export interface CaptchaProps {
 	/** Publishable key (`pk_…`) override. Defaults to the key baked by `bunx postboi sync`. */
@@ -57,26 +56,30 @@ export function Captcha({ pk, origin, honeypot = true }: CaptchaProps) {
 }
 
 /**
- * The push-toggle state machine as a hook — `postboi/push`'s `push_controller`, plugged
+ * The push-toggle state machine as a hook — `postboi/push`'s `subscription`, plugged
  * into React. camelCase deliberately: the hooks linter and React Compiler recognize
  * hooks by the /^use[A-Z0-9]/ name pattern, and a hook they can't see is a hook they
- * can't protect (or worse, one the compiler memoizes). Call `enable` from a click: browsers auto-deny permission prompts that
+ * can't protect (or worse, one the compiler memoizes). Call `toggle` from a click: browsers auto-deny permission prompts that
  * aren't tied to a user gesture, and once denied they never ask again.
  *
  * @example
  * ```tsx
- * const push = usePush({ key: VAPID_PUBLIC_KEY, register: "/push/subscriptions" })
+ * const push = usePush({ register: "/push/subscriptions" })
  *
- * <button onClick={push.on ? push.disable : push.enable} disabled={push.busy}>
+ * <button onClick={push.toggle} disabled={push.busy}>
  * 	{push.on ? "Unsubscribe" : "Subscribe"}
  * </button>
  * ```
  */
-export function usePush(options: PushControllerOptions): PushState & {
-	enable: () => Promise<void>
-	disable: () => Promise<void>
-} {
-	const [controller] = useState(() => push_controller(options))
+export function usePush(
+	options: SubscriptionOptions
+): PushState & Pick<PushSubscriptionStore, "enable" | "disable" | "toggle"> {
+	const [controller] = useState(() => subscription(options))
 	const state = useSyncExternalStore(controller.subscribe, controller.now, controller.now)
-	return { ...state, enable: controller.enable, disable: controller.disable }
+	return {
+		...state,
+		enable: controller.enable,
+		disable: controller.disable,
+		toggle: controller.toggle,
+	}
 }

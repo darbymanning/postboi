@@ -66,3 +66,7 @@ while building is usually the point, costs nothing, and can be deleted. With no
   `invalid_payload`) rather than JSON — that's what lands in `error.code`.
 - In a multi-channel [`send()`](/send), the chat leg posts to whichever platform
   `chat.provider` names in your [config](/config). Your own code just calls `slack()`.
+
+**Runnable example:** [`examples/scripts/chat.ts`](https://github.com/postboi-mail/postboi/tree/main/examples/scripts/chat.ts) posts to each
+platform in turn. The framework apps reach it through their `POST /notify` route — see
+the [SvelteKit app](https://github.com/postboi-mail/postboi/tree/main/examples/sveltekit-provider-postboi).

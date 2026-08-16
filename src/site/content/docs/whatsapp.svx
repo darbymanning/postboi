@@ -224,3 +224,8 @@ window, while the plain `message` rides the channels that can always carry it.
 The same [E.164 rules as SMS](/sms#phone-numbers): international forms pass through,
 national forms need a default country (`whatsapp.default.country` or
 `POSTBOI_WHATSAPP_COUNTRY`), and anything ambiguous throws rather than guesses.
+
+**Runnable examples:** [`examples/scripts/whatsapp.ts`](https://github.com/postboi-mail/postboi/tree/main/examples/scripts/whatsapp.ts)
+covers both shapes — a free-form message inside the window and a template outside it.
+The framework apps' `POST /notify` route sends WhatsApp alongside SMS and chat; see the
+[SvelteKit app](https://github.com/postboi-mail/postboi/tree/main/examples/sveltekit-provider-postboi).

@@ -17,8 +17,7 @@
 	```
 -->
 <script lang="ts">
-	import { HONEYPOT_FIELD } from "./captcha.js"
-	import { activate_captcha, honeypot_style } from "./form.js"
+	import { HONEYPOT_FIELD, activate_captcha, honeypot_style } from "./form.js"
 
 	interface Props {
 		/** Publishable key (`pk_…`) override. Defaults to the key baked by `bunx postboi sync`. */

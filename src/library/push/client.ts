@@ -253,9 +253,9 @@ export async function unsubscribe(): Promise<PushSubscriptionJSON | null> {
 }
 
 export {
-	push_controller,
-	type PushController,
-	type PushControllerOptions,
+	subscription,
+	type PushSubscriptionStore,
 	type PushReason,
 	type PushState,
+	type SubscriptionOptions,
 } from "./controller.js"
