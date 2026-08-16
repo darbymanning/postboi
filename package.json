@@ -248,7 +248,7 @@
 		"@maizzle/framework": "^6.0.0",
 		"@sveltejs/kit": "^2.0.0",
 		"react": ">=18",
-		"svelte": "^5.0.0",
+		"svelte": "^5.7.0",
 		"vue": ">=3.3"
 	},
 	"peerDependenciesMeta": {

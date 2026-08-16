@@ -4,7 +4,7 @@
 	// postboi bakes the VAPID public key into the package, so nothing has to carry it to
 	// the browser. `register` is where the subscription the browser mints gets filed —
 	// the /push endpoint below — which is how the server learns where to push. `on`,
-	// `busy` and `reason` are runes, so read them straight off it.
+	// `busy` and `reason` are reactive, so read them straight off it.
 	const push = subscription({ register: "/push" })
 
 	let status = $state("")

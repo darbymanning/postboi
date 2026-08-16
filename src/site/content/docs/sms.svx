@@ -235,9 +235,7 @@ export default config({
 })
 ```
 
-## Runnable examples
-
-[`examples/scripts/sms.ts`](https://github.com/postboi-mail/postboi/tree/main/examples/scripts/sms.ts) is the whole channel in a file you can
-run — one text, a batch, and the errors worth catching. Every framework app carries a
-`POST /notify` route that sends `sms()`, `whatsapp()` and `slack()` side by side; the
-[SvelteKit one](https://github.com/postboi-mail/postboi/tree/main/examples/sveltekit-provider-postboi) is the shortest read.
+**Runnable examples:** [`examples/scripts/sms.ts`](https://github.com/postboi-mail/postboi/tree/main/examples/scripts/sms.ts) is the whole
+channel in a file you can run — one text, a batch, and the errors worth catching. Every
+framework app's `POST /notify` route sends `sms()`, `whatsapp()` and `slack()` side by
+side; the [SvelteKit one](https://github.com/postboi-mail/postboi/tree/main/examples/sveltekit-provider-postboi) is the shortest read.

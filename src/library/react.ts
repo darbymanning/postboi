@@ -23,7 +23,7 @@
 
 import { createElement, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { subscription } from "./push/controller.js"
-import type { SubscriptionOptions, PushState } from "./push/controller.js"
+import type { PushState, PushSubscriptionStore, SubscriptionOptions } from "./push/controller.js"
 import { HONEYPOT_FIELD, activate_captcha, honeypot_style_object } from "./form.js"
 
 export interface CaptchaProps {
@@ -71,11 +71,9 @@ export function Captcha({ pk, origin, honeypot = true }: CaptchaProps) {
  * </button>
  * ```
  */
-export function usePush(options: SubscriptionOptions): PushState & {
-	enable: () => Promise<void>
-	disable: () => Promise<void>
-	toggle: () => Promise<void>
-} {
+export function usePush(
+	options: SubscriptionOptions
+): PushState & Pick<PushSubscriptionStore, "enable" | "disable" | "toggle"> {
 	const [controller] = useState(() => subscription(options))
 	const state = useSyncExternalStore(controller.subscribe, controller.now, controller.now)
 	return {

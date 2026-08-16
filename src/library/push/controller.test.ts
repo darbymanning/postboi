@@ -121,4 +121,59 @@ describe("subscription", () => {
 
 		expect(client.subscribe).toHaveBeenCalled()
 	})
+
+	it("a click that beats the initial read still lands on the right side", async () => {
+		// The browser is already subscribed, but nothing has listened yet, so `on` is
+		// still its initial false. The click must wait for the read, not enable again.
+		client.subscribe.current.mockResolvedValue(SUBSCRIPTION as never)
+		client.unsubscribe.mockResolvedValue(SUBSCRIPTION as never)
+
+		const controller = subscription({ key: "k" })
+		await controller.toggle()
+
+		expect(client.unsubscribe).toHaveBeenCalled()
+		expect(client.subscribe).not.toHaveBeenCalled()
+		expect(controller.now().on).toBe(false)
+	})
+
+	it("a failed unsubscribe releases busy instead of wedging the toggle", async () => {
+		client.subscribe.current.mockResolvedValue(SUBSCRIPTION as never)
+		client.unsubscribe.mockRejectedValue(new DOMException("push service unreachable"))
+
+		const controller = subscription({ key: "k" })
+		await controller.toggle()
+
+		// The browser still holds the subscription, and the machine must still be usable.
+		expect(controller.now()).toMatchObject({ on: true, busy: false })
+	})
+
+	it("a failed rollback still reports register_failed", async () => {
+		client.subscribe.mockResolvedValue(SUBSCRIPTION as never)
+		client.unsubscribe.mockRejectedValue(new DOMException("gone"))
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => ({ ok: false, status: 500 }))
+		)
+
+		const controller = subscription({ key: "k", register: "/push/subscriptions" })
+		await controller.enable()
+
+		// The register call is the story; the rollback failing too must not eat it.
+		expect(controller.now()).toMatchObject({ busy: false, reason: "register_failed" })
+	})
+
+	it("a slow initial read can't overwrite the enable that finished first", async () => {
+		let answer!: (value: null) => void
+		client.subscribe.current.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+		client.subscribe.mockResolvedValue(SUBSCRIPTION as never)
+
+		const controller = subscription({ key: "k" })
+		controller.subscribe(() => {}) // kicks off the read, which hangs
+		await controller.enable()
+		expect(controller.now().on).toBe(true)
+
+		answer(null) // the read finally resolves, with a snapshot from before the enable
+		await vi.waitFor(() => expect(controller.now().supported).toBe(true))
+		expect(controller.now().on).toBe(true)
+	})
 })

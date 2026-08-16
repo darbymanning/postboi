@@ -111,8 +111,9 @@ Every settings page that offers a push switch re-implements the same state machi
 server never learned the address. `subscription` is that machine written once, with one
 wrapper per framework so the state is reactive in each one's own idiom.
 
-Svelte's is runes — `on`, `busy`, `supported` and `reason` are plain properties, no `$`
-prefix and nothing to unwrap:
+Svelte's is reactive properties — `on`, `busy`, `supported` and `reason` read plainly,
+no `$` prefix and nothing to unwrap, and they only start watching when something
+actually renders them:
 
 ```svelte
 <script lang="ts">
@@ -140,7 +141,7 @@ const push = usePush({ register: "/push/subscriptions" })
 ```
 
 `toggle()` is the one a switch wants — subscribe if this browser isn't, unsubscribe if it
-is — and it's bound, so handing it straight to a click handler works. `enable()` and
+is — and handing it to a click handler by name is safe. `enable()` and
 `disable()` are there when the UI is two buttons rather than one. Call whichever **from a
 click**, for the same reason `subscribe()` has to be.
 
@@ -150,10 +151,10 @@ the browser subscription back, so there's never an address the server doesn't kn
 
 | Framework | Import | Shape |
 | --- | --- | --- |
-| Svelte | `subscription` from `postboi/svelte` | Runes — `push.on` |
+| Svelte | `subscription` from `postboi/svelte` | Reactive — `push.on` |
 | React | `usePush` from `postboi/react` | Hook — `push.on` |
 | Vue | `use_push` from `postboi/vue` | Composable — `on.value` |
-| Anything else | `subscription` from `postboi/push` | Store contract — `push.subscribe(fn)` |
+| Anything else | `subscription` from `postboi/push` | Store contract — `push.subscribe(fn)`, plain `push.on` reads |
 
 The last row is the machine the other three wrap, framework-neutral and plain DOM. Reach
 for it from vanilla JS, or from a framework we don't ship a wrapper for.

@@ -6,5 +6,5 @@
  * reads exactly as it always has.
  */
 export { default, default as Captcha } from "./Captcha.svelte"
-export { subscription, type PushSubscription } from "./push/subscription.svelte.js"
+export { subscription, type PushToggle } from "./push/toggle.js"
 export type { PushReason, PushState, SubscriptionOptions } from "./push/controller.js"

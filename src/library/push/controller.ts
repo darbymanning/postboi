@@ -5,7 +5,7 @@
  *
  * Framework-neutral on purpose: it owns the logic and publishes changes through the
  * store contract, and each ecosystem's wrapper owns the reactivity. `usePush`
- * (`postboi/react`), `use_push` (`postboi/vue`) and the runes `subscription`
+ * (`postboi/react`), `use_push` (`postboi/vue`) and the reactive `subscription`
  * (`postboi/svelte`) are all a few lines around this file.
  */
 import { subscribe, unsubscribe } from "./client.js"
@@ -86,7 +86,10 @@ async function file(
 export function subscription(options: SubscriptionOptions = {}) {
 	let state: PushState = { supported: false, on: false, busy: false, reason: null }
 	const listeners = new Set<(state: PushState) => void>()
-	let refreshed = false
+	let first_read: Promise<void> | null = null
+	// Bumped whenever an enable or disable settles `on` for real, so a refresh() that
+	// started before the change can't land its stale snapshot on top afterwards.
+	let generation = 0
 
 	function set(patch: Partial<PushState>) {
 		state = { ...state, ...patch }
@@ -96,7 +99,17 @@ export function subscription(options: SubscriptionOptions = {}) {
 	/** Re-read reality: is push supported here, and is this browser subscribed? */
 	async function refresh(): Promise<void> {
 		if (!subscribe.supported()) return
-		set({ supported: true, on: Boolean(await subscribe.current()) })
+		const seen = generation
+		const on = Boolean(await subscribe.current())
+		// An enable/disable that landed while we were reading owns `on` now — the answer
+		// we got predates it.
+		set(seen === generation ? { supported: true, on } : { supported: true })
+	}
+
+	/** The initial read, started at most once — by the first listener or first toggle. */
+	function first_refresh(): Promise<void> {
+		first_read ??= refresh()
+		return first_read
 	}
 
 	/** Prompt if needed, subscribe, and file the subscription with the server. */
@@ -113,12 +126,15 @@ export function subscription(options: SubscriptionOptions = {}) {
 					await file(options.register, subscription, "POST")
 				} catch {
 					// The server never learned the address, so the browser shouldn't keep
-					// a subscription nothing will ever push to.
-					await unsubscribe()
-					set({ busy: false, reason: "register_failed" })
+					// a subscription nothing will ever push to. The rollback failing too
+					// must not eat the real story — the register call is what broke.
+					await unsubscribe().catch(() => {})
+					generation += 1
+					set({ busy: false, on: false, reason: "register_failed" })
 					return
 				}
 			}
+			generation += 1
 			set({ busy: false, on: true })
 		} catch (error) {
 			// A dismissed prompt is a shrug, not an error — reason stays null for it.
@@ -130,31 +146,59 @@ export function subscription(options: SubscriptionOptions = {}) {
 	async function disable(): Promise<void> {
 		if (state.busy) return
 		set({ busy: true })
-		const removed = await unsubscribe()
-		if (removed && options.unregister) {
-			await file(options.unregister, removed, "DELETE").catch(() => {})
+		try {
+			const removed = await unsubscribe()
+			if (removed && options.unregister) {
+				await file(options.unregister, removed, "DELETE").catch(() => {})
+			}
+			generation += 1
+			set({ busy: false, on: false })
+		} catch {
+			// The unsubscribe itself failed, so the browser still holds the subscription.
+			// `on` stays as it was; what matters is releasing `busy` — stuck true would
+			// disable the toggle until a full reload.
+			set({ busy: false })
 		}
-		set({ busy: false, on: false })
 	}
 
 	/**
 	 * Flip it: subscribe if this browser isn't, unsubscribe if it is. What a switch in a
 	 * settings page actually wants, and safe to hand straight to a click handler —
 	 * `onclick={push.toggle}` rather than a ternary that has to read the state itself.
+	 * A click that beats the initial read waits for it, so an already-subscribed browser
+	 * gets the unsubscribe the user asked for, not a duplicate registration.
 	 */
 	async function toggle(): Promise<void> {
+		if (state.busy) return
+		await first_refresh()
 		return state.on ? disable() : enable()
 	}
 
 	return {
+		// The state's fields, readable straight off the machine — `push.on` from a click
+		// handler or vanilla JS. Live values, but not reactive: a framework template
+		// should read them through its wrapper (or the store contract below) instead.
+		/** Web Push exists in this browser. Always false during SSR. */
+		get supported() {
+			return state.supported
+		},
+		/** This browser holds a subscription. */
+		get on() {
+			return state.on
+		},
+		/** An enable or disable is in flight. */
+		get busy() {
+			return state.busy
+		},
+		/** Why the last enable failed, or null. Dismissed permission prompts stay null. */
+		get reason() {
+			return state.reason
+		},
 		/** Svelte store contract: called with the state now and on every change. */
 		subscribe(listener: (state: PushState) => void): () => void {
 			listeners.add(listener)
 			listener(state)
-			if (!refreshed) {
-				refreshed = true
-				void refresh()
-			}
+			void first_refresh()
 			return () => listeners.delete(listener)
 		},
 		/** The current state — for `useSyncExternalStore` and friends. */

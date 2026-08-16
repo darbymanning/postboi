@@ -75,7 +75,7 @@ describe("package exports", () => {
 			"push/oauth.ts", // shared access-token cache, used by push/fcm.ts and push/hms.ts
 			"push/send.ts", // the zero-config push(), re-exported from the root
 			"push/controller.ts", // the neutral toggle state machine, re-exported through push/client.ts
-			"push/subscription.svelte.ts", // its runes wrapper, re-exported through postboi/svelte
+			"push/toggle.ts", // its reactive Svelte wrapper, re-exported through postboi/svelte
 			"whatsapp/types.ts", // pure types, re-exported from the root
 			"whatsapp/provider.ts", // the WhatsApp base class, reached via each provider
 			"whatsapp/send.ts", // the zero-config whatsapp(), re-exported from the root

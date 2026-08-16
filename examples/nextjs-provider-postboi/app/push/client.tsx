@@ -23,7 +23,7 @@ export function PushClient() {
 				Subscribe this browser, then have the server push to it — close the tab first if
 				you want proof it works with the site gone.
 			</p>
-			<button onClick={push.on ? push.disable : push.enable} disabled={push.busy}>
+			<button onClick={push.toggle} disabled={push.busy}>
 				{push.on ? "Unsubscribe" : "Subscribe"}
 			</button>{" "}
 			<button onClick={test} disabled={!push.on}>
