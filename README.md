@@ -3,10 +3,10 @@
 
 **Every channel, zero config**
 
-[![CI](https://shieldcn.dev/github/ci/postboi-mail/postboi.svg?size=xs&theme=blue&font=geist)](https://github.com/postboi-mail/postboi/actions/workflows/ci.yml)
-[![npm](https://shieldcn.dev/npm/postboi.svg?size=xs&theme=blue&font=geist)](https://www.npmjs.com/package/postboi)
-[![runtime Bun](https://shieldcn.dev/badge/runtime-Bun-blue.svg?size=xs&theme=blue&font=geist&logo=bun)](https://bun.sh)
-[![framework Svelte](https://shieldcn.dev/badge/framework-Svelte-blue.svg?size=xs&theme=blue&font=geist&logo=svelte)](https://svelte.dev)
+[![CI](https://shieldcn.dev/github/ci/postboi-mail/postboi.svg?size=xs&theme=blue&font=geist&variant=outline)](https://github.com/postboi-mail/postboi/actions/workflows/ci.yml)
+[![npm](https://shieldcn.dev/npm/postboi.svg?size=xs&theme=blue&font=geist&variant=outline)](https://www.npmjs.com/package/postboi)
+[![runtime Bun](https://shieldcn.dev/badge/runtime-Bun-blue.svg?size=xs&theme=blue&font=geist&logo=bun&variant=outline)](https://bun.sh)
+[![framework Svelte](https://shieldcn.dev/badge/framework-Svelte-blue.svg?size=xs&theme=blue&font=geist&logo=svelte&variant=outline)](https://svelte.dev)
 
 </div>
 
