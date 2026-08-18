@@ -112,8 +112,9 @@ sending code never names a provider, so swapping later is a one-line config chan
 - Offers to install the **postboi agent skill** into `.claude/skills/`: a condensed
   cheat-sheet that teaches AI coding agents the library's conventions. It ships inside
   the package, and what's installed is a symlink to it — so upgrading postboi upgrades
-  the skill, with no diff in your repo. (Where symlinks aren't available the file is
-  copied instead, and `postboi sync` keeps that copy current.)
+  the skill, with no diff in your repo — it dangles on a fresh clone until dependencies
+  are installed, so the skill is absent rather than stale. (Where symlinks aren't
+  available the file is copied instead, and `postboi sync` keeps that copy current.)
 
 Already have postboi installed and never ran `init`? Install the skill on its own:
 

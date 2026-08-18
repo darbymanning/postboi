@@ -476,6 +476,48 @@ describe("zero-config push()", () => {
 		})
 	})
 
+	it("infers webpush from the VAPID trio, with no provider named anywhere", async () => {
+		process.env.VAPID_PUBLIC_KEY = VAPID.public_key
+		process.env.VAPID_PRIVATE_KEY = VAPID.private_key
+		process.env.VAPID_SUBJECT = VAPID.subject
+		// No POSTBOI_PUSH_PROVIDER and no config section: the credentials are the answer.
+		const fetch = vi.fn().mockResolvedValue(respond({}))
+		vi.stubGlobal("fetch", fetch)
+
+		await push({ to: SUBSCRIPTION, message: "hi" })
+		expect(fetch.mock.calls[0][0]).toBe(SUBSCRIPTION.endpoint)
+	})
+
+	it("won't infer from half a credential set", async () => {
+		process.env.VAPID_PUBLIC_KEY = VAPID.public_key
+		process.env.VAPID_PRIVATE_KEY = VAPID.private_key
+		// No VAPID_SUBJECT, so webpush isn't configured — guessing here would reach a push
+		// service that answers 401 without saying why.
+		await expect(push({ to: SUBSCRIPTION, message: "hi" })).rejects.toMatchObject({
+			code: "no_push_provider",
+		})
+	})
+
+	it("won't guess between two configured providers", async () => {
+		process.env.VAPID_PUBLIC_KEY = VAPID.public_key
+		process.env.VAPID_PRIVATE_KEY = VAPID.private_key
+		process.env.VAPID_SUBJECT = VAPID.subject
+		process.env.FCM_PROJECT_ID = "p"
+		process.env.FCM_CLIENT_EMAIL = "a@b.c"
+		process.env.FCM_PRIVATE_KEY = "k"
+		try {
+			// Two candidates is a real question about intent — the error names the env var
+			// that answers it rather than picking one.
+			await expect(push({ to: SUBSCRIPTION, message: "hi" })).rejects.toMatchObject({
+				code: "no_push_provider",
+			})
+		} finally {
+			delete process.env.FCM_PROJECT_ID
+			delete process.env.FCM_CLIENT_EMAIL
+			delete process.env.FCM_PRIVATE_KEY
+		}
+	})
+
 	it("reports a missing credential by env var name", async () => {
 		configure({ push: { provider: "webpush" } })
 		await expect(push({ to: SUBSCRIPTION, message: "hi" })).rejects.toThrow(/VAPID_PUBLIC_KEY/)

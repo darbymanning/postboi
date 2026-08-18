@@ -1,7 +1,7 @@
 ---
 title: Cloudflare Workers
 name: Cloudflare Workers
-description: Send email from a Worker. Bindings are read automatically, so there's nothing to pass in.
+description: Send email, push and every other channel from a Worker. Bindings are read automatically, so there's nothing to pass in.
 category: Frameworks
 ---
 
@@ -65,5 +65,58 @@ import { mail } from 'postboi'
 ```
 
 Or skip the file and call [`configure()`](/config) at startup.
+
+## The other channels
+
+Nothing above is email-specific — [`push()`](/push), [`sms()`](/sms),
+[`whatsapp()`](/whatsapp) and the chat functions read their bindings the same way. Web Push
+is the one worth spelling out, because it's the channel a Worker most often *is*: a
+background job that notifies someone.
+
+```bash
+bunx postboi vapid                      # mint the pair
+wrangler secret put VAPID_PUBLIC_KEY
+wrangler secret put VAPID_PRIVATE_KEY
+wrangler secret put VAPID_SUBJECT
+```
+
+That's the whole setup — three secrets and no `POSTBOI_PUSH_PROVIDER`. A full VAPID trio
+can only mean Web Push, so postboi infers the provider from it. Set the var anyway if you
+also carry FCM or APNs credentials in the same Worker, where the credentials no longer
+answer the question on their own.
+
+```typescript
+// src/index.ts
+import { push } from 'postboi'
+
+export default {
+	async scheduled() {
+		await push({ to: subscription, title: 'Build finished', message: 'main is green' })
+			.catch((error) => {
+				// The routine failure: the browser dropped the subscription. Forget your copy.
+				if (push.expired(error)) forget(subscription)
+				else throw error
+			})
+	},
+}
+```
+
+No `nodejs_compat` needed for Web Push — VAPID signing and payload encryption are Web
+Crypto. (Email needs it, and so does APNs, which speaks HTTP/2.)
+
+### Bundle size
+
+`push()` from the package root carries the resolution graph and all four push providers, so
+a bundler that can't split adds roughly 30 KB raw / 9 KB gzipped over importing the one
+provider directly:
+
+```typescript
+import WebPush from 'postboi/webpush'
+
+const notify = new WebPush({ public_key: env.VAPID_PUBLIC_KEY, /* … */ })
+```
+
+Immaterial against a 3 MB Worker limit, and the zero-config form is the one to reach for.
+Worth knowing if you're counting bytes — the same trade exists on every channel.
 
 **Runnable example:** [`examples/cloudflare-workers-provider-postboi`](https://github.com/postboi-mail/postboi/tree/main/examples/cloudflare-workers-provider-postboi).

@@ -120,6 +120,9 @@ function install_skill(target: string, skill: string): void {
 		console.log(
 			`${green("✓")} linked ${bold(target)} to the installed postboi ${dim("— commit it; upgrades update the skill for free")}`
 		)
+		// The link points into node_modules, so a fresh clone has it dangling until deps are
+		// installed — and a dangling skill is silently absent rather than visibly broken.
+		console.log(dim("  (it resolves once dependencies are installed — say so in your README)"))
 		return
 	}
 	writeFileSync(target, skill)

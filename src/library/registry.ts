@@ -719,6 +719,38 @@ export function find_channel_provider(channel: Channel, key: string): ProviderMe
 }
 
 /**
+ * Which provider a channel's credentials can only mean, when nothing names one.
+ *
+ * `mail()` has always done this for its own shortcut — a `POSTBOI_TOKEN` and nothing else
+ * dispatches to the Postboi provider — and the reasoning generalises: if exactly one
+ * provider in the channel has every field it needs, naming it again in
+ * `POSTBOI_<CHANNEL>_PROVIDER` is a second place to keep in sync for no information. Web
+ * Push is the case that stings, because it has no vendor account to sign up for: mint a
+ * VAPID pair and the provider is already decided.
+ *
+ * Deliberately strict. Two candidates is a genuine question about intent, not a coin to
+ * flip — it returns undefined and the caller's "no provider configured" error stands, with
+ * the env var still the way to say which. Optional fields (anything carrying a `default`)
+ * don't count towards a provider being configured, or every provider with one required
+ * field would qualify off a single stray variable.
+ *
+ * `has` is injected rather than imported so this file stays the registry and nothing else —
+ * it's shared with the CLI, which reads env differently.
+ */
+export function infer_channel_provider(
+	channel: Channel,
+	has: (env: string) => boolean
+): string | undefined {
+	// The registry's entries are literal-typed, so a field without `default` doesn't carry
+	// the property at all — read them through the shape they satisfy instead.
+	const providers: ReadonlyArray<ProviderMeta> = CHANNEL_PROVIDERS[channel]
+	const configured = providers.filter((provider) =>
+		provider.fields.every((field) => field.default !== undefined || has(field.env))
+	)
+	return configured.length === 1 ? configured[0].key : undefined
+}
+
+/**
  * Every credential env var across every channel's providers — the set `postboi env push`
  * collects from the local environment and `postboi sync` pulls back down. Derived from
  * the registry so a new provider's credentials sync without anyone remembering to say so.
