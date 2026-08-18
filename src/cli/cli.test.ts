@@ -67,7 +67,7 @@ import {
 	upsert_captcha_key,
 	from_status,
 } from "./typegen.js"
-import { bundled_skill, offer_skill, refresh_skill } from "./skill.js"
+import { bundled_skill, offer_skill, refresh_skill, skill_command } from "./skill.js"
 import { find_auth_keys, offer_auth_key, verify_apns } from "./apns.js"
 
 // verify_apns drives the real APNs provider, whose transport is HTTP/2 rather than
@@ -781,6 +781,22 @@ describe("agent skill", () => {
 		const p = prompter([]) // EOF — a prompt here would throw PromptCancelledError
 		await offer_skill(p, t)
 		p.close()
+		expect(readFileSync(t, "utf8")).toBe(bundled_skill())
+	})
+
+	it("skill_command installs without a prompt, and is safe to run twice", () => {
+		const t = target()
+		// The whole point of the command: no prompts wired up at all, unlike offer_skill.
+		expect(skill_command(t)).toBe(true)
+		expect(readFileSync(t, "utf8")).toBe(bundled_skill())
+		expect(skill_command(t)).toBe(true)
+		expect(readFileSync(t, "utf8")).toBe(bundled_skill())
+	})
+
+	it("skill_command upgrades a stale copy rather than leaving it", () => {
+		const t = target()
+		writeFileSync(t, "old skill")
+		expect(skill_command(t)).toBe(true)
 		expect(readFileSync(t, "utf8")).toBe(bundled_skill())
 	})
 

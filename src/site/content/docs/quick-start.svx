@@ -115,6 +115,12 @@ sending code never names a provider, so swapping later is a one-line config chan
   the skill, with no diff in your repo. (Where symlinks aren't available the file is
   copied instead, and `postboi sync` keeps that copy current.)
 
+Already have postboi installed and never ran `init`? Install the skill on its own:
+
+```bash
+bunx postboi skill
+```
+
 ## Beyond email
 
 The same `init` sets up the other channels — `--sms`, `--whatsapp`, `--push`, `--chat` —

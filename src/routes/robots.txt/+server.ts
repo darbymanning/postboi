@@ -4,11 +4,17 @@ import { siteConfig } from "$site"
 // /raw/ pages stay crawlable for AI agents; Google is kept out via X-Robots-Tag in _headers.
 const directives = ["User-agent: *", "Allow: /"]
 
-const toSitemapUrl = (origin: string) => new URL("/sitemap.xml", origin).href
+const toUrl = (path: string, origin: string) => new URL(path, origin).href
 
 export const GET: RequestHandler = () => {
 	const canonicalOrigin = new URL(siteConfig.url).origin
-	const lines = [...directives, `Sitemap: ${toSitemapUrl(canonicalOrigin)}`]
+	// llms.txt is where an agent finds the /raw/ Markdown mirrors; robots.txt is the one file
+	// it already knows to fetch, so name it here rather than hoping the convention is guessed.
+	const lines = [
+		...directives,
+		`Sitemap: ${toUrl("/sitemap.xml", canonicalOrigin)}`,
+		`# LLM-friendly Markdown: ${toUrl("/llms.txt", canonicalOrigin)}`,
+	]
 	const body = lines.join("\n")
 
 	return new Response(body, {

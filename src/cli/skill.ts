@@ -10,7 +10,7 @@ import {
 } from "node:fs"
 import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { bold, dim, green, type create_prompts } from "./prompts.js"
+import { bold, dim, green, red, type create_prompts } from "./prompts.js"
 
 type Prompts = ReturnType<typeof create_prompts>
 
@@ -110,6 +110,11 @@ export async function offer_skill(prompts: Prompts, target = SKILL_TARGET): Prom
 	}
 	const question = `\nInstall the ${bold("postboi")} agent skill? ${dim("— teaches AI coding agents the library")}`
 	if (!(await prompts.confirm(question))) return
+	install_skill(target, skill)
+}
+
+/** Write (or link) the skill into place. Callers decide whether to ask first. */
+function install_skill(target: string, skill: string): void {
 	mkdirSync(dirname(target), { recursive: true })
 	if (link_skill(target)) {
 		console.log(
@@ -119,4 +124,32 @@ export async function offer_skill(prompts: Prompts, target = SKILL_TARGET): Prom
 	}
 	writeFileSync(target, skill)
 	console.log(`${green("✓")} wrote ${bold(target)} — commit it so agents pick it up`)
+}
+
+/**
+ * `bunx postboi skill` — install the skill on its own, no prompts and no other setup.
+ *
+ * The prompted offer only fires during `init`, so the case it misses is the common one:
+ * postboi is already a dependency (often added by the very agent that then has to guess at
+ * the API), init never ran, and nothing in an installed package announces itself. This is
+ * the one command to reach for there.
+ *
+ * Returns false when the bundled skill can't be found, so the caller can exit non-zero.
+ */
+export function skill_command(target = SKILL_TARGET): boolean {
+	const skill = bundled_skill()
+	if (!skill) {
+		console.log(red("Couldn't find the bundled skill — is postboi installed in this project?"))
+		return false
+	}
+	// An existing copy is upgraded to a link where it can be; already-linked is a no-op that
+	// still deserves a line, or the command looks like it did nothing.
+	if (present(target)) {
+		if (!refresh_skill(target, skill)) {
+			console.log(`${green("✓")} already installed at ${bold(target)}`)
+		}
+		return true
+	}
+	install_skill(target, skill)
+	return true
 }

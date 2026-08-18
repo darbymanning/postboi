@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import MockPush from "./mock.js"
-import WebPush, { clear_vapid_cache } from "./webpush.js"
+import WebPush, { clear_vapid_cache, generate_vapid_keys } from "./webpush.js"
 import { from_base64url } from "./crypto.js"
 import APNs, { clear_apns_tokens } from "./apns.js"
 import HMS from "./hms.js"
@@ -147,6 +147,25 @@ describe("webpush", () => {
 		// Expiry is routine, and the right response is to forget the subscription rather than
 		// retry — so it's a first-class check, not a status code to match on by hand.
 		expect(PushProvider.is_expired(error)).toBe(true)
+	})
+
+	it("mints a key pair the signing path actually accepts", async () => {
+		clear_vapid_cache()
+		const fetch = vi.fn().mockResolvedValue(respond({}))
+		vi.stubGlobal("fetch", fetch)
+		const { public_key, private_key } = await generate_vapid_keys()
+
+		// The shapes are the point: a private key that isn't the JWK `d` scalar, or a public
+		// key that isn't the raw uncompressed point, throws inside the VAPID header rather
+		// than failing later against a real push service.
+		const notify = new WebPush({ public_key, private_key, subject: "mailto:you@example.com" })
+		await notify.send({ to: SUBSCRIPTION, message: "hi" })
+
+		const [, init] = fetch.mock.calls[0]
+		expect(init.headers.Authorization).toContain(`k=${public_key}`)
+		// 65-byte uncompressed P-256 point, 32-byte scalar — what a browser and the JWT want.
+		expect(from_base64url(public_key)).toHaveLength(65)
+		expect(from_base64url(private_key)).toHaveLength(32)
 	})
 
 	it("refuses a bare token, pointing at the provider that wants one", async () => {
