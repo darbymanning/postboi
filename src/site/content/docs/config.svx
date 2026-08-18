@@ -53,6 +53,25 @@ Lowest to highest (later sources win):
    field vars (e.g. `MAILGUN_DOMAIN`)
 3. options passed explicitly to `mail()` or a provider constructor
 
+### `options` belong to the provider you named
+
+`options` is keyed by option name, not by provider, and those names repeat across vendors —
+`api_key` on fifteen email providers, `webhook_url` on Slack, Discord and Teams. So the bag
+is scoped to the `provider` sitting beside it: if `POSTBOI_PROVIDER` (or a platform function
+like `discord()`) selects a different one, the options you wrote for the first don't travel
+to it, and the second asks for its own credential in the environment.
+
+```typescript
+export default config({
+	provider: 'mailgun',
+	options: { api_key: '…', domain: 'mg.example.com' },
+})
+```
+
+With `POSTBOI_PROVIDER=resend` set against that file, Resend wants `RESEND_API_KEY` and says
+so — it does not inherit Mailgun's key. A config file that names **no** provider keeps its
+options unscoped, since they can only have been meant for whichever provider runs.
+
 ## Bundled and deployed servers
 
 The config file is found by walking up from `process.cwd()` at runtime. That covers local

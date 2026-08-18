@@ -120,7 +120,9 @@ async function resolve_platform(key: ChatProviderKey): Promise<ChatProvider<unkn
 	// field default), via the same code.
 	const meta = find_chat_provider(key)!
 	const options: Record<string, unknown> = { default: chat_env_defaults() }
-	const missing = resolve_fields(meta.fields, config.chat, options)
+	// Keyed on `key`, not `config.chat.provider`: calling discord() while the config file
+	// configures slack must not hand Discord the Slack webhook URL — they share `webhook_url`.
+	const missing = resolve_fields(meta.fields, config.chat, options, key)
 	if (missing) {
 		// Unconfigured in development is a fresh clone: capture to the inbox/console
 		// rather than fail, the same fallback the shared resolver has.

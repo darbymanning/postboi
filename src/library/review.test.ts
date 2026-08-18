@@ -33,6 +33,201 @@ beforeEach(() => {
 })
 afterEach(() => reset_config())
 
+const OK_RESPONSE = { ok: true, status: 200, headers: new Headers(), text: async () => "{}" }
+
+/**
+ * `options` in a config section is a flat bag keyed by `arg`, and `arg` names collide by
+ * design — `api_key` across 15 email providers, `webhook_url` across Slack/Discord/Teams,
+ * `private_key` across Web Push/FCM/APNs. So whenever something other than the config file
+ * picks the provider, the bag would hand the wrong vendor's credential to the new one.
+ * Reported for two paths; there are four, and each gets a test that fails loudly if the
+ * scoping is lost, asserting on *zero network calls* rather than on the error alone —
+ * the failure that matters is the secret leaving the process.
+ */
+describe("a config file's options never reach another provider", () => {
+	const spy = () => {
+		const f = vi.fn().mockResolvedValue(OK_RESPONSE)
+		vi.stubGlobal("fetch", f)
+		return f
+	}
+
+	// Owned rather than assumed: these tests are about which credential reaches which
+	// provider, so an ambient DISCORD_WEBHOOK_URL on the machine running them would
+	// silently change the answer. (The polluted-environment CI run found exactly that.)
+	const CONTROLLED = [
+		"NODE_ENV",
+		"POSTBOI_PROVIDER",
+		"POSTBOI_CHAT_PROVIDER",
+		"POSTBOI_PUSH_PROVIDER",
+		"RESEND_API_KEY",
+		"SLACK_WEBHOOK_URL",
+		"DISCORD_WEBHOOK_URL",
+		"TEAMS_WEBHOOK_URL",
+		"TELEGRAM_BOT_TOKEN",
+	]
+
+	beforeEach(() => {
+		reset_config()
+		vi.unstubAllGlobals()
+		for (const k of CONTROLLED) delete process.env[k]
+		process.env.NODE_ENV = "production"
+	})
+	afterEach(() => {
+		reset_config()
+		vi.unstubAllGlobals()
+		for (const k of CONTROLLED) delete process.env[k]
+	})
+
+	it("mail: a Mailgun key does not go out to Resend", async () => {
+		const { mail } = await import("./mail.js")
+		configure({
+			provider: "mailgun",
+			options: { api_key: "key-MAILGUN-SECRET", domain: "mg.example.com" },
+			default: { from: "c@d.com" },
+		})
+		process.env.POSTBOI_PROVIDER = "resend"
+		const fetch = spy()
+
+		const error = await mail({ to: "a@b.com", subject: "hi", body: "hi" }).catch((e) => e)
+
+		// The bug sent `Authorization: Bearer key-MAILGUN-SECRET` to api.resend.com.
+		expect(fetch).not.toHaveBeenCalled()
+		expect(error.code).toBe("missing_env")
+		// And it says why, or the config plainly showing `options.api_key` reads as a lie.
+		expect(error.message).toContain("mailgun")
+	})
+
+	it("chat: a Slack webhook URL is not posted to by Discord", async () => {
+		const { chat } = await import("./chat/send.js")
+		configure({
+			chat: {
+				provider: "slack",
+				options: { webhook_url: "https://hooks.slack.com/services/T0/B0/SLACKSECRET" },
+			},
+		})
+		process.env.POSTBOI_CHAT_PROVIDER = "discord"
+		const fetch = spy()
+
+		const error = await chat({ message: "hi" }).catch((e) => e)
+
+		expect(fetch).not.toHaveBeenCalled()
+		expect(error.code).toBe("missing_env")
+		// Same reasoning as the mail case: the config visibly has a webhook_url, so the
+		// error has to say whose it is.
+		expect(error.message).toContain("slack")
+	})
+
+	it("chat: the platform functions are scoped too, not just the generic one", async () => {
+		const { discord } = await import("./chat/send.js")
+		configure({
+			chat: {
+				provider: "slack",
+				options: { webhook_url: "https://hooks.slack.com/services/T0/B0/SLACKSECRET" },
+			},
+		})
+		const fetch = spy()
+
+		// No env var involved: the config names slack, the caller chose discord.
+		const error = await discord({ message: "hi" }).catch((e) => e)
+
+		expect(fetch).not.toHaveBeenCalled()
+		expect(error.code).toBe("missing_env")
+	})
+
+	it("chat: Discord uses its own webhook even with Slack's sitting in the config", async () => {
+		const { chat } = await import("./chat/send.js")
+		const SLACK = "https://hooks.slack.com/services/T0/B0/SLACKSECRET"
+		configure({ chat: { provider: "slack", options: { webhook_url: SLACK } } })
+		process.env.POSTBOI_CHAT_PROVIDER = "discord"
+		process.env.DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1/DISCORDOWN"
+		const fetch = spy()
+
+		await chat({ message: "hi" })
+
+		// The send goes through, which is the point — this is the case where refusing would
+		// be wrong. What must not happen is Slack's secret travelling with it.
+		expect(fetch).toHaveBeenCalledTimes(1)
+		expect(fetch.mock.calls[0][0]).toContain("discord.com")
+		expect(JSON.stringify(fetch.mock.calls)).not.toContain("SLACKSECRET")
+	})
+
+	it("locks in which channels a scoping slip could even be exploited on", async () => {
+		const registry = await import("./registry.js")
+		// A leak is only reachable when the *whole* required set of one provider is present
+		// in another's option bag. Email is riddled with it — 15 providers whose only
+		// required field is `api_key` — and chat has slack/discord/teams on `webhook_url`;
+		// both are covered by the sends above. Push shares `private_key` across webpush,
+		// fcm and apns but is *not* reachable, because APNs also needs key_id, team_id and
+		// topic that an FCM bag never carries. That is a property of today's registry, not
+		// a guarantee, so it is pinned: a new provider whose required fields are a subset
+		// of a sibling's turns its channel exploitable, and should say so here first.
+		const reachable = (
+			list: ReadonlyArray<{ key: string; fields: ReadonlyArray<{ arg: string; default?: string }> }>
+		) => {
+			const required = (p: (typeof list)[number]) =>
+				new Set(p.fields.filter((f) => f.default === undefined).map((f) => f.arg))
+			const out: string[] = []
+			for (const src of list)
+				for (const dst of list) {
+					if (src.key === dst.key) continue
+					const from = required(src)
+					if ([...required(dst)].every((a) => from.has(a))) out.push(`${src.key} -> ${dst.key}`)
+				}
+			return out
+		}
+
+		expect(reachable(registry.SMS_PROVIDERS as never)).toEqual([])
+		expect(reachable(registry.PUSH_PROVIDERS as never)).toEqual([])
+		expect(reachable(registry.WHATSAPP_PROVIDERS as never)).toEqual([])
+		// The two that are exploitable, so the numbers moving is visible rather than silent.
+		expect(reachable(registry.CHAT_PROVIDERS as never)).toHaveLength(6)
+		expect(reachable(registry.PROVIDERS as never).length).toBeGreaterThan(100)
+	})
+
+	it("still applies options when the config file names the provider being built", async () => {
+		const { mail } = await import("./mail.js")
+		configure({
+			provider: "resend",
+			options: { api_key: "re_CONFIGURED" },
+			default: { from: "c@d.com" },
+		})
+		const fetch = spy()
+
+		await mail({ to: "a@b.com", subject: "hi", body: "hi" })
+
+		expect(fetch.mock.calls[0][0]).toContain("resend.com")
+		expect(fetch.mock.calls[0][1].headers.Authorization).toBe("Bearer re_CONFIGURED")
+	})
+
+	it("still applies options a config file leaves unscoped", async () => {
+		const { mail } = await import("./mail.js")
+		// No `provider` in the config: the options can only have been meant for whatever
+		// ends up running, so dropping them here would break a working setup.
+		configure({ options: { api_key: "re_UNSCOPED" }, default: { from: "c@d.com" } })
+		process.env.POSTBOI_PROVIDER = "resend"
+		const fetch = spy()
+
+		await mail({ to: "a@b.com", subject: "hi", body: "hi" })
+
+		expect(fetch.mock.calls[0][1].headers.Authorization).toBe("Bearer re_UNSCOPED")
+	})
+
+	it("keeps env ahead of a matching config file's options", async () => {
+		const { mail } = await import("./mail.js")
+		configure({
+			provider: "resend",
+			options: { api_key: "re_CONFIG" },
+			default: { from: "c@d.com" },
+		})
+		process.env.RESEND_API_KEY = "re_ENV"
+		const fetch = spy()
+
+		await mail({ to: "a@b.com", subject: "hi", body: "hi" })
+
+		expect(fetch.mock.calls[0][1].headers.Authorization).toBe("Bearer re_ENV")
+	})
+})
+
 const CHANNELS = ["push", "sms", "chat", "whatsapp"] as const
 
 describe("provider inference reads intent, not ambience", () => {
@@ -81,9 +276,17 @@ describe("provider inference reads intent, not ambience", () => {
 			inferable_channel_providers(channel).map((p) => p.key)
 		expect(keys("push")).toEqual(["webpush", "fcm", "apns", "hms"])
 		expect(keys("whatsapp")).toEqual(["twilio", "meta"])
-		expect(keys("chat")).toEqual(["slack", "discord", "teams", "telegram", "bluesky"])
 		// sns is absent, and that is the point of the flag.
 		expect(keys("sms")).toEqual(["smsworks", "twilio"])
+		// Chat is down to bluesky. SLACK_WEBHOOK_URL, DISCORD_WEBHOOK_URL, TEAMS_WEBHOOK_URL
+		// and TELEGRAM_BOT_TOKEN are what every CI notification action already sets, so a
+		// build-notification hook would have made send()'s chat leg post application
+		// messages into an ops channel. Bluesky needs a handle *and* an app password, both
+		// brand-specific, so it still reads as intent. The definitive path is untouched:
+		// a `to` that is a recognisable Slack or Discord webhook URL names its own platform
+		// before resolution is reached, and slack()/discord()/teams()/telegram() never
+		// resolve at all.
+		expect(keys("chat")).toEqual(["bluesky"])
 	})
 })
 

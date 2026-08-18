@@ -36,6 +36,19 @@ const result = await send({
 result.delivered // "chat" — sms was never attempted
 ```
 
+### Which chat platform the chat leg uses
+
+A `to.chat` that is a recognisable Slack or Discord webhook URL names its own platform —
+that's the whole setup, nothing else required. Otherwise the platform comes from
+`POSTBOI_CHAT_PROVIDER` or `chat.provider` in the config, and you should set one.
+
+It is deliberately **not** inferred from a lone `SLACK_WEBHOOK_URL`, `DISCORD_WEBHOOK_URL`,
+`TEAMS_WEBHOOK_URL` or `TELEGRAM_BOT_TOKEN`. Those are the names every CI notification
+action already sets, so inferring from them would quietly post your application's messages
+into somebody's build-notification channel. The per-platform [`slack()`](/slack),
+`discord()`, `teams()` and `telegram()` functions are unaffected — they never ask which
+platform you meant.
+
 ## Cheapest first
 
 `channels: "cheapest"` uses the built-in order — **push → chat → email → whatsapp → sms** —

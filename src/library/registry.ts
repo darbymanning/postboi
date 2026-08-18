@@ -360,8 +360,14 @@ export const PROVIDERS = [
 		class: "Mailjet",
 		url: "https://app.mailjet.com/account/apikeys",
 		fields: [
-			{ env: "MJ_APIKEY_PUBLIC", arg: "api_key", label: "API key", secret: true },
-			{ env: "MJ_APIKEY_PRIVATE", arg: "api_secret", label: "Secret key", secret: true },
+			{ env: "MJ_APIKEY_PUBLIC", arg: "api_key", label: "API key", secret: true, ambient: true },
+			{
+				env: "MJ_APIKEY_PRIVATE",
+				arg: "api_secret",
+				label: "Secret key",
+				secret: true,
+				ambient: true,
+			},
 
 			{
 				env: "MAILJET_WEBHOOK_SECRET",
@@ -536,6 +542,7 @@ export const CHAT_PROVIDERS = [
 				arg: "webhook_url",
 				label: "Incoming webhook URL",
 				secret: true,
+				ambient: true,
 			},
 		],
 	},
@@ -548,7 +555,13 @@ export const CHAT_PROVIDERS = [
 		note: "Channel webhook — same shape as Slack",
 		connect: { env: "DISCORD_WEBHOOK_URL" },
 		fields: [
-			{ env: "DISCORD_WEBHOOK_URL", arg: "webhook_url", label: "Webhook URL", secret: true },
+			{
+				env: "DISCORD_WEBHOOK_URL",
+				arg: "webhook_url",
+				label: "Webhook URL",
+				secret: true,
+				ambient: true,
+			},
 		],
 	},
 	{
@@ -560,7 +573,15 @@ export const CHAT_PROVIDERS = [
 		// Legacy connector URLs are rejected by the provider itself, so the picker only has
 		// to say which kind of URL to go and get.
 		note: "Power Automate Workflows webhook (legacy connector URLs are rejected)",
-		fields: [{ env: "TEAMS_WEBHOOK_URL", arg: "webhook_url", label: "Workflow URL", secret: true }],
+		fields: [
+			{
+				env: "TEAMS_WEBHOOK_URL",
+				arg: "webhook_url",
+				label: "Workflow URL",
+				secret: true,
+				ambient: true,
+			},
+		],
 	},
 	{
 		key: "telegram",
@@ -572,7 +593,15 @@ export const CHAT_PROVIDERS = [
 		// Only the constructor option lives here. The default chat id is a channel default
 		// (chat.default.to / POSTBOI_CHAT_TO), not a constructor option — routing it through
 		// `fields` made the CLI commit it somewhere no provider reads.
-		fields: [{ env: "TELEGRAM_BOT_TOKEN", arg: "bot_token", label: "Bot token", secret: true }],
+		fields: [
+			{
+				env: "TELEGRAM_BOT_TOKEN",
+				arg: "bot_token",
+				label: "Bot token",
+				secret: true,
+				ambient: true,
+			},
+		],
 	},
 	{
 		key: "bluesky",
@@ -809,6 +838,30 @@ export function infer_channel_provider(
 		provider.fields.every((field) => field.default !== undefined || has(field.env))
 	)
 	return configured.length === 1 ? configured[0].key : undefined
+}
+
+/**
+ * The `options` a config section may contribute to the provider being built — or nothing,
+ * when they were written for a different one.
+ *
+ * `options` is a flat bag keyed by `arg`, and `arg` names collide by design: `api_key` is
+ * shared by 15 email providers, `webhook_url` by Slack/Discord/Teams, `private_key` by Web
+ * Push/FCM/APNs. So when a config file names one provider and something else selects
+ * another — `POSTBOI_PROVIDER`, a platform function, inference — the bag happily hands the
+ * first provider's credential to the second. That is not a mis-set option: a Mailgun key
+ * went out in an Authorization header to `api.resend.com`, and a Slack webhook URL (a
+ * secret in its own right) was posted to by the Discord provider.
+ *
+ * The rule: options belong to the provider the section names. A section naming nothing
+ * keeps the old behaviour, because unscoped options can only have been written for
+ * whatever ends up running.
+ */
+export function scoped_options(
+	section: { provider?: string; options?: Record<string, string> } | undefined,
+	key: string
+): Record<string, string> | undefined {
+	if (section?.provider !== undefined && section.provider !== key) return undefined
+	return section?.options
 }
 
 /**
