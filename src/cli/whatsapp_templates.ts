@@ -162,7 +162,7 @@ export async function fetch_whatsapp_templates(
 
 	const options: Record<string, unknown> = {}
 	// A missing required field means the channel isn't set up yet — nothing to list.
-	if (resolve_fields(meta.fields, config.whatsapp, options)) return NO_TEMPLATES
+	if (resolve_fields(meta.fields, config.whatsapp, options, meta.key)) return NO_TEMPLATES
 	const value = (name: string) => (typeof options[name] === "string" ? options[name] : "")
 
 	if (key === "meta") {

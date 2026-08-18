@@ -11,7 +11,7 @@ import { PostboiError } from "./index.js"
 // Type-only — erased at compile time, so the provider module stays a dynamic-only leaf
 // (see the LOADERS note below).
 import type Postboi from "./postboi_provider.js"
-import { find_provider } from "./registry.js"
+import { find_provider, scoped_options } from "./registry.js"
 import { load_config, type PostboiConfig } from "./config.js"
 import { ensure_env_loaded, env_defaults, is_development, read_env } from "./env.js"
 import { resolve_inbox } from "./inbox.js"
@@ -155,14 +155,22 @@ async function resolve_provider({ intercept = false } = {}): Promise<ProviderBas
 	const options: Record<string, unknown> = { default: env_defaults() }
 	// `meta` is undefined for credential-free providers (e.g. mock) that have no registry entry.
 	const meta = find_provider(key)
+	// Scoped: `options` written for the provider the config file names must not reach a
+	// different one chosen by POSTBOI_PROVIDER — `api_key` is shared by 15 providers here,
+	// so the unscoped bag sent a Mailgun key to api.resend.com in an Authorization header.
+	const from_config = scoped_options(config, key)
+	const shadowed =
+		config.options !== undefined && config.provider !== undefined && config.provider !== key
+			? ` \`options\` in postboi.config.ts belong to "${config.provider}" and don't apply here.`
+			: ""
 	for (const field of meta?.fields ?? []) {
 		// env wins, then a non-secret value from the config file, then the field default.
-		const value = read_env(field.env) ?? config.options?.[field.arg] ?? field.default
+		const value = read_env(field.env) ?? from_config?.[field.arg] ?? field.default
 		if (value === undefined) {
 			throw new PostboiError({
 				provider: key,
 				code: "missing_env",
-				message: `Provider "${key}" needs ${field.env} — set it in the environment${field.secret ? "" : ` or as \`options.${field.arg}\` in postboi.config.ts`}. Run \`bunx postboi init\`.`,
+				message: `Provider "${key}" needs ${field.env} — set it in the environment${field.secret ? "" : ` or as \`options.${field.arg}\` in postboi.config.ts`}.${shadowed} Run \`bunx postboi init\`.`,
 			})
 		}
 		options[field.arg] = value

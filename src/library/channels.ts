@@ -13,7 +13,12 @@
  */
 import { PostboiError, type Channel } from "./errors.js"
 import type { BatchResult } from "./transport.js"
-import { find_channel_provider, infer_channel_provider, type ProviderField } from "./registry.js"
+import {
+	find_channel_provider,
+	infer_channel_provider,
+	scoped_options,
+	type ProviderField,
+} from "./registry.js"
 import { inbox_sink } from "./channel_inbox.js"
 import { load_config, type PostboiConfig } from "./config.js"
 import { ensure_env_loaded, is_development, read_env } from "./env.js"
@@ -97,11 +102,15 @@ async function dev_mock<TProvider>(spec: ChannelResolution<TProvider>): Promise<
  */
 export function resolve_fields(
 	fields: ReadonlyArray<ProviderField>,
-	section: { options?: Record<string, string> } | undefined,
-	options: Record<string, unknown>
+	section: { provider?: string; options?: Record<string, string> } | undefined,
+	options: Record<string, unknown>,
+	key: string
 ): ProviderField | undefined {
+	// Scoped, not the raw bag: `options` written for the provider the config file names
+	// must not reach a different one selected by env, a platform function or inference.
+	const from_config = scoped_options(section, key)
 	for (const field of fields) {
-		const value = read_env(field.env) ?? section?.options?.[field.arg] ?? field.default
+		const value = read_env(field.env) ?? from_config?.[field.arg] ?? field.default
 		if (value === undefined) return field
 		options[field.arg] = value
 	}
@@ -181,7 +190,7 @@ export async function resolve_channel_provider<TProvider>(
 	const options: Record<string, unknown> = { default: spec.env_defaults() }
 	// `meta` is undefined for credential-free providers (the mock) with no registry entry.
 	const meta = find_channel_provider(spec.channel, key)
-	const missing = resolve_fields(meta?.fields ?? [], section, options)
+	const missing = resolve_fields(meta?.fields ?? [], section, options, key)
 	if (missing) {
 		throw new PostboiError({
 			provider: key,
@@ -192,6 +201,13 @@ export async function resolve_channel_provider<TProvider>(
 				(missing.secret
 					? ""
 					: ` or as \`${spec.channel}.options.${missing.arg}\` in postboi.config.ts`) +
+				// Without this, a config file plainly showing the option that's "missing" reads
+				// as the library ignoring it, rather than as it belonging to another provider.
+				(section?.options !== undefined &&
+				section.provider !== undefined &&
+				section.provider !== key
+					? `. \`${spec.channel}.options\` in postboi.config.ts belong to "${section.provider}" and don't apply here`
+					: "") +
 				(spec.init_flag ? `. Run \`bunx postboi init ${spec.init_flag}\`.` : "."),
 		})
 	}
