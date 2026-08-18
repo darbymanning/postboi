@@ -240,30 +240,37 @@ describe("provider inference reads intent, not ambience", () => {
 		}
 	})
 
-	it("infers nothing from ambient third-party credentials", async () => {
-		const { infer_channel_provider } = await import("./registry.js")
+	it("infers nothing on a machine carrying only ambient credentials", async () => {
+		const registry = await import("./registry.js")
 		// Shipped in 0.33.0 without this: SNS needs only AWS_ACCESS_KEY_ID and
 		// AWS_SECRET_ACCESS_KEY (its region is defaulted), so any environment that had ever
-		// touched AWS — CI with OIDC, a Lambda, a laptop with the CLI configured — made
-		// sms() choose SNS and attempt a live send with credentials meant for something
-		// else. The empty-environment test above passes happily through that bug; only a
-		// polluted one catches it.
-		const ambient = new Set([
-			"AWS_ACCESS_KEY_ID",
-			"AWS_SECRET_ACCESS_KEY",
-			"AWS_REGION",
-			"SMTP_HOST",
-			"SMTP_PORT",
-			"SMTP_USER",
-			"SMTP_PASS",
-			"CLOUDFLARE_API_TOKEN",
-			"CLOUDFLARE_ACCOUNT_ID",
-		])
+		// touched AWS made sms() choose SNS and attempt a live send with credentials meant
+		// for something else. The empty-environment test above passes happily through that
+		// bug; only a populated one catches it.
+		//
+		// The set is derived rather than listed. It was written by hand for the nine names
+		// the first fix covered, and then not updated when the chat webhooks, Mailjet and
+		// Twilio's pair were marked — a stale hand-written list inside the work that argues
+		// hand-written lists rot. Derived, it states the actual property: a machine carrying
+		// only credentials we have judged ambient configures nothing, whatever those are
+		// this week.
+		const ambient = new Set<string>()
+		for (const group of [
+			registry.PROVIDERS,
+			registry.SMS_PROVIDERS,
+			registry.CHAT_PROVIDERS,
+			registry.PUSH_PROVIDERS,
+			registry.WHATSAPP_PROVIDERS,
+		] as ReadonlyArray<ReadonlyArray<{ fields: ReadonlyArray<{ env: string; ambient?: true }> }>>)
+			for (const provider of group)
+				for (const field of provider.fields) if (field.ambient) ambient.add(field.env)
+
+		expect(ambient.size).toBeGreaterThan(0)
 		for (const channel of CHANNELS) {
-			expect([channel, infer_channel_provider(channel, (env) => ambient.has(env))]).toEqual([
+			expect([
 				channel,
-				undefined,
-			])
+				registry.infer_channel_provider(channel, (env) => ambient.has(env)),
+			]).toEqual([channel, undefined])
 		}
 	})
 
