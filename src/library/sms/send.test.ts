@@ -21,6 +21,8 @@ beforeEach(() => {
 afterEach(() => {
 	reset_config()
 	delete process.env.SMSWORKS_API_KEY
+	delete process.env.AWS_ACCESS_KEY_ID
+	delete process.env.AWS_SECRET_ACCESS_KEY
 })
 
 describe("zero-config sms()", () => {
@@ -56,6 +58,26 @@ describe("zero-config sms()", () => {
 	})
 
 	it("throws outside development when nothing is configured", async () => {
+		await expect(sms({ to: "+447788223344", message: "hi" })).rejects.toMatchObject({
+			code: "no_sms_provider",
+			channel: "sms",
+		})
+	})
+
+	it("still throws when the environment happens to carry AWS credentials", async () => {
+		// The 0.33.0 regression, end to end. SNS needs only these two (its region is
+		// defaulted), so inference read someone else's S3 credentials as "SNS, then" and
+		// left the process with them. fetch is stubbed to throw rather than left alone: a
+		// regression here should fail this test, not quietly reach AWS from CI.
+		process.env.AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
+		process.env.AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(() => {
+				throw new Error("a resolution failure must not send anything")
+			})
+		)
+
 		await expect(sms({ to: "+447788223344", message: "hi" })).rejects.toMatchObject({
 			code: "no_sms_provider",
 			channel: "sms",

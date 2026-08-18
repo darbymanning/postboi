@@ -17,6 +17,17 @@ export type ProviderField = {
 	secret?: boolean
 	/** Default value (its presence also marks the field optional). */
 	default?: string
+	/**
+	 * The env var is a well-known third-party name that environments set for reasons that
+	 * have nothing to do with postboi — `AWS_ACCESS_KEY_ID` on any box near S3, `SMTP_HOST`
+	 * for somebody else's mailer, `CLOUDFLARE_API_TOKEN` wherever wrangler has run.
+	 *
+	 * Such a name is not evidence of intent, so a provider carrying one is never inferred
+	 * (see `infer_channel_provider`) — it has to be named. Without this, an unrelated AWS
+	 * credential in the environment makes `sms()` decide "SNS, then" and attempt a live
+	 * send with the wrong keys, in place of the clean "no provider configured" error.
+	 */
+	ambient?: true
 }
 
 /** A provider's metadata: how to import it, where to get credentials, and what it needs. */
@@ -133,8 +144,14 @@ export const PROVIDERS = [
 		class: "Cloudflare",
 		url: "https://dash.cloudflare.com/profile/api-tokens",
 		fields: [
-			{ env: "CLOUDFLARE_API_TOKEN", arg: "api_key", label: "API token", secret: true },
-			{ env: "CLOUDFLARE_ACCOUNT_ID", arg: "account_id", label: "Account ID" },
+			{
+				env: "CLOUDFLARE_API_TOKEN",
+				arg: "api_key",
+				label: "API token",
+				secret: true,
+				ambient: true,
+			},
+			{ env: "CLOUDFLARE_ACCOUNT_ID", arg: "account_id", label: "Account ID", ambient: true },
 		],
 	},
 	{
@@ -266,14 +283,27 @@ export const PROVIDERS = [
 		class: "SES",
 		url: "https://console.aws.amazon.com/iam/home#/security_credentials",
 		fields: [
-			{ env: "AWS_ACCESS_KEY_ID", arg: "access_key_id", label: "Access key ID", secret: true },
+			{
+				env: "AWS_ACCESS_KEY_ID",
+				arg: "access_key_id",
+				label: "Access key ID",
+				secret: true,
+				ambient: true,
+			},
 			{
 				env: "AWS_SECRET_ACCESS_KEY",
 				arg: "secret_access_key",
 				label: "Secret access key",
 				secret: true,
+				ambient: true,
 			},
-			{ env: "AWS_REGION", arg: "region", label: "Region", default: "us-east-1" },
+			{
+				env: "AWS_REGION",
+				arg: "region",
+				label: "Region",
+				default: "us-east-1",
+				ambient: true,
+			},
 
 			{
 				env: "SES_WEBHOOK_SECRET",
@@ -303,15 +333,23 @@ export const PROVIDERS = [
 		class: "SMTP",
 		url: "https://docs.postboi.app/providers",
 		fields: [
-			{ env: "SMTP_HOST", arg: "host", label: "Host (e.g. smtp.example.com)" },
-			{ env: "SMTP_PORT", arg: "port", label: "Port", default: "587" },
-			{ env: "SMTP_USER", arg: "user", label: "Username", default: "" },
-			{ env: "SMTP_PASS", arg: "pass", label: "Password", secret: true, default: "" },
+			{ env: "SMTP_HOST", arg: "host", label: "Host (e.g. smtp.example.com)", ambient: true },
+			{ env: "SMTP_PORT", arg: "port", label: "Port", default: "587", ambient: true },
+			{ env: "SMTP_USER", arg: "user", label: "Username", default: "", ambient: true },
+			{
+				env: "SMTP_PASS",
+				arg: "pass",
+				label: "Password",
+				secret: true,
+				default: "",
+				ambient: true,
+			},
 			{
 				env: "SMTP_SECURE",
 				arg: "secure",
 				label: "Implicit TLS (auto/true/false)",
 				default: "auto",
+				ambient: true,
 			},
 		],
 	},
@@ -445,14 +483,27 @@ export const SMS_PROVIDERS = [
 		price: "varies by destination",
 		verified: "2026-08-07",
 		fields: [
-			{ env: "AWS_ACCESS_KEY_ID", arg: "access_key_id", label: "Access key ID", secret: true },
+			{
+				env: "AWS_ACCESS_KEY_ID",
+				arg: "access_key_id",
+				label: "Access key ID",
+				secret: true,
+				ambient: true,
+			},
 			{
 				env: "AWS_SECRET_ACCESS_KEY",
 				arg: "secret_access_key",
 				label: "Secret access key",
 				secret: true,
+				ambient: true,
 			},
-			{ env: "AWS_REGION", arg: "region", label: "Region", default: "us-east-1" },
+			{
+				env: "AWS_REGION",
+				arg: "region",
+				label: "Region",
+				default: "us-east-1",
+				ambient: true,
+			},
 		],
 	},
 ] as const satisfies ReadonlyArray<SmsProviderMeta>
@@ -728,11 +779,22 @@ export function find_channel_provider(channel: Channel, key: string): ProviderMe
  * Push is the case that stings, because it has no vendor account to sign up for: mint a
  * VAPID pair and the provider is already decided.
  *
- * Deliberately strict. Two candidates is a genuine question about intent, not a coin to
- * flip — it returns undefined and the caller's "no provider configured" error stands, with
- * the env var still the way to say which. Optional fields (anything carrying a `default`)
- * don't count towards a provider being configured, or every provider with one required
- * field would qualify off a single stray variable.
+ * Deliberately strict, in three ways:
+ *
+ * - Two candidates is a genuine question about intent, not a coin to flip — it returns
+ *   undefined and the caller's "no provider configured" error stands, with the env var
+ *   still the way to say which.
+ * - Optional fields (anything carrying a `default`) don't count towards a provider being
+ *   configured, or every provider with one required field would qualify off a single stray
+ *   variable.
+ * - A provider with any `ambient` field is never inferred. Inference reads credentials as
+ *   a statement of intent, which only holds while the env var name belongs to postboi's
+ *   world: `VAPID_PRIVATE_KEY` is set by exactly one kind of person, `AWS_ACCESS_KEY_ID`
+ *   by anyone who has ever touched S3. Shipped without this, an unrelated AWS credential
+ *   made `sms()` pick SNS and attempt a live send with the wrong keys — worse than the
+ *   error it replaced, because it leaves the process and it isn't obviously postboi's
+ *   doing. New providers are safe only to the extent their fields are honestly marked, so
+ *   `inferable_channel_providers` is pinned by a test.
  *
  * `has` is injected rather than imported so this file stays the registry and nothing else —
  * it's shared with the CLI, which reads env differently.
@@ -743,11 +805,23 @@ export function infer_channel_provider(
 ): string | undefined {
 	// The registry's entries are literal-typed, so a field without `default` doesn't carry
 	// the property at all — read them through the shape they satisfy instead.
-	const providers: ReadonlyArray<ProviderMeta> = CHANNEL_PROVIDERS[channel]
-	const configured = providers.filter((provider) =>
+	const configured = inferable_channel_providers(channel).filter((provider) =>
 		provider.fields.every((field) => field.default !== undefined || has(field.env))
 	)
 	return configured.length === 1 ? configured[0].key : undefined
+}
+
+/**
+ * The providers on a channel whose credentials are specific enough to read as intent —
+ * everything except those carrying an `ambient` field. Exported so a test can pin the list:
+ * adding a provider whose credentials are a generic third-party name should fail loudly
+ * here rather than silently widening what gets inferred in someone's deploy.
+ */
+export function inferable_channel_providers(channel: Channel): ReadonlyArray<ProviderMeta> {
+	// The registry's entries are literal-typed, so a field without `ambient` doesn't carry
+	// the property at all — read them through the shape they satisfy instead.
+	const providers: ReadonlyArray<ProviderMeta> = CHANNEL_PROVIDERS[channel]
+	return providers.filter((provider) => provider.fields.every((field) => !field.ambient))
 }
 
 /**
