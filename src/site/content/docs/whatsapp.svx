@@ -72,6 +72,14 @@ guessed at, because a template's content is fixed at approval time.
 | Twilio | `postboi/whatsapp-twilio` | Content SIDs (`HX…`), or their names |
 | Meta Cloud API | `postboi/whatsapp-meta` | Approved names + language code |
 
+**Name your provider** — like [SMS](/sms#providers), WhatsApp never infers one from
+credentials, because a wrong guess is a billable message to a real handset and Twilio's
+credentials are shared with every other Twilio product you might be using:
+
+```bash
+POSTBOI_WHATSAPP_PROVIDER=meta
+```
+
 **Twilio** reuses your Twilio SMS credentials and the same Message resource — addresses get
 the `whatsapp:` prefix added for you. Templates are created in the Content Template Builder
 and addressed by their `HX…` SID — though once they've been [synced](#typed-template-names)

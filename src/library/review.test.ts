@@ -240,31 +240,88 @@ describe("provider inference reads intent, not ambience", () => {
 		}
 	})
 
-	it("infers nothing from ambient third-party credentials", async () => {
-		const { infer_channel_provider } = await import("./registry.js")
+	it("infers nothing on a machine carrying only ambient credentials", async () => {
+		const registry = await import("./registry.js")
 		// Shipped in 0.33.0 without this: SNS needs only AWS_ACCESS_KEY_ID and
 		// AWS_SECRET_ACCESS_KEY (its region is defaulted), so any environment that had ever
-		// touched AWS — CI with OIDC, a Lambda, a laptop with the CLI configured — made
-		// sms() choose SNS and attempt a live send with credentials meant for something
-		// else. The empty-environment test above passes happily through that bug; only a
-		// polluted one catches it.
-		const ambient = new Set([
-			"AWS_ACCESS_KEY_ID",
-			"AWS_SECRET_ACCESS_KEY",
-			"AWS_REGION",
-			"SMTP_HOST",
-			"SMTP_PORT",
-			"SMTP_USER",
-			"SMTP_PASS",
-			"CLOUDFLARE_API_TOKEN",
-			"CLOUDFLARE_ACCOUNT_ID",
-		])
+		// touched AWS made sms() choose SNS and attempt a live send with credentials meant
+		// for something else. The empty-environment test above passes happily through that
+		// bug; only a populated one catches it.
+		//
+		// The set is derived rather than listed. It was written by hand for the nine names
+		// the first fix covered, and then not updated when the chat webhooks, Mailjet and
+		// Twilio's pair were marked — a stale hand-written list inside the work that argues
+		// hand-written lists rot. Derived, it states the actual property: a machine carrying
+		// only credentials we have judged ambient configures nothing, whatever those are
+		// this week.
+		const ambient = new Set<string>()
+		for (const group of [
+			registry.PROVIDERS,
+			registry.SMS_PROVIDERS,
+			registry.CHAT_PROVIDERS,
+			registry.PUSH_PROVIDERS,
+			registry.WHATSAPP_PROVIDERS,
+		] as ReadonlyArray<ReadonlyArray<{ fields: ReadonlyArray<{ env: string; ambient?: true }> }>>)
+			for (const provider of group)
+				for (const field of provider.fields) if (field.ambient) ambient.add(field.env)
+
+		expect(ambient.size).toBeGreaterThan(0)
 		for (const channel of CHANNELS) {
-			expect([channel, infer_channel_provider(channel, (env) => ambient.has(env))]).toEqual([
+			expect([
 				channel,
-				undefined,
-			])
+				registry.infer_channel_provider(channel, (env) => ambient.has(env)),
+			]).toEqual([channel, undefined])
 		}
+	})
+
+	it("pins the ambient marks themselves", async () => {
+		const registry = await import("./registry.js")
+		// The list above is derived, and derived lists move for two reasons: a mark changed,
+		// or a provider was added. This pins the marks directly so the first is never
+		// mistaken for the second.
+		//
+		// It is also the only net that catches an unmarked name, because no automatic check
+		// can. "Is this env var set in the wild for other reasons" is a judgement about the
+		// ecosystem, not a property of the code — the polluted CI run can't see it either,
+		// since filling *every* credential makes inference ambiguous and hides exactly the
+		// single-credential case. So the judgement is made here, in a diff someone reads.
+		const marked = new Set<string>()
+		for (const group of [
+			registry.PROVIDERS,
+			registry.SMS_PROVIDERS,
+			registry.CHAT_PROVIDERS,
+			registry.PUSH_PROVIDERS,
+			registry.WHATSAPP_PROVIDERS,
+		] as ReadonlyArray<ReadonlyArray<{ fields: ReadonlyArray<{ env: string; ambient?: true }> }>>)
+			for (const provider of group)
+				for (const field of provider.fields) if (field.ambient) marked.add(field.env)
+
+		expect([...marked].sort()).toEqual([
+			// Any box that has ever touched AWS.
+			"AWS_ACCESS_KEY_ID",
+			"AWS_REGION",
+			"AWS_SECRET_ACCESS_KEY",
+			// Wherever wrangler has run.
+			"CLOUDFLARE_ACCOUNT_ID",
+			"CLOUDFLARE_API_TOKEN",
+			// What every CI notification action sets.
+			"DISCORD_WEBHOOK_URL",
+			// Mailjet's own SDK default pair.
+			"MJ_APIKEY_PRIVATE",
+			"MJ_APIKEY_PUBLIC",
+			"SLACK_WEBHOOK_URL",
+			// Somebody else's mailer.
+			"SMTP_HOST",
+			"SMTP_PASS",
+			"SMTP_PORT",
+			"SMTP_SECURE",
+			"SMTP_USER",
+			"TEAMS_WEBHOOK_URL",
+			"TELEGRAM_BOT_TOKEN",
+			// The Twilio SDK's zero-argument defaults — Voice and Verify set these too.
+			"TWILIO_ACCOUNT_SID",
+			"TWILIO_AUTH_TOKEN",
+		])
 	})
 
 	it("pins which providers are inferable at all", async () => {
@@ -275,9 +332,14 @@ describe("provider inference reads intent, not ambience", () => {
 		const keys = (channel: (typeof CHANNELS)[number]) =>
 			inferable_channel_providers(channel).map((p) => p.key)
 		expect(keys("push")).toEqual(["webpush", "fcm", "apns", "hms"])
-		expect(keys("whatsapp")).toEqual(["twilio", "meta"])
-		// sns is absent, and that is the point of the flag.
-		expect(keys("sms")).toEqual(["smsworks", "twilio"])
+		// Twilio is absent from both: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are the
+		// Twilio SDK's zero-argument defaults, so anyone using Voice or Verify has them set
+		// for reasons unrelated to sending a message. sns is absent for the same reason,
+		// and that is the point of the flag. Both lists are belt-and-braces in practice —
+		// `infers: false` means neither channel consults them — but a wrong mark here
+		// would be invisible until some future policy did.
+		expect(keys("whatsapp")).toEqual(["meta"])
+		expect(keys("sms")).toEqual(["smsworks"])
 		// Chat is down to bluesky. SLACK_WEBHOOK_URL, DISCORD_WEBHOOK_URL, TEAMS_WEBHOOK_URL
 		// and TELEGRAM_BOT_TOKEN are what every CI notification action already sets, so a
 		// build-notification hook would have made send()'s chat leg post application

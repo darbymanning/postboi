@@ -19,6 +19,8 @@ export default defineConfig({
 				test: {
 					name: "server",
 					environment: "node",
+					// Empty unless POSTBOI_TEST_POLLUTE=1; see src/testing/pollute.ts.
+					setupFiles: ["./src/testing/setup.ts"],
 					include: ["src/**/*.{test,spec}.{js,ts}"],
 					exclude: ["src/**/*.svelte.{test,spec}.{js,ts}"],
 				},

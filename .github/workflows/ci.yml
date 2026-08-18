@@ -43,27 +43,14 @@ jobs:
 
       # A developer machine rarely carries someone else's credentials, which is how a
       # release shipped inference that read an unrelated AWS key as "send the SMS via
-      # SNS". These are the names the wider world sets for its own reasons — a box near
-      # S3, a Slack notification action, a Mailjet SDK — and none of them may change
-      # what postboi resolves. Same suite, polluted environment, so the run that would
-      # have caught it happens every time rather than when someone thinks of it.
-      - name: Run tests in an environment carrying other people's credentials
+      # SNS" — and then missed Twilio's pair the same way, because the fix was a
+      # hand-written list of names someone had thought of. This run fills the environment
+      # from the registry itself, so every credential postboi knows about is present,
+      # including whatever gets added next.
+      - name: Run tests on a machine carrying other people's credentials
         run: bun run test
         env:
-          AWS_ACCESS_KEY_ID: AKIAIOSFODNN7EXAMPLE
-          AWS_SECRET_ACCESS_KEY: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-          AWS_REGION: eu-west-2
-          SMTP_HOST: smtp.example.com
-          SMTP_USER: someone
-          SMTP_PASS: something
-          CLOUDFLARE_API_TOKEN: cf-token
-          CLOUDFLARE_ACCOUNT_ID: cf-account
-          SLACK_WEBHOOK_URL: https://hooks.slack.com/services/T000/B000/EXAMPLE
-          DISCORD_WEBHOOK_URL: https://discord.com/api/webhooks/000/EXAMPLE
-          TEAMS_WEBHOOK_URL: https://example.webhook.office.com/webhookb2/EXAMPLE
-          TELEGRAM_BOT_TOKEN: 000:EXAMPLE
-          MJ_APIKEY_PUBLIC: mj-public
-          MJ_APIKEY_PRIVATE: mj-private
+          POSTBOI_TEST_POLLUTE: "1"
 
       - name: Build
         run: bun run build

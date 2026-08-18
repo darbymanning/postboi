@@ -336,6 +336,9 @@ describe("per-platform functions", () => {
 	it("bluesky() reads the handle and app password from env", async () => {
 		process.env.BLUESKY_HANDLE = "me.bsky.social"
 		process.env.BLUESKY_APP_PASSWORD = "pw"
+		// The default host is the assertion below, so an inherited BLUESKY_SERVICE would
+		// quietly move the endpoint out from under it.
+		delete process.env.BLUESKY_SERVICE
 		const fetch = vi
 			.fn()
 			.mockResolvedValueOnce(respond({ body: { did: "did:plc:abc", accessJwt: "jwt" } }))

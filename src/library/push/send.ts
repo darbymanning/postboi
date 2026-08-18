@@ -34,6 +34,9 @@ const RESOLUTION: ChannelResolution<PushProvider<unknown>> = {
 	env_defaults: push_env_defaults as () => Record<string, unknown>,
 	section: (config) => config.push,
 	init_flag: "--push",
+	// A VAPID trio is minted for exactly this and nothing else, and a wrong guess costs
+	// nothing — this is the case inference exists for.
+	infers: true,
 	dev_fallback_warning:
 		"postboi: no push provider configured — logging notifications to the console instead of sending. Run `bunx postboi init --push` to send for real.",
 }

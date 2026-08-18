@@ -48,6 +48,9 @@ const RESOLUTION: ChannelResolution<ChatProvider<unknown>> = {
 	env_defaults: chat_env_defaults as () => Record<string, unknown>,
 	section: (config) => config.chat,
 	init_flag: "--chat",
+	// Free and revocable, and the ecosystem-standard webhook names are marked ambient,
+	// so what remains inferable is credentials nobody sets by accident.
+	infers: true,
 	dev_fallback_warning:
 		"postboi: no chat provider configured — logging messages to the console instead of posting. Run `bunx postboi init --chat` to post for real.",
 }

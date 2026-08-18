@@ -23,6 +23,8 @@ afterEach(() => {
 	delete process.env.SMSWORKS_API_KEY
 	delete process.env.AWS_ACCESS_KEY_ID
 	delete process.env.AWS_SECRET_ACCESS_KEY
+	delete process.env.TWILIO_ACCOUNT_SID
+	delete process.env.TWILIO_AUTH_TOKEN
 })
 
 describe("zero-config sms()", () => {
@@ -71,6 +73,26 @@ describe("zero-config sms()", () => {
 		// regression here should fail this test, not quietly reach AWS from CI.
 		process.env.AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
 		process.env.AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(() => {
+				throw new Error("a resolution failure must not send anything")
+			})
+		)
+
+		await expect(sms({ to: "+447788223344", message: "hi" })).rejects.toMatchObject({
+			code: "no_sms_provider",
+			channel: "sms",
+		})
+	})
+
+	it("won't send on Twilio credentials that were never meant for postboi", async () => {
+		// TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN are the Twilio SDK's zero-argument
+		// defaults, so a project using Voice or Verify has them set already. Inferring
+		// from them put a billable text on someone else's account — the same shape as the
+		// SNS bug, on a vendor whose credentials span several products.
+		process.env.TWILIO_ACCOUNT_SID = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+		process.env.TWILIO_AUTH_TOKEN = "unrelated-to-postboi-sms"
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(() => {
