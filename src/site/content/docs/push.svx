@@ -26,11 +26,15 @@ you — so you have to store it, and it will expire.
 
 ```bash
 # .env
-POSTBOI_PUSH_PROVIDER=webpush
 VAPID_PUBLIC_KEY=…
 VAPID_PRIVATE_KEY=…
 VAPID_SUBJECT=mailto:you@example.com
 ```
+
+No `POSTBOI_PUSH_PROVIDER` — a full VAPID trio can only mean Web Push, so postboi infers
+it. Set it when you carry another push provider's credentials in the same deploy, where
+the credentials stop answering the question on their own; the same inference covers FCM,
+APNs and HMS from theirs.
 
 The VAPID key pair identifies **you** to the push service. No dashboard hands one out —
 `bunx postboi init --push` generates it for you. The public half is also what the browser
@@ -46,8 +50,9 @@ once: a second pair orphans every subscription collected under the first, silent
 bunx postboi vapid
 ```
 
-On Cloudflare Workers the three vars are read straight off your bindings — see
-[Cloudflare Workers](/cloudflare-workers). Nothing needs passing to the provider by hand.
+On Cloudflare Workers the three vars are read straight off your bindings, so a push Worker
+is three `wrangler secret put`s and no config file at all — see
+[Web Push on Workers](/cloudflare-workers#the-other-channels).
 
 `VAPID_SUBJECT` is required by RFC 8292 so a push service operator can reach you about
 misbehaving traffic. `mailto:` or an https URL — your address on its own is fine too and

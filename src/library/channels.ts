@@ -13,7 +13,7 @@
  */
 import { PostboiError, type Channel } from "./errors.js"
 import type { BatchResult } from "./transport.js"
-import { find_channel_provider, type ProviderField } from "./registry.js"
+import { find_channel_provider, infer_channel_provider, type ProviderField } from "./registry.js"
 import { inbox_sink } from "./channel_inbox.js"
 import { load_config, type PostboiConfig } from "./config.js"
 import { ensure_env_loaded, is_development, read_env } from "./env.js"
@@ -138,7 +138,12 @@ export async function resolve_channel_provider<TProvider>(
 	}
 
 	const section = spec.section(config)
-	const key = read_env(spec.env_key) ?? section?.provider
+	// Last resort, after both the explicit answers: credentials that can only mean one
+	// provider are an answer too, and one the user already gave by setting them.
+	const key =
+		read_env(spec.env_key) ??
+		section?.provider ??
+		infer_channel_provider(spec.channel, (env) => read_env(env) !== undefined)
 
 	// Nothing configured. In development that's a fresh clone, so log rather than fail;
 	// anywhere else it's a broken deploy, and a silently-dropped message is worse than an

@@ -33,6 +33,18 @@ beforeEach(() => {
 })
 afterEach(() => reset_config())
 
+describe("provider inference stays opt-in", () => {
+	it("infers nothing from an empty environment, on every channel", async () => {
+		const { infer_channel_provider } = await import("./registry.js")
+		// The guard this protects: a provider whose every field carries a `default` would
+		// count as configured with nothing set, and would then be inferred for everyone on
+		// that channel. Adding one should fail here rather than in someone's deploy.
+		for (const channel of ["push", "sms", "chat", "whatsapp"] as const) {
+			expect([channel, infer_channel_provider(channel, () => false)]).toEqual([channel, undefined])
+		}
+	})
+})
+
 describe("hooks narrow on channel (discriminated union)", () => {
 	// The documented pattern must *compile* — this test's value is at typecheck time.
 	it("the documented narrowing example typechecks and runs", async () => {
