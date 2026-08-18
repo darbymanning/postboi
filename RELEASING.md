@@ -21,9 +21,18 @@ authenticated via OIDC.
 ## Steps
 
 Do these in order for a release of version `X.Y.Z`. Skip Part A if the docs
-didn't change since the last release.
+didn't change since the last release, **and on every patch release** — see below.
 
 ### A. Snapshot the outgoing docs version (before editing docs for the new one)
+
+> **Minors only.** `latest` in `versions.json` names the docs _line_, not the
+> published package — it moves on a minor and stays put on a patch, so `0.33.1`
+> ships with `"latest": "0.33.0"` and no `v0.33.0` folder, exactly as `0.27.1`
+> did. A patch's doc edits belong in the live docs; snapshotting one would
+> freeze a version nobody should be on (often, as with `0.33.1`, one whose docs
+> describe the bug the patch just fixed). The `v0.33.0` archive gets cut when
+> `0.34.0` ships. The version _badge_ on the site reads `package.json`, so it
+> stays correct across patches regardless.
 
 `src/site/content/docs/` always holds the **latest** docs. Freeze the
 currently-published version as an archived snapshot **before** you edit docs for

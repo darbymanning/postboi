@@ -5,7 +5,9 @@
 	import cryingRaw from "$site/assets/crying.svg?raw"
 	import { contentUiDefaults, type SectionUiConfig } from "$site/config/content-ui"
 	import { siteConfig } from "$site/config/site"
-	import versions from "$site/config/versions.json"
+	// The published library version, not the docs-line marker in the version config — that
+	// only moves on a minor, so a patch release would leave this badge a release behind.
+	import { version } from "../../../../package.json"
 	import { cn } from "$site/utils/cn"
 	import ScrollArea from "$site/components/ui/ScrollArea.svelte"
 	import Dropdown from "$site/components/ui/Dropdown.svelte"
@@ -397,7 +399,7 @@
 			</a>
 			<span
 				class="rounded-full border border-border px-2 py-0.5 text-xs font-medium tracking-normal text-foreground-muted"
-				title={`Postboi is in pre-release — currently v${versions.latest}`}
+				title={`Postboi is in pre-release — currently v${version}`}
 			>
 				Pre-release
 			</span>
