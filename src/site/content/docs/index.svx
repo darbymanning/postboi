@@ -5,12 +5,9 @@ description: Postboi is a framework-agnostic messaging library optimised for Sve
 category: Getting started
 ---
 
-Postboi is a framework-agnostic messaging library optimised for SvelteKit. **Email, SMS,
-WhatsApp, push and chat behind one API**, with swappable providers and **zero
-configuration** — and email brings extras like turning your `FormData` into tidy HTML.
-
 Import a channel, call it, done. The provider and credentials come from environment
-variables, so the same line of code works whichever provider is behind it.
+variables, so the same line of code works whichever provider is behind it — and on the
+email side, handing `mail()` a `FormData` renders it as a tidy HTML table.
 
 ```typescript
 import { mail, sms } from 'postboi'

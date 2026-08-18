@@ -24,6 +24,11 @@
 	import { contentSections } from "$site/config/navigation"
 	import { page } from "$app/state"
 	import versions from "$site/config/versions.json"
+	// "Latest" names the published library, so it tracks package.json. `versions.latest`
+	// still marks which docs line is live, but that is now only read by the release
+	// process — a patch moves the package without moving the line, and this label has to
+	// follow the package.
+	import { version } from "../../package.json"
 	import type { SectionUiConfig } from "$site/config/content-ui"
 	import type { LayoutData } from "./$types"
 	import type { Snippet } from "svelte"
@@ -39,7 +44,7 @@
 
 	const versionItems = $derived([
 		{
-			label: `Latest (v${versions.latest})`,
+			label: `Latest (v${version})`,
 			value: "/",
 			href: "/",
 			active: !isArchivedVersion,
