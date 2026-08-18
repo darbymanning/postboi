@@ -2,7 +2,7 @@ import { PushProvider, type PreparedPush, type WebPushOptions } from "./provider
 import type { WebPushSubscription } from "./types.js"
 import type { RequestSpec } from "../transport.js"
 import { PostboiError, type ProviderError } from "../errors.js"
-import { encrypt_payload, vapid_header, MAX_PAYLOAD_BYTES } from "./crypto.js"
+import { encrypt_payload, vapid_header, MAX_PAYLOAD_BYTES, to_base64url } from "./crypto.js"
 
 type SendResponse = { ok: true; endpoint: string }
 
@@ -19,6 +19,39 @@ const vapid_cache = new Map<string, { header: string; signed_at: number }>()
 /** Forget every cached VAPID header — for tests, which share the module-level cache. */
 export function clear_vapid_cache(): void {
 	vapid_cache.clear()
+}
+
+/**
+ * Mint a VAPID key pair (P-256) in the shapes the rest of Web Push expects: the public key
+ * as the base64url uncompressed point the push service and the browser's `subscribe({ key })`
+ * take, the private key as the JWK `d` scalar this provider signs with.
+ *
+ * WebCrypto only, so it runs wherever the provider does — including a Worker, where
+ * `bunx postboi init --push` writing a `.env` is the wrong shape and the keys want to go
+ * to `wrangler secret put`. `bunx postboi vapid` prints a pair from the same function.
+ *
+ * Mint once and keep it: every subscription a browser hands you is bound to the public key
+ * it subscribed with, so a second pair silently orphans every subscription collected under
+ * the first.
+ *
+ * @example
+ * ```ts
+ * import { generate_vapid_keys } from "postboi/webpush"
+ *
+ * const { public_key, private_key } = await generate_vapid_keys()
+ * ```
+ */
+export async function generate_vapid_keys(): Promise<{
+	public_key: string
+	private_key: string
+}> {
+	const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+		"sign",
+		"verify",
+	])
+	const point = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))
+	const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey)
+	return { public_key: to_base64url(point), private_key: jwk.d! }
 }
 
 /** An address on its own: what everyone types when asked for a contact. */

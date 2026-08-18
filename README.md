@@ -16,6 +16,14 @@ Postboi is a framework-agnostic messaging library optimised for SvelteKit — **
 
 📖 **Full documentation: [docs.postboi.app](https://docs.postboi.app)**
 
+🤖 **Using an AI coding agent?** The package ships a skill that teaches it the whole
+library. `bunx postboi skill` installs it at `.claude/skills/postboi/SKILL.md` (`init`
+offers the same thing), or read it in place at
+`node_modules/postboi/skills/postboi/SKILL.md`. Every docs page is also plain Markdown at
+[`docs.postboi.app/raw/<slug>`](https://docs.postboi.app/raw/push) — the HTML pages render
+client-side, so fetch those instead. All of it in one file:
+[`/llms-full.txt`](https://docs.postboi.app/llms-full.txt).
+
 ### Features
 
 - ☁️ **Send with no provider account** - `postboi init`, sign in, send. The [Postboi provider](https://docs.postboi.app/provider) brings managed sending, domains, lists & broadcasts, suppressions and a message log — one token, no DNS, no card

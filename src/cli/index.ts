@@ -73,7 +73,7 @@ import {
 	type PostboiDomain,
 } from "./postboi.js"
 import { credential_env_keys } from "../library/registry.js"
-import { to_base64url } from "../library/encoding.js"
+import { generate_vapid_keys } from "../library/push/webpush.js"
 import {
 	write_types,
 	write_runtime,
@@ -83,7 +83,7 @@ import {
 	TYPES_TARGET,
 } from "./typegen.js"
 import { fetch_whatsapp_templates } from "./whatsapp_templates.js"
-import { offer_skill, refresh_skill } from "./skill.js"
+import { offer_skill, refresh_skill, skill_command } from "./skill.js"
 import { api_command } from "./api.js"
 import { dev_command } from "./dev.js"
 import { ensure_env_loaded, read_env } from "../library/env.js"
@@ -115,6 +115,8 @@ ${bold("Usage")}
   ${cyan("bunx postboi init")}     Set up the Postboi provider or a provider of your own
   ${cyan("bunx postboi sync")}     Pull synced team credentials and refresh the generated from/template types
   ${cyan("bunx postboi env")}      The synced credentials ${dim("· push · pull [--force] · remove <KEY>")}
+  ${cyan("bunx postboi vapid")}    Mint a VAPID key pair for Web Push, printed to stdout
+  ${cyan("bunx postboi skill")}    Install the agent skill, so AI coding agents know the library
   ${cyan("bunx postboi dev")}      Local inbox for mail sent in development
   ${dim("                          · --port <n> --demo --no-sound --no-intro")}
   ${dim("                          (Vite projects already serve it at /__postboi)")}
@@ -1209,21 +1211,6 @@ async function browser_connect(provider: ChannelProvider): Promise<ConnectResult
 }
 
 /**
- * Mint a VAPID key pair (P-256): the public key as the base64url uncompressed point the
- * push service and `subscribe` expect, the private key as the JWK `d` scalar —
- * exactly the shapes `vapid_header` consumes.
- */
-export async function generate_vapid_keys(): Promise<{ public_key: string; private_key: string }> {
-	const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
-		"sign",
-		"verify",
-	])
-	const point = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))
-	const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey)
-	return { public_key: to_base64url(point), private_key: jwk.d! }
-}
-
-/**
  * What makes one channel's init its own: the registry, the picker prompt, the channel
  * defaults worth asking for, and the done-snippet — plus two optional hooks for the
  * channels that need them: `choose` (SMS ranks its provider list by destination before
@@ -1618,6 +1605,31 @@ async function init(channel?: "sms" | "chat" | "push" | "whatsapp"): Promise<voi
 	}
 }
 
+/**
+ * Mint a *new* VAPID pair, print it and stop. Named for the credential rather than the
+ * generic "keys": next to `postboi env`, which pulls the team's synced secrets, a `keys`
+ * command reads like it dumps them — this one reads nothing and generates one credential.
+ *
+ * `init --push` writes a `.env`, which is the wrong shape when the pair belongs to a
+ * Worker, a CI secret store or a password manager — this prints it and lets you put it
+ * wherever it goes.
+ *
+ * Both halves at once, deliberately: they are one key pair, so two invocations piped
+ * separately into `wrangler secret put` would install halves of two different pairs and
+ * fail on every send with a 401.
+ */
+async function vapid_command(): Promise<void> {
+	const { public_key, private_key } = await generate_vapid_keys()
+	console.log(`VAPID_PUBLIC_KEY=${public_key}`)
+	console.log(`VAPID_PRIVATE_KEY=${private_key}`)
+	console.log(
+		dim(
+			"\n# The public key also goes to the browser's `subscribe({ key })`." +
+				"\n# Keep the pair: every subscription is bound to the key it subscribed with."
+		)
+	)
+}
+
 async function main(): Promise<void> {
 	const command = argv[2]
 	if (command === "-V" || command === "--version") return console.log(version())
@@ -1627,6 +1639,11 @@ async function main(): Promise<void> {
 		)
 		return init(channel)
 	}
+	if (command === "skill") {
+		if (!skill_command()) exit(1)
+		return
+	}
+	if (command === "vapid") return vapid_command()
 	if (command === "sync") return sync()
 	if (command === "env") return env_command(argv.slice(3))
 	if (command === "dev") return dev_command(argv.slice(3))

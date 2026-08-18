@@ -37,6 +37,18 @@ The VAPID key pair identifies **you** to the push service. No dashboard hands on
 subscribes with, so the two must match — mismatched keys are rejected on every send with a
 401 that explains nothing.
 
+When the secrets don't belong in a `.env` — a Worker's `wrangler secret put`, a CI secret
+store, a password manager — `bunx postboi vapid` prints a pair to stdout instead of writing
+one, and `generate_vapid_keys()` from `postboi/webpush` mints the same pair in code. Mint
+once: a second pair orphans every subscription collected under the first, silently.
+
+```bash
+bunx postboi vapid
+```
+
+On Cloudflare Workers the three vars are read straight off your bindings — see
+[Cloudflare Workers](/cloudflare-workers). Nothing needs passing to the provider by hand.
+
 `VAPID_SUBJECT` is required by RFC 8292 so a push service operator can reach you about
 misbehaving traffic. `mailto:` or an https URL — your address on its own is fine too and
 becomes a `mailto:`. Anything else throws when the provider is built, rather than reaching
