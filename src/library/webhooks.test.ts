@@ -200,6 +200,9 @@ describe("receive — resend", () => {
 	})
 
 	it("fails closed when no secret is configured", async () => {
+		// "No secret" has to mean it, on any machine — an inherited RESEND_WEBHOOK_SECRET
+		// turns this into a test that verification succeeds.
+		delete process.env.RESEND_WEBHOOK_SECRET
 		const { request } = await mock_request({ provider: "resend", type: "delivered" })
 		const error = await receive(request, { provider: "resend" }).catch((e) => e)
 		expect(error).toBeInstanceOf(WebhookVerificationError)

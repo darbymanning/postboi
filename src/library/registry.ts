@@ -466,8 +466,20 @@ export const SMS_PROVIDERS = [
 		price: "~4.3p to UK",
 		verified: "2026-08-07",
 		fields: [
-			{ env: "TWILIO_ACCOUNT_SID", arg: "account_sid", label: "Account SID", secret: true },
-			{ env: "TWILIO_AUTH_TOKEN", arg: "auth_token", label: "Auth token", secret: true },
+			{
+				env: "TWILIO_ACCOUNT_SID",
+				arg: "account_sid",
+				label: "Account SID",
+				secret: true,
+				ambient: true,
+			},
+			{
+				env: "TWILIO_AUTH_TOKEN",
+				arg: "auth_token",
+				label: "Auth token",
+				secret: true,
+				ambient: true,
+			},
 			{
 				env: "TWILIO_MESSAGING_SERVICE_SID",
 				arg: "messaging_service_sid",
@@ -738,8 +750,20 @@ export const WHATSAPP_PROVIDERS = [
 		url: "https://console.twilio.com",
 		note: "Same credentials as Twilio SMS; templates are Content SIDs (HX…)",
 		fields: [
-			{ env: "TWILIO_ACCOUNT_SID", arg: "account_sid", label: "Account SID", secret: true },
-			{ env: "TWILIO_AUTH_TOKEN", arg: "auth_token", label: "Auth token", secret: true },
+			{
+				env: "TWILIO_ACCOUNT_SID",
+				arg: "account_sid",
+				label: "Account SID",
+				secret: true,
+				ambient: true,
+			},
+			{
+				env: "TWILIO_AUTH_TOKEN",
+				arg: "auth_token",
+				label: "Auth token",
+				secret: true,
+				ambient: true,
+			},
 			{
 				env: "TWILIO_MESSAGING_SERVICE_SID",
 				arg: "messaging_service_sid",

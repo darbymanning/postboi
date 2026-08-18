@@ -477,6 +477,21 @@ describe("zero-config push()", () => {
 	})
 
 	it("infers webpush from the VAPID trio, with no provider named anywhere", async () => {
+		// Inference means *one* candidate, so the trio only decides it when no sibling push
+		// provider is also configured — a machine carrying FCM or APNs credentials for its
+		// own reasons is the ambiguous case, and gets an error rather than a coin flip.
+		for (const k of [
+			"FCM_PROJECT_ID",
+			"FCM_CLIENT_EMAIL",
+			"FCM_PRIVATE_KEY",
+			"APNS_KEY_ID",
+			"APNS_TEAM_ID",
+			"APNS_PRIVATE_KEY",
+			"APNS_TOPIC",
+			"HMS_APP_ID",
+			"HMS_APP_SECRET",
+		])
+			delete process.env[k]
 		process.env.VAPID_PUBLIC_KEY = VAPID.public_key
 		process.env.VAPID_PRIVATE_KEY = VAPID.private_key
 		process.env.VAPID_SUBJECT = VAPID.subject

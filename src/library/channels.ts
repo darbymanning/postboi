@@ -38,6 +38,19 @@ export interface ChannelResolution<TProvider> {
 	) => { provider?: string; options?: Record<string, string> } | undefined
 	/** `bunx postboi init` flag suggested in errors, e.g. "--sms". Empty to omit. */
 	init_flag: string
+	/**
+	 * May credentials alone choose this channel's provider, when nothing names one?
+	 *
+	 * Required rather than defaulted, because the safe answer differs per channel and a
+	 * silent default is how the wrong one gets picked. SMS and WhatsApp say no for the
+	 * reason `dev_intercept` exists two fields below: a wrong guess there is a billable
+	 * message to a real handset that cannot be recalled, and the credentials that would
+	 * do the guessing — `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` — are the Twilio
+	 * SDK's zero-argument defaults, set by anyone using Voice or Verify. Push and chat
+	 * say yes: a wrong guess costs nothing, and `bunx postboi init` writes the env var
+	 * anyway, so inference only ever serves a hand-rolled setup.
+	 */
+	infers: boolean
 	/** Printed once when nothing is configured in development. */
 	dev_fallback_warning: string
 	/**
@@ -152,7 +165,9 @@ export async function resolve_channel_provider<TProvider>(
 	const key =
 		read_env(spec.env_key) ??
 		section?.provider ??
-		infer_channel_provider(spec.channel, (env) => read_env(env) !== undefined)
+		(spec.infers
+			? infer_channel_provider(spec.channel, (env) => read_env(env) !== undefined)
+			: undefined)
 
 	// Nothing configured. In development that's a fresh clone, so log rather than fail;
 	// anywhere else it's a broken deploy, and a silently-dropped message is worse than an

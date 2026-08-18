@@ -105,6 +105,9 @@ describe("global config", () => {
 
 	it("supplies non-secret provider options from config.options (env still wins)", async () => {
 		configure({ provider: "mailgun", options: { domain: "from-config.example.com" } })
+		// The point is that config.options supplies `domain`; an inherited MAILGUN_DOMAIN
+		// would supply it instead and the assertion would pass for the wrong reason.
+		delete process.env.MAILGUN_DOMAIN
 		vi.stubEnv("MAILGUN_API_KEY", "key-abc")
 		const ok = {
 			ok: true,

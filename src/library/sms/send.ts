@@ -38,6 +38,9 @@ const RESOLUTION: ChannelResolution<SmsProvider<unknown>> = {
 	env_defaults: sms_env_defaults as () => Record<string, unknown>,
 	section: (config) => config.sms,
 	init_flag: "--sms",
+	// A wrong guess is a billable text to a real handset, and Twilio's credentials are
+	// set by anyone using Voice or Verify. Name the provider.
+	infers: false,
 	dev_fallback_warning:
 		"postboi: no SMS provider configured — logging texts to the console instead of sending. Run `bunx postboi init --sms` to send for real.",
 	dev_intercept: {

@@ -170,14 +170,19 @@ for (const result of results) {
 | Twilio | `postboi/twilio` | Global, and automatic RCS upgrade via a Messaging Service |
 | Amazon SNS | `postboi/sns` | Already on AWS |
 
-Twilio and The SMS Works are inferred from their credentials, so `POSTBOI_SMS_PROVIDER` is
-optional for them. **SNS always has to be named**, because `AWS_ACCESS_KEY_ID` and
-`AWS_SECRET_ACCESS_KEY` are set by anything near AWS and say nothing about whether you meant
-to send a text with them:
+**SMS always names its provider** — there is no inferring it from credentials:
 
 ```bash
-POSTBOI_SMS_PROVIDER=sns
+POSTBOI_SMS_PROVIDER=twilio
 ```
+
+`bunx postboi init --sms` writes that line for you. The reason it isn't optional is the same
+one behind [development interception](#development-sends-nothing): a text costs money and reaches a real
+handset, and the credentials that would do the guessing aren't evidence you meant to send
+one. `AWS_ACCESS_KEY_ID` is set by anything near AWS; `TWILIO_ACCOUNT_SID` and
+`TWILIO_AUTH_TOKEN` are the Twilio SDK's zero-argument defaults, so a project using Voice or
+Verify already has them. [WhatsApp](/whatsapp) works the same way. Push and chat, which cost
+nothing and can be recalled, do infer.
 
 Construct one directly instead of using the environment, exactly like an email provider:
 
