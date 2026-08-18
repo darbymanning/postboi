@@ -170,6 +170,15 @@ for (const result of results) {
 | Twilio | `postboi/twilio` | Global, and automatic RCS upgrade via a Messaging Service |
 | Amazon SNS | `postboi/sns` | Already on AWS |
 
+Twilio and The SMS Works are inferred from their credentials, so `POSTBOI_SMS_PROVIDER` is
+optional for them. **SNS always has to be named**, because `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` are set by anything near AWS and say nothing about whether you meant
+to send a text with them:
+
+```bash
+POSTBOI_SMS_PROVIDER=sns
+```
+
 Construct one directly instead of using the environment, exactly like an email provider:
 
 ```typescript

@@ -33,15 +33,57 @@ beforeEach(() => {
 })
 afterEach(() => reset_config())
 
-describe("provider inference stays opt-in", () => {
+const CHANNELS = ["push", "sms", "chat", "whatsapp"] as const
+
+describe("provider inference reads intent, not ambience", () => {
 	it("infers nothing from an empty environment, on every channel", async () => {
 		const { infer_channel_provider } = await import("./registry.js")
-		// The guard this protects: a provider whose every field carries a `default` would
-		// count as configured with nothing set, and would then be inferred for everyone on
-		// that channel. Adding one should fail here rather than in someone's deploy.
-		for (const channel of ["push", "sms", "chat", "whatsapp"] as const) {
+		// A provider whose every field carries a `default` would count as configured with
+		// nothing set, and would then be inferred for everyone on that channel.
+		for (const channel of CHANNELS) {
 			expect([channel, infer_channel_provider(channel, () => false)]).toEqual([channel, undefined])
 		}
+	})
+
+	it("infers nothing from ambient third-party credentials", async () => {
+		const { infer_channel_provider } = await import("./registry.js")
+		// Shipped in 0.33.0 without this: SNS needs only AWS_ACCESS_KEY_ID and
+		// AWS_SECRET_ACCESS_KEY (its region is defaulted), so any environment that had ever
+		// touched AWS — CI with OIDC, a Lambda, a laptop with the CLI configured — made
+		// sms() choose SNS and attempt a live send with credentials meant for something
+		// else. The empty-environment test above passes happily through that bug; only a
+		// polluted one catches it.
+		const ambient = new Set([
+			"AWS_ACCESS_KEY_ID",
+			"AWS_SECRET_ACCESS_KEY",
+			"AWS_REGION",
+			"SMTP_HOST",
+			"SMTP_PORT",
+			"SMTP_USER",
+			"SMTP_PASS",
+			"CLOUDFLARE_API_TOKEN",
+			"CLOUDFLARE_ACCOUNT_ID",
+		])
+		for (const channel of CHANNELS) {
+			expect([channel, infer_channel_provider(channel, (env) => ambient.has(env))]).toEqual([
+				channel,
+				undefined,
+			])
+		}
+	})
+
+	it("pins which providers are inferable at all", async () => {
+		const { inferable_channel_providers } = await import("./registry.js")
+		// Inference is only as safe as the `ambient` marks are honest, and the cost of a
+		// missed mark is a live send on someone else's credentials. So the list is pinned:
+		// a new provider joins it deliberately, in a diff someone reads.
+		const keys = (channel: (typeof CHANNELS)[number]) =>
+			inferable_channel_providers(channel).map((p) => p.key)
+		expect(keys("push")).toEqual(["webpush", "fcm", "apns", "hms"])
+		expect(keys("whatsapp")).toEqual(["twilio", "meta"])
+		expect(keys("chat")).toEqual(["slack", "discord", "teams", "telegram", "bluesky"])
+		// sns is absent, and that is the point of the flag.
+		expect(keys("sms")).toEqual(["smsworks", "twilio"])
 	})
 })
 
