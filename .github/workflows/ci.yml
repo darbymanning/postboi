@@ -96,11 +96,24 @@ jobs:
       - name: Pack the package the examples install
         run: npm pack --pack-destination "$RUNNER_TEMP"
 
+      # Unpacked over the installed copy rather than `bun add`ed. Two examples commit
+      # a bun.lock pinning postboi@^0.35.0, and a second resolution for the same name
+      # under a lockfile is a conflict bun refuses outright (DependencyLoop). Extracting
+      # sidesteps resolution entirely, and is complete rather than a hack because
+      # postboi has no runtime `dependencies` — the directory *is* the install, and the
+      # .bin/postboi symlink the install made still points into it.
       - name: Check every example
         run: |
           set -e
           tarball="$(ls "$RUNNER_TEMP"/postboi-*.tgz)"
           for dir in examples/*/; do
             echo "── $dir"
-            (cd "$dir" && bun install && bun add "$tarball" && bun run ci)
+            (
+              cd "$dir"
+              bun install
+              rm -rf node_modules/postboi
+              mkdir -p node_modules/postboi
+              tar -xzf "$tarball" -C node_modules/postboi --strip-components=1
+              bun run ci
+            )
           done
