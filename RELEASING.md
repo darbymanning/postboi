@@ -114,19 +114,30 @@ both the tag and the release itself.
 
 ### C. Point the examples at it
 
-Each `examples/*/package.json` pins `"postboi": "^X.Y.Z"`, and pre-1.0 a caret
-doesn't cross the minor — `^0.30.0` can never install `0.31.0`. So until they're
-bumped the examples keep building against the previous release, and the CI
-**Examples** job on `main` goes red the moment one of them uses something the
-release added.
+Each `examples/*/package.json` pins `"postboi": "^X.Y.Z"`. CI doesn't resolve
+those pins — the **Examples** job packs the tarball from the commit under test
+and installs that — so this bump no longer unblocks anything. It exists because
+the pin is what someone copying an example folder actually installs, and a stale
+one hands them a release that predates the code beside it.
 
 ```sh
-sed -i '' 's/"postboi": "\^0\.30\.0"/"postboi": "^0.31.0"/' examples/*/package.json
-(cd examples && for dir in */; do (cd "$dir" && bun install && bun run ci); done)
+sed -i '' 's/"postboi": "\^0\.35\.0"/"postboi": "^0.36.0"/' examples/*/package.json
 ```
 
-That loop is exactly what the CI job runs, so a green one here is a green one
-there.
+To reproduce the CI job locally, pack and install the same way it does — a plain
+`bun install` in an example resolves the pin instead, which is the previous
+release:
+
+```sh
+npm pack --pack-destination /tmp
+for dir in examples/*/; do
+  (cd "$dir" && bun install && bun add /tmp/postboi-X.Y.Z.tgz && bun run ci)
+done
+```
+
+This is also the step that lets an example use something the release added
+_before_ it's published: examples on a feature branch can import new APIs and go
+green, because the tarball CI builds is that branch's.
 
 ### D. Verify
 

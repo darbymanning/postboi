@@ -6,9 +6,10 @@
 	// the /push endpoint below — which is how the server learns where to push. `on`,
 	// `busy` and `reason` are reactive, so read them straight off it.
 	//
-	// The worker in static/sw.js is what `bunx postboi init --push` writes for a framework
-	// that serves its worker as-is. It handles the rotations nothing on this page can see.
-	const push = subscription({ register: "/push" })
+	// `service_worker` because SvelteKit builds `src/service-worker.ts` and serves it at
+	// its own path; subscribe() looks for /sw.js otherwise. That worker is one line —
+	// `receive()` from postboi/push/sw — and handles the rotations nothing here can see.
+	const push = subscription({ register: "/push", service_worker: "/service-worker.js" })
 
 	let status = $state("")
 
