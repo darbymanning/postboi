@@ -16,7 +16,7 @@
 import { Glob } from "bun"
 
 const version = process.argv[2]
-if (!version || !/^\d+\.\d+\.\d+/.test(version)) {
+if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
 	console.error("usage: bun scripts/bump-examples.ts X.Y.Z")
 	process.exit(1)
 }

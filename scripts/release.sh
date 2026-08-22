@@ -40,9 +40,12 @@ PREV="$(node -p "require('./src/site/config/versions.json').latest")"
 bun scripts/snapshot-docs.ts --version "$VERSION" --before "${DOCS_BEFORE:-HEAD}"
 
 # --- validate (before the irreversible steps) --------------------------------
-npm run lint    # oxfmt + eslint — the tag push's CI gates on this too
+# The same gates release.yml runs — the two paths must not drift.
+npm run lint
+npm run check
 npm test
-npm run build   # prepack runs publint on the packed output
+POSTBOI_TEST_POLLUTE=1 npm test   # see ci.yml: registry-driven ambient-credential run
+npm run build                     # prepack runs publint on the packed output
 
 # --- commit + tag ------------------------------------------------------------
 # The freeze is its own commit in front of the version, as in every release before.
@@ -56,8 +59,9 @@ git commit -m "$VERSION"
 git tag -a "$TAG" -m "$VERSION"
 
 # --- push — the tag triggers the Publish workflow ------------------------------
-git push origin main
-git push origin "$TAG"
+# Atomic: main and the tag land together or not at all, so a failed push never
+# strands a version commit on main with no tag behind it.
+git push --atomic origin main "refs/tags/$TAG"
 
 echo "✓ tagged $TAG — the Publish workflow is publishing postboi@$VERSION and creating the GitHub release"
 echo "  watch it: https://github.com/postboi-mail/postboi/actions/workflows/publish.yml"

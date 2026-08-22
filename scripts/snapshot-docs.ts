@@ -26,12 +26,12 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
+import type { ContentItem } from "../src/site/config/navigation"
 
 const VERSIONS_PATH = "src/site/config/versions.json"
 const NAVIGATION_PATH = "src/site/config/navigation.ts"
 const DOCS_PATH = "src/site/content/docs"
 
-type ContentItem = { slug: string; name: string; icon?: boolean; items?: ContentItem[] }
 type Versions = {
 	latest: string
 	archived: Array<{ version: string; slug: string; nav: ContentItem[] }>
@@ -64,22 +64,48 @@ function minor_line(version: string) {
  * stubs never reach the output.
  */
 async function read_navigation(before: string): Promise<Array<ContentItem>> {
+	// Only component imports are provably safe to stub: the JSON round-trip
+	// below drops component values anyway, so replacing them with undefined
+	// can't change the archived data. A value import from anywhere else could
+	// BE nav data — stubbing it would archive a silently corrupted nav — so
+	// anything unrecognised aborts the release instead.
+	const unstubbable: Array<string> = []
 	const source = git("show", `${before}:${NAVIGATION_PATH}`)
 		.replace(/^import\s+type\s+[\s\S]*?from\s+["'][^"']+["'];?[ \t]*$/gm, "")
-		.replace(/^import\s+([\s\S]*?)\s+from\s+["'][^"']+["'];?[ \t]*$/gm, (_, clause: string) => {
-			const names = clause
-				.replace(/[{}]/g, " ")
-				.split(",")
-				.map((part) =>
-					part
-						.trim()
-						.split(/\s+as\s+/)
-						.pop()
-						?.trim()
-				)
-				.filter((name): name is string => Boolean(name) && name !== "*")
-			return names.map((name) => `const ${name} = undefined`).join("\n")
-		})
+		// A side-effect import has nothing to stub — and can't affect a data module.
+		.replace(/^import\s+["'][^"']+["'];?[ \t]*$/gm, "")
+		.replace(
+			/^import\s+([\s\S]*?)\s+from\s+["']([^"']+)["'];?[ \t]*$/gm,
+			(statement, clause: string, specifier: string) => {
+				if (!/\.svelte$/.test(specifier) && !specifier.startsWith("carbon-icons-svelte")) {
+					unstubbable.push(statement)
+					return statement
+				}
+				const names = clause
+					.replace(/[{}]/g, " ")
+					.split(",")
+					.map((part) =>
+						part
+							.trim()
+							// `{ type Component, Email }` — the inline specifier is erased at runtime.
+							.replace(/^type\s+/, "")
+							.split(/\s+as\s+/)
+							.pop()
+							?.trim()
+					)
+					.filter((name): name is string => Boolean(name))
+				return names.map((name) => `const ${name} = undefined`).join("\n")
+			}
+		)
+
+	// A shape these regexes don't cover must abort the release, not evaluate wrong.
+	if (unstubbable.length || /^import\b/m.test(source)) {
+		fail(
+			`${NAVIGATION_PATH} at ${before} has imports that may carry nav data — refusing to stub them:\n` +
+				`${unstubbable.join("\n")}\n` +
+				`If they can't affect the archived nav, teach read_navigation in scripts/snapshot-docs.ts about them.`
+		)
+	}
 
 	const dir = mkdtempSync(join(tmpdir(), "postboi-nav-"))
 	const file = join(dir, "navigation.ts")
@@ -92,9 +118,36 @@ async function read_navigation(before: string): Promise<Array<ContentItem>> {
 		const docs = module.contentSections?.find((section) => section.id === "docs")
 		if (!docs) fail(`no "docs" content section in ${NAVIGATION_PATH} at ${before}`)
 		// Round-trip so components and undefined stubs drop out and only data lands in the file.
-		return JSON.parse(JSON.stringify(docs.navigation))
+		const nav = JSON.parse(JSON.stringify(docs.navigation)) as Array<ContentItem>
+		assert_nav(nav, before)
+		return nav
 	} finally {
 		rmSync(dir, { recursive: true, force: true })
+	}
+}
+
+/**
+ * If a stubbed import was actually load-bearing data, the round trip leaves
+ * holes instead of throwing — so refuse anything that isn't a complete nav.
+ */
+function assert_nav(items: unknown, before: string, path = "nav"): asserts items is ContentItem[] {
+	if (!Array.isArray(items) || items.length === 0) {
+		fail(
+			`${path} from ${NAVIGATION_PATH} at ${before} is not a non-empty array — refusing to archive it`
+		)
+	}
+	for (const [index, item] of items.entries()) {
+		const at = `${path}[${index}]`
+		if (typeof item !== "object" || item === null) {
+			fail(
+				`${at} from ${NAVIGATION_PATH} at ${before} is ${JSON.stringify(item)} — refusing to archive it`
+			)
+		}
+		const entry = item as Record<string, unknown>
+		if (typeof entry.slug !== "string" || typeof entry.name !== "string" || !entry.name) {
+			fail(`${at} from ${NAVIGATION_PATH} at ${before} has no slug/name — refusing to archive it`)
+		}
+		if (entry.items !== undefined) assert_nav(entry.items, before, `${at}.items`)
 	}
 }
 
@@ -125,7 +178,7 @@ const version =
 	arg("version") ?? fail("usage: bun scripts/snapshot-docs.ts --version X.Y.Z [--before <ref>]")
 const before = arg("before") ?? "HEAD"
 
-if (!/^\d+\.\d+\.\d+/.test(version)) fail(`--version must be X.Y.Z, got "${version}"`)
+if (!/^\d+\.\d+\.\d+$/.test(version)) fail(`--version must be X.Y.Z, got "${version}"`)
 git("rev-parse", "--verify", `${before}^{commit}`)
 
 const versions = (await Bun.file(VERSIONS_PATH).json()) as Versions

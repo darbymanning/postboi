@@ -82,12 +82,21 @@ jobs:
         run: bun run build
 
       # No token — auth is OIDC via the trusted publisher configured on npmjs.com,
-      # which also attaches provenance to the package. Skipping an already-published
-      # version keeps a re-run a re-run rather than a hard failure.
+      # which also attaches provenance to the package. An already-published
+      # version is skipped ONLY if npm's copy came from this exact commit — that
+      # keeps a re-run a re-run without letting a moved tag paint a stale
+      # publish green.
       - name: Publish to npm
         run: |
-          if npm view "postboi@$VERSION" version >/dev/null 2>&1; then
-            echo "• postboi@$VERSION is already on npm — nothing to publish"
+          if published_head="$(npm view "postboi@$VERSION" gitHead 2>/dev/null)"; then
+            head="$(git rev-parse HEAD)"
+            if [ "$published_head" = "$head" ]; then
+              echo "• postboi@$VERSION is already on npm, from this exact commit — nothing to publish"
+            else
+              echo "✗ postboi@$VERSION is already on npm, published from ${published_head:-an unknown commit} — not $head." >&2
+              echo "  npm will keep serving those bits; releasing this commit needs a new version." >&2
+              exit 1
+            fi
           else
             npm publish
           fi

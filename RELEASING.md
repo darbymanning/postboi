@@ -29,10 +29,13 @@ On merge, `release.yml` runs, in order:
    itself changed can't leak into the archive. Committed as
    `Freeze the <prev> docs before <version> goes out`.
 2. **Bumps `package.json`** and commits the bare version (`0.36.0`).
-3. **Validates** — `lint`, `check`, `test`, `build` (which runs `publint` on the
-   packed output). Everything after this point is a push, a publish or a tag, so
-   this is the last place a release can fail cheaply.
-4. **Pushes `main` and the tag** `vX.Y.Z`.
+3. **Validates** — `lint`, `check`, `test`, the credential-pollution test run
+   from ci.yml, and `build` (which runs `publint` on the packed output). This
+   matters more than it looks: commits pushed with `GITHUB_TOKEN` never trigger
+   ci.yml, so this run _is_ the release commits' CI. It's also the last place a
+   release can fail cheaply — everything after is a push, a publish or a tag.
+4. **Pushes `main` and the tag** `vX.Y.Z` — atomically, so they land together
+   or not at all, and rebasing over anything that merged to main mid-release.
 5. **Publishes to npm** by calling [`publish.yml`](.github/workflows/publish.yml)
    — trusted publishing over OIDC, with provenance — and **creates the GitHub
    release** with generated notes.
@@ -59,13 +62,31 @@ the snapshot directory already exists.
 
 No local `npm login` or `gh auth login` needed anywhere.
 
+### If something fails mid-release
+
+Use **"Re-run failed jobs"** on the run — every job is safe to repeat: the
+publish skips a version npm already has _from that exact commit_, the release
+step skips a tag that already has one, and the examples job re-derives its
+work from main. What you must **not** do is "Re-run all jobs" after the
+release landed — that would bump again and cut a second version, so the
+`prepare` job detects the case and refuses.
+
 ### Where it can't help you
 
+Both of these fail fast with the reason, rather than half-releasing:
+
 - **A PR from a fork.** `GITHUB_TOKEN` is read-only on fork PRs, so the release
-  job can't push `main`. Merge it unlabelled and use the manual path below.
+  job can't push `main`. Merge it unlabelled and release by dispatch instead.
 - **A rebase merge.** The docs freeze reads the merge's first parent, which is
   main's previous tip for a squash or a merge commit but not for a rebase of
-  several commits. Squash, as every merged PR in the history has.
+  several commits. The workflow detects a multi-commit rebase merge and
+  refuses. Squash, as every merged PR in the history has.
+
+One more shape to avoid: releases queue one at a time (`concurrency`), and
+GitHub keeps at most one _waiting_ run per group — merging a third release PR
+while one runs and one waits silently cancels the waiting one. Merge release
+PRs one at a time; if a queued release did get cancelled, release it by
+dispatch.
 
 ## Choosing the bump
 
@@ -109,15 +130,15 @@ the release:
 
 ```sh
 npm run release:examples -- X.Y.Z
-(cd examples && for dir in */; do (cd "$dir" && bun install && bun run ci); done)
+bash scripts/check-examples.sh
 ```
 
 Each `examples/*/package.json` pins `"postboi": "^X.Y.Z"`, and pre-1.0 a caret
 doesn't cross the minor — `^0.30.0` can never install `0.31.0` — so until they're
 bumped the examples keep building against the previous release, and the CI
 **Examples** job on `main` goes red the moment one of them uses something the
-release added. That loop is exactly what the CI job runs, so a green one here is
-a green one there.
+release added. `check-examples.sh` is the same script the CI **Examples** job
+runs, so a green run here is a green run there.
 
 If tags can't be pushed from where you're releasing (e.g. a remote sandbox whose
 git proxy only allows branch pushes), push `main` with the version-bump commit
@@ -131,9 +152,9 @@ from `package.json` and creates both the tag and the release itself.
 - The GitHub release exists at `vX.Y.Z`.
 - The docs site shows the new version as latest and archived versions still load.
 
-Re-running a release is safe: the publish skips a version already on npm and the
-release step skips a tag that already has one. What it won't do is release the
-same version twice — the bump refuses if `vX.Y.Z` is already tagged.
+On the manual path, double-check the docs after releasing: if the new version's
+doc edits were already on `main` when you ran it, `/vPREV` must still render the
+_old_ version's pages — that's what `DOCS_BEFORE` exists for.
 
 > Snapshots are plain committed files under `src/site/content/v*/`. There's no
 > build-time git dependency — the site builds on a shallow clone. (The first

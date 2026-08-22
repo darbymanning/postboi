@@ -71,10 +71,7 @@ jobs:
         with:
           bun-version: latest
 
+      # Shared with the release workflow, which re-checks every example against
+      # the freshly published package — one definition of "an example passes".
       - name: Check every example
-        run: |
-          set -e
-          for dir in examples/*/; do
-            echo "── $dir"
-            (cd "$dir" && bun install && bun run ci)
-          done
+        run: bash scripts/check-examples.sh
