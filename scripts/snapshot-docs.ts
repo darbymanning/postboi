@@ -1,0 +1,160 @@
+#!/usr/bin/env bun
+/**
+ * Freeze the outgoing docs version before a release.
+ *
+ * `src/site/content/docs/` always holds the latest docs, so the version that is
+ * about to be superseded has to be copied into `src/site/content/v<prev>/` and
+ * listed in `src/site/config/versions.json` — with the nav as it looked then, so
+ * renaming or reordering pages in the new version can't reach back into the
+ * archive.
+ *
+ * Both copies come from `--before`: the last commit that still carried the
+ * outgoing version's docs. On a merge that's the commit the release PR landed
+ * on, which is why this is worth running in CI — the hand-run version has to
+ * guess at that ref, and guessing wrong archives the new docs under the old
+ * version's name.
+ *
+ * Usage: bun scripts/snapshot-docs.ts --version X.Y.Z [--before <ref>]
+ *
+ * Minors only. `latest` names the docs *line*, not the published package, so a
+ * patch leaves it where it is (0.33.1 ships with "latest": "0.33.0") — see
+ * RELEASING.md. A patch release exits 0 having done nothing.
+ */
+
+import { execFileSync } from "node:child_process"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
+
+const VERSIONS_PATH = "src/site/config/versions.json"
+const NAVIGATION_PATH = "src/site/config/navigation.ts"
+const DOCS_PATH = "src/site/content/docs"
+
+type ContentItem = { slug: string; name: string; icon?: boolean; items?: ContentItem[] }
+type Versions = {
+	latest: string
+	archived: Array<{ version: string; slug: string; nav: ContentItem[] }>
+}
+
+function git(...args: Array<string>) {
+	return execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+}
+
+function fail(message: string): never {
+	console.error(`✗ ${message}`)
+	process.exit(1)
+}
+
+function arg(name: string) {
+	const index = process.argv.indexOf(`--${name}`)
+	return index === -1 ? undefined : process.argv[index + 1]
+}
+
+function minor_line(version: string) {
+	const [major, minor] = version.split(".")
+	return `${major}.${minor}`
+}
+
+/**
+ * `navigation.ts` is data apart from its imports — `icon: Email` on the section,
+ * types everywhere else — so stubbing the imports out leaves a module that
+ * evaluates to exactly the nav we want to serialise. The archived nav only holds
+ * `ContentItem`s (`icon` there is the boolean the sidebar renders from), so the
+ * stubs never reach the output.
+ */
+async function read_navigation(before: string): Promise<Array<ContentItem>> {
+	const source = git("show", `${before}:${NAVIGATION_PATH}`)
+		.replace(/^import\s+type\s+[\s\S]*?from\s+["'][^"']+["'];?[ \t]*$/gm, "")
+		.replace(/^import\s+([\s\S]*?)\s+from\s+["'][^"']+["'];?[ \t]*$/gm, (_, clause: string) => {
+			const names = clause
+				.replace(/[{}]/g, " ")
+				.split(",")
+				.map((part) =>
+					part
+						.trim()
+						.split(/\s+as\s+/)
+						.pop()
+						?.trim()
+				)
+				.filter((name): name is string => Boolean(name) && name !== "*")
+			return names.map((name) => `const ${name} = undefined`).join("\n")
+		})
+
+	const dir = mkdtempSync(join(tmpdir(), "postboi-nav-"))
+	const file = join(dir, "navigation.ts")
+	writeFileSync(file, source)
+
+	try {
+		const module = (await import(pathToFileURL(file).href)) as {
+			contentSections?: Array<{ id: string; navigation: ContentItem[] }>
+		}
+		const docs = module.contentSections?.find((section) => section.id === "docs")
+		if (!docs) fail(`no "docs" content section in ${NAVIGATION_PATH} at ${before}`)
+		// Round-trip so components and undefined stubs drop out and only data lands in the file.
+		return JSON.parse(JSON.stringify(docs.navigation))
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
+}
+
+function extract_docs(before: string, destination: string) {
+	if (!git("ls-tree", "--name-only", before, `${DOCS_PATH}/`).trim()) {
+		fail(`${before} has no ${DOCS_PATH}/ to archive`)
+	}
+
+	const dir = mkdtempSync(join(tmpdir(), "postboi-docs-"))
+	const archive = join(dir, "docs.tar")
+
+	try {
+		writeFileSync(
+			archive,
+			execFileSync("git", ["archive", "--format=tar", before, DOCS_PATH], {
+				maxBuffer: 256 * 1024 * 1024,
+			})
+		)
+		mkdirSync(destination, { recursive: true })
+		// src/site/content/docs/<file> → <file>
+		execFileSync("tar", ["-x", "--strip-components=4", "-C", destination, "-f", archive])
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
+}
+
+const version =
+	arg("version") ?? fail("usage: bun scripts/snapshot-docs.ts --version X.Y.Z [--before <ref>]")
+const before = arg("before") ?? "HEAD"
+
+if (!/^\d+\.\d+\.\d+/.test(version)) fail(`--version must be X.Y.Z, got "${version}"`)
+git("rev-parse", "--verify", `${before}^{commit}`)
+
+const versions = (await Bun.file(VERSIONS_PATH).json()) as Versions
+const prev = versions.latest
+
+if (prev === version) {
+	console.log(`• ${VERSIONS_PATH} already names ${version} as latest — docs snapshot already taken`)
+	process.exit(0)
+}
+
+if (minor_line(prev) === minor_line(version)) {
+	console.log(
+		`• ${version} is a patch on the ${minor_line(prev)} line — leaving "latest" at ${prev} (RELEASING.md: minors only)`
+	)
+	process.exit(0)
+}
+
+const slug = `v${prev}`
+const destination = `src/site/content/${slug}`
+if (existsSync(destination))
+	fail(`${destination} already exists — snapshot it once, by hand or here, not both`)
+
+extract_docs(before, destination)
+
+versions.latest = version
+versions.archived.unshift({ version: prev, slug, nav: await read_navigation(before) })
+writeFileSync(VERSIONS_PATH, `${JSON.stringify(versions, null, "\t")}\n`)
+
+console.log(
+	`✓ froze ${prev} docs as ${destination} (from ${git("rev-parse", "--short", before).trim()})`
+)
+console.log(`✓ ${VERSIONS_PATH}: latest ${prev} → ${version}, archived ${slug}`)
