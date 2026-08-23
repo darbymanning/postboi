@@ -201,7 +201,16 @@ async function discover(): Promise<Target | null> {
  * about, and the payload is a mail that is explicitly not being sent.
  */
 async function post_insecure(port: number, path: string, body: string): Promise<boolean> {
-	const https = await import("node:https")
+	// Loaded lazily inside a try (same pattern as smtp.ts and aws.ts) so bundlers targeting
+	// non-node platforms can bundle sends without resolving node:https — esbuild demotes an
+	// unresolvable dynamic import to a warning only inside a try, so the try is load-bearing.
+	let https: typeof import("node:https")
+	try {
+		https = await import("node:https")
+	} catch {
+		// No node:https means no local dev server to reach anyway.
+		return false
+	}
 	return new Promise<boolean>((resolve) => {
 		const request = https.request(
 			{
