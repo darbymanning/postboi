@@ -99,6 +99,31 @@ describe("the notificationclick handler", () => {
 		expect(w.opened).toEqual(["https://app.example/orders/7"])
 		expect(w.focused).toEqual([])
 	})
+
+	/** An app whose click means something looser than exact-match-or-new-window (a
+	 * single-window PWA navigating its one open tab, an action button that answers in
+	 * place) takes the click over — but never the close, which every handler owes. */
+	it("hands the click to `click` instead of the default, data and action included", async () => {
+		const w = install(fake_worker({ windows: ["https://app.example/orders/7"] }))
+		const clicks: Array<unknown> = []
+		let closed = false
+		receive({ click: async (data, action) => void clicks.push([data, action]) })
+
+		await w.fire("notificationclick", {
+			notification: {
+				close: () => (closed = true),
+				data: { url: "/orders/7", thread: "t1" },
+			},
+			action: "reply",
+		})
+
+		expect(clicks).toEqual([[{ url: "/orders/7", thread: "t1" }, "reply"]])
+		expect(closed).toBe(true)
+		// The default would have focused the tab already showing the url — `click` replaces
+		// it entirely, so nothing else moved.
+		expect(w.focused).toEqual([])
+		expect(w.opened).toEqual([])
+	})
 })
 
 describe("the pushsubscriptionchange handler", () => {
@@ -128,6 +153,46 @@ describe("the pushsubscriptionchange handler", () => {
 
 		expect(w.subscribed).toEqual([])
 		expect(filed).toEqual([STORED])
+	})
+
+	/** A key that only exists at runtime (a Workers secret behind an endpoint) can't be in
+	 * the options as a string — and a rotation wakes the worker cold, so an eager fetch at
+	 * startup would lose the race. The function form is asked exactly when minting needs it. */
+	it("resolves a function key at the moment a rotation actually needs one", async () => {
+		const w = install(fake_worker({ subscription: fake_subscription() }))
+		let asked = 0
+		receive({
+			key: async () => (asked++, VAPID_KEY),
+			register: "/push/subscriptions",
+		})
+		expect(asked).toBe(0)
+
+		// The browser handing over its own replacement needs no key, so none is fetched.
+		await w.fire("pushsubscriptionchange", { newSubscription: fake_subscription() })
+		expect(asked).toBe(0)
+
+		await w.fire("pushsubscriptionchange", {
+			oldSubscription: { endpoint: "https://push.example/old" },
+		})
+		expect(asked).toBe(1)
+		expect(w.subscribed).toHaveLength(1)
+		expect(w.posted).toEqual([
+			["/push/subscriptions", STORED],
+			["/push/subscriptions", { ...STORED, old_endpoint: "https://push.example/old" }],
+		])
+	})
+
+	it("treats a function key that resolves to nothing as no key at all", async () => {
+		const w = install(fake_worker({ subscription: fake_subscription() }))
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		receive({ key: async () => null, register: "/push/subscriptions" })
+
+		await w.fire("pushsubscriptionchange", {})
+
+		expect(w.subscribed).toEqual([])
+		expect(w.posted).toEqual([])
+		expect(warn).toHaveBeenCalledOnce()
+		warn.mockRestore()
 	})
 
 	it("says so in the console rather than failing silently when there is no key to re-subscribe with", async () => {

@@ -46,11 +46,27 @@ export type NotificationSpec = { title: string } & NotificationOptions
 /** Options for {@link receive}. */
 export interface ReceiveOptions {
 	/**
-	 * VAPID **public** key, base64url, used to re-subscribe after a rotation. Optional once
-	 * `bunx postboi sync` has baked it from `VAPID_PUBLIC_KEY` — the same key the page half
-	 * resolves, so the two can't drift apart.
+	 * VAPID **public** key, base64url, used to re-subscribe after a rotation — the string
+	 * itself, or a function that resolves it, called only when a rotation actually needs
+	 * one. The function form is for keys that only exist at runtime (a per-deployment pair
+	 * in a Workers secret, handed out by the same endpoint the page subscribes off): a
+	 * rotation can wake the worker cold, long after any startup fetch, so the moment the
+	 * event fires is the one reliable chance to go and ask.
+	 *
+	 * ```ts
+	 * receive({
+	 * 	register: "/push/subscriptions",
+	 * 	key: async () => {
+	 * 		const res = await fetch("/push/key")
+	 * 		return res.ok ? (await res.json()).key : null
+	 * 	},
+	 * })
+	 * ```
+	 *
+	 * Optional once `bunx postboi sync` has baked it from `VAPID_PUBLIC_KEY` — the same key
+	 * the page half resolves, so the two can't drift apart.
 	 */
-	key?: string
+	key?: string | (() => string | null | undefined | Promise<string | null | undefined>)
 	/**
 	 * Where a rotated subscription gets re-filed: the URL it's POSTed to as
 	 * {@link RotatedSubscription} JSON, or a function for anything beyond that. Normally the
@@ -70,6 +86,30 @@ export interface ReceiveOptions {
 	 * ```
 	 */
 	notification?: (payload: PushPayload) => Partial<NotificationSpec> | undefined
+	/**
+	 * Take over what a click does. Called after the notification closes, with the
+	 * notification's `data` — the payload's `data` plus `url`, or whatever `notification`
+	 * overrode it to — and the action button pressed (`""` for the notification body).
+	 * Replaces the default entirely: focus the tab already showing `data.url` exactly, or
+	 * open one.
+	 *
+	 * The default is deliberately conservative — a looser rule would pull someone off the
+	 * page they were on. When your app knows better (a single-window PWA that navigates its
+	 * one open tab, an action button that answers without opening anything), this is where
+	 * that lives; `clients` is a worker global, so reach for it directly.
+	 *
+	 * ```ts
+	 * receive({
+	 * 	click: async (data) => {
+	 * 		const [tab] = await clients.matchAll({ type: "window", includeUncontrolled: true })
+	 * 		if (!tab) return void clients.openWindow(data.url ?? "/")
+	 * 		await tab.navigate?.(data.url ?? "/")
+	 * 		await tab.focus()
+	 * 	},
+	 * })
+	 * ```
+	 */
+	click?: (data: { url?: string } & Record<string, unknown>, action: string) => unknown
 }
 
 /**
@@ -88,7 +128,8 @@ interface PushEventLike extends ExtendableEventLike {
 	data: { json(): unknown; text(): string } | null
 }
 interface NotificationEventLike extends ExtendableEventLike {
-	notification: { close(): void; data?: { url?: string } | null }
+	notification: { close(): void; data?: ({ url?: string } & Record<string, unknown>) | null }
+	action?: string
 }
 interface SubscriptionChangeEventLike extends ExtendableEventLike {
 	oldSubscription?: PushSubscription | null
@@ -186,6 +227,14 @@ export function receive(options: ReceiveOptions = {}): void {
 
 	scope.addEventListener("notificationclick", (event) => {
 		event.notification.close()
+		// A `click` of your own replaces everything below it — the app knows what its
+		// clicks mean; the close above is the one thing every handler owes the user.
+		if (options.click) {
+			event.waitUntil(
+				Promise.resolve(options.click(event.notification.data ?? {}, event.action ?? ""))
+			)
+			return
+		}
 		const url = event.notification.data?.url
 		// No `url` means the send didn't ask for navigation. Guessing one (the origin, the
 		// last page) is how a notification click throws away what someone was doing.
@@ -226,7 +275,10 @@ async function rotate(
 
 	let subscription = event.newSubscription ?? null
 	if (!subscription) {
-		const key = options.key ?? vapid_public_key
+		// A function key resolves here — when the rotation fires — because a worker woken
+		// cold by this event has had no earlier moment to fetch a runtime key in.
+		const configured = typeof options.key === "function" ? await options.key() : options.key
+		const key = configured ?? vapid_public_key
 		if (!key) {
 			// The one failure worth a word in the console: everything still looks fine here,
 			// and the symptom is a subscriber who quietly stops receiving, months later.
