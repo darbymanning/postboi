@@ -1,0 +1,338 @@
+name: Release
+
+# A release is a merge, not a chore afterwards.
+#
+# Label a PR `release:patch`, `release:minor` or `release:major` and merging it
+# runs the whole sequence RELEASING.md used to walk through by hand: freeze the
+# outgoing docs, bump, validate, publish to npm, tag, cut the GitHub release,
+# then move the examples' pins onto it. An unlabelled merge does nothing.
+#
+# Pre-1.0 the bump can't be inferred — a breaking change is a *minor* here — so
+# the label is the one thing a human still says. It can go on the PR at any
+# point before the merge.
+#
+# Recovery: if a later job fails (publish, examples), use "Re-run failed jobs".
+# A full "Re-run all jobs" is refused once the release landed — re-running
+# `prepare` on the already-bumped main would mint a second, unintended version.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  # Escape hatch: release main as it stands, no PR involved.
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "patch | minor | major | X.Y.Z"
+        required: true
+        default: patch
+        type: string
+      docs_before:
+        description: "Commit whose docs are the outgoing version's (default: main as it stands)"
+        required: false
+        type: string
+
+# One release at a time — two in flight would race on main and on the version.
+# GitHub keeps at most ONE queued run per group: merging a third release while
+# one runs and one waits silently cancels the waiting one. Merge release PRs
+# one at a time; if a queued release was cancelled, re-run it from its PR's
+# workflow run page or release by dispatch.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Freeze docs, bump, tag
+    # Merged, not merely closed, and carrying a release label.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       (contains(github.event.pull_request.labels.*.name, 'release:patch') ||
+        contains(github.event.pull_request.labels.*.name, 'release:minor') ||
+        contains(github.event.pull_request.labels.*.name, 'release:major')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the freeze + version commits and the tag to main
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          # The docs freeze and the already-released guard read history and tags.
+          fetch-depth: 0
+
+      - name: Resolve the bump
+        id: bump_input
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            bump="$DISPATCH_BUMP"
+          else
+            # GITHUB_TOKEN is read-only on fork PRs — fail in seconds with the
+            # real reason, not in minutes on the push.
+            fork="$(jq -r '.pull_request.head.repo.fork' "$GITHUB_EVENT_PATH")"
+            if [ "$fork" = "true" ]; then
+              echo "✗ this PR is from a fork, so the workflow can't push the release to main." >&2
+              echo "  Release it via Actions → Release → Run workflow instead (see RELEASING.md)." >&2
+              exit 1
+            fi
+            labels="$(jq -r '.pull_request.labels[].name | ascii_downcase
+              | select(. == "release:patch" or . == "release:minor" or . == "release:major")' "$GITHUB_EVENT_PATH")"
+            count="$(printf '%s' "$labels" | grep -c . || true)"
+            if [ "$count" -ne 1 ]; then
+              echo "✗ expected exactly one release:patch|minor|major label, found $count:" >&2
+              printf '%s\n' "$labels" >&2
+              exit 1
+            fi
+            bump="${labels#release:}"
+          fi
+          if [[ ! "$bump" =~ ^(patch|minor|major|[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "✗ '$bump' is not patch, minor, major or X.Y.Z" >&2
+            exit 1
+          fi
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "▶ releasing a $bump"
+
+      - name: Refuse to release the same merge twice
+        if: github.event_name == 'pull_request'
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          released="$(git tag --contains "$MERGE_SHA" | head -1)"
+          if [ -n "$released" ]; then
+            echo "✗ this merge is already part of release $released — a re-run here would bump again and cut a second version." >&2
+            echo "  To retry a failed publish or examples job, use 'Re-run failed jobs' on the original run." >&2
+            exit 1
+          fi
+
+      - name: Resolve the outgoing docs commit
+        id: docs_before
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          DISPATCH_BEFORE: ${{ inputs.docs_before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # No PR to work back from: main as it stands is the best guess, and
+            # docs_before overrides it when the new version's edits already landed.
+            before="${DISPATCH_BEFORE:-HEAD}"
+          else
+            # The commit the release PR landed on — its docs are the outgoing
+            # version's, whatever the PR then changed. Squash and merge commits
+            # both have main's previous tip as their first parent; a REBASE
+            # merge does not (the parent is the PR's own previous commit), so
+            # detect that shape and refuse rather than archive the wrong docs.
+            if ! git merge-base --is-ancestor "$MERGE_SHA" HEAD; then
+              echo "✗ main does not contain $MERGE_SHA — refusing to release a merge that isn't there" >&2
+              exit 1
+            fi
+            commits="$(jq -r '.pull_request.commits' "$GITHUB_EVENT_PATH")"
+            head_sha="$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+            if [ "$commits" -gt 1 ]; then
+              # Rebase-merging a multi-commit PR makes the merge SHA a copy of
+              # the PR's last commit — same diff, different parent. A squash's
+              # diff is all the commits combined, so it never matches.
+              git fetch -q origin "$head_sha" || true
+              merge_pid="$(git show "$MERGE_SHA" | git patch-id --stable | cut -d' ' -f1)"
+              head_pid="$(git show "$head_sha" 2>/dev/null | git patch-id --stable | cut -d' ' -f1 || true)"
+              if [ -n "$merge_pid" ] && [ "$merge_pid" = "$head_pid" ]; then
+                echo "✗ this looks like a rebase merge — the merge SHA's parent is the PR's own commit, not main's previous tip," >&2
+                echo "  so the docs freeze would archive the wrong docs. Squash-merge release PRs (see RELEASING.md)." >&2
+                exit 1
+              fi
+            fi
+            before="$(git rev-parse "$MERGE_SHA^")"
+          fi
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          echo "▶ outgoing docs come from $(git rev-parse --short "$before")"
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Setup env vars for type checking
+        run: |
+          echo "ZEPTO_TOKEN=test-token" > .env
+          echo "EMAIL_FROM_ADDRESS=test@example.com" >> .env
+          echo "EMAIL_TO_ADDRESS=test@example.com" >> .env
+
+      - name: Bump the version
+        id: bump
+        env:
+          BUMP: ${{ steps.bump_input.outputs.bump }}
+        run: |
+          set -euo pipefail
+          npm version "$BUMP" --no-git-tag-version >/dev/null
+          version="$(node -p "require('./package.json').version")"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "✗ tag v$version already exists — $version has been released" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "▶ v$version"
+
+      # Before the version bump is committed, so the freeze is its own commit in
+      # front of it — the shape every release in the history already has.
+      - name: Freeze the outgoing docs
+        id: freeze
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+          BEFORE: ${{ steps.docs_before.outputs.before }}
+        run: |
+          set -euo pipefail
+          prev="$(node -p "require('./src/site/config/versions.json').latest")"
+          bun scripts/snapshot-docs.ts --version "$VERSION" --before "$BEFORE"
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+
+      # The same gates ci.yml runs — these commits are pushed with GITHUB_TOKEN,
+      # which never triggers ci.yml, so this run IS their CI. Everything after
+      # them is a push, a publish or a tag, and none of those come back.
+      - name: Run linter
+        run: bun run lint
+
+      - name: Run type check
+        run: bun run check
+
+      - name: Run tests
+        run: bun run test
+
+      # See ci.yml: fills the environment from the provider registry so a release
+      # can't ship inference that misreads someone else's ambient credentials.
+      - name: Run tests on a machine carrying other people's credentials
+        run: bun run test
+        env:
+          POSTBOI_TEST_POLLUTE: "1"
+
+      - name: Build
+        run: bun run build
+
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+          TAG: ${{ steps.bump.outputs.tag }}
+          PREV: ${{ steps.freeze.outputs.prev }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if ! git diff --quiet -- src/site/config/versions.json src/site/content; then
+            git add src/site/config/versions.json src/site/content
+            git commit -m "Freeze the $PREV docs before $VERSION goes out"
+          fi
+
+          git add package.json
+          git commit -m "$VERSION"
+          git tag -a "$TAG" -m "$VERSION"
+
+      # Atomic: main and the tag land together or not at all, and a non-fast-
+      # forward (someone merged mid-release) is rebased over, not retried blind.
+      - name: Push main and the tag
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: bash scripts/push-release.sh "$TAG"
+
+  publish:
+    name: Publish
+    needs: prepare
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # npm trusted publishing (OIDC)
+    # Called rather than copied: npm's trusted publisher is configured against
+    # the filename publish.yml, and a reusable workflow's job_workflow_ref is
+    # the *called* file — so the OIDC claim still says publish.yml, whether the
+    # release started from a tag push or from this merge.
+    uses: ./.github/workflows/publish.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+
+  examples:
+    name: Examples catch up
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          # The push below rebases over anything that landed on main meanwhile.
+          fetch-depth: 0
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Wait for npm to serve the release
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Usually seconds behind the publish — check at once, then back off.
+          for delay in 0 3 5 10 10 15 15 30 30 30 30; do
+            sleep "$delay"
+            if npm view "postboi@$VERSION" version >/dev/null 2>&1; then
+              echo "✓ postboi@$VERSION is on npm"
+              exit 0
+            fi
+          done
+          echo "✗ postboi@$VERSION never showed up on npm — the examples can't install it" >&2
+          exit 1
+
+      - name: Move the pins onto the release
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: bun scripts/bump-examples.ts "$VERSION"
+
+      # The installs come before the commit because their outputs are part of
+      # it — two examples track a bun.lock that only moves on install. They
+      # also gate it: a failed install must not commit a half-written lockfile.
+      - name: Install every example against the release
+        run: |
+          set -euo pipefail
+          for dir in examples/*/; do
+            echo "── $dir"
+            (cd "$dir" && bun install)
+          done
+
+      # Pushed before the examples are checked, not after: the release is
+      # already on npm, so main pinning the previous version is the broken
+      # state — a failing example below is a real red build, not a reason to
+      # leave the pins behind.
+      - name: Commit and push the catch-up
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- examples; then
+            echo "• nothing to push"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # -u: the pins, the tracked bun.locks and the tsbuildinfo that move
+          # with them — never a build artifact an example forgot to ignore.
+          git add -u examples
+          git commit -m "Examples: catch up with $VERSION"
+          bash scripts/push-release.sh
+
+      - name: Check every example against the release
+        run: bash scripts/check-examples.sh
