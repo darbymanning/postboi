@@ -176,7 +176,7 @@ const POSTBOI_REGISTER = ${JSON.stringify(options.register)}
 ${
 	key
 		? `// The VAPID public key the page subscribes with, needed to re-subscribe after a rotation.\nconst POSTBOI_VAPID_KEY = ${JSON.stringify(key)}`
-		: `// No VAPID public key was available when this was written. Without one, a rotation can\n// only be re-filed on browsers that hand over the replacement themselves — paste the\n// public half of your pair here to cover the rest.\nconst POSTBOI_VAPID_KEY = ""`
+		: `// No VAPID public key was available when this was written. Without one, a rotation can\n// only be re-filed on browsers that hand over the replacement themselves — paste the\n// public half of your pair here to cover the rest, or fetch it inside the rotation\n// handler below when yours is only served at runtime. The file is yours to edit.\nconst POSTBOI_VAPID_KEY = ""`
 }
 
 self.addEventListener("push", (event) => {

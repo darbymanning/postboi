@@ -280,6 +280,30 @@ receive({
 In a generated worker the same thing is a literal edit — the file is yours from the moment
 it's written, and the `""` fallback title is commented where it sits.
 
+### Taking over the click
+
+The default click is deliberately conservative: focus the tab already showing the
+notification's `url` **exactly**, or open a new one — anything looser would pull someone
+off the page they were on. When your app knows its own clicks better, `click` replaces
+that entirely, called with the notification's `data` (the payload's `data` plus `url`)
+and the action button pressed (`""` for the body of the notification):
+
+```typescript
+receive({
+	register: "/push/subscriptions",
+	// A single-window PWA: bring the one open tab here rather than minting another.
+	click: async (data) => {
+		const [tab] = await clients.matchAll({ type: "window", includeUncontrolled: true })
+		if (!tab) return void clients.openWindow(data.url ?? "/")
+		await tab.navigate?.(data.url ?? "/")
+		await tab.focus()
+	},
+})
+```
+
+The notification is closed before `click` runs — that part every handler owes the user —
+and `clients` is a worker global, so the callback reaches for it directly.
+
 ### Rotations, and why they matter
 
 Subscriptions rotate. Browsers replace them on their own schedule, and when that happens
@@ -303,6 +327,24 @@ nowhere. `receive` re-subscribes and POSTs the replacement to `register`, carryi
 Delete the row for `old_endpoint`, then store the rest — that's a swap rather than a leak.
 The field is absent on browsers that don't hand the old subscription over, and a register
 endpoint that ignores it still works.
+
+Re-subscribing needs the VAPID public key, and some setups only hold it at runtime — a
+per-deployment pair in a Workers secret, handed to the page by an endpoint rather than
+baked in by `bunx postboi sync`. For those, `key` takes a function instead of a string,
+called only when a rotation actually needs to mint (a replacement the browser hands over
+needs no key). It resolves at the moment the event fires on purpose: a rotation can wake
+the worker cold, so a fetch at worker startup would lose exactly the race that matters.
+
+```typescript
+receive({
+	register: "/push/subscriptions",
+	// The same answer the page subscribes off.
+	key: async () => {
+		const res = await fetch("/push/key")
+		return res.ok ? (await res.json()).key : null
+	},
+})
+```
 
 ### Writing it yourself
 
