@@ -36,9 +36,9 @@ On merge, `release.yml` runs, in order:
    release can fail cheaply — everything after is a push, a publish or a tag.
 4. **Pushes `main` and the tag** `vX.Y.Z` — atomically, so they land together
    or not at all, and rebasing over anything that merged to main mid-release.
-5. **Publishes to npm** by calling [`publish.yml`](.github/workflows/publish.yml)
-   — trusted publishing over OIDC, with provenance — and **creates the GitHub
-   release** with generated notes.
+5. **Publishes to npm** by dispatching [`publish.yml`](.github/workflows/publish.yml)
+   and waiting for it — trusted publishing over OIDC, with provenance — and
+   **creates the GitHub release** with generated notes.
 6. **Moves the examples' pins** to the new version once npm is serving it, pushes
    `Examples: catch up with <version>`, and runs every example's `ci` script
    against the real published package.
@@ -56,9 +56,12 @@ the snapshot directory already exists.
 - A **trusted publisher** configured on npmjs.com so the Publish workflow can
   publish without a token: package settings for `postboi` → _Trusted Publisher_
   → GitHub Actions, with organization/user `postboi-mail`, repository `postboi`,
-  and workflow filename `publish.yml`. That filename is why publishing stayed in
-  `publish.yml` and is _called_ by `release.yml` rather than copied into it — a
-  reusable workflow's OIDC claim names the file that runs the job.
+  and workflow filename `publish.yml`. That filename is why `release.yml`
+  _dispatches_ `publish.yml` rather than calling or copying it: npm validates
+  the run's top-level workflow, so a reusable-workflow call presents
+  `release.yml` and gets no token, and a tag pushed with `GITHUB_TOKEN`
+  triggers no workflow at all. A dispatch is the one route that gives
+  `publish.yml` a run of its own.
 
 No local `npm login` or `gh auth login` needed anywhere.
 

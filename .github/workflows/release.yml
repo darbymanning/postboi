@@ -250,16 +250,41 @@ jobs:
   publish:
     name: Publish
     needs: prepare
+    runs-on: ubuntu-latest
     permissions:
-      contents: write # create the GitHub release
-      id-token: write # npm trusted publishing (OIDC)
-    # Called rather than copied: npm's trusted publisher is configured against
-    # the filename publish.yml, and a reusable workflow's job_workflow_ref is
-    # the *called* file — so the OIDC claim still says publish.yml, whether the
-    # release started from a tag push or from this merge.
-    uses: ./.github/workflows/publish.yml
-    with:
-      tag: ${{ needs.prepare.outputs.tag }}
+      actions: write # dispatch the Publish workflow and watch its run
+    # Dispatched rather than called: npm's trusted publisher is configured
+    # against the filename publish.yml and validates the TOP-LEVEL workflow of
+    # the run — a reusable-workflow call would present release.yml in the OIDC
+    # claim and npm would refuse to mint a token (the 0.36.0 release failed
+    # exactly there, ENEEDAUTH). A tag pushed with GITHUB_TOKEN triggers no
+    # workflow at all, so a dispatch is the one route that gives publish.yml a
+    # run of its own. Its dispatch path derives the tag from package.json on
+    # main, which prepare just pushed.
+    steps:
+      - name: Dispatch Publish and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          t0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
+          echo "▶ dispatched publish.yml for $TAG"
+          run_id=""
+          for _ in $(seq 1 24); do
+            sleep 5
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow publish.yml \
+              --event workflow_dispatch --created ">=$t0" --limit 1 \
+              --json databaseId --jq '.[0].databaseId // empty')"
+            if [ -n "$run_id" ]; then break; fi
+          done
+          if [ -z "$run_id" ]; then
+            echo "✗ the dispatched Publish run never appeared" >&2
+            exit 1
+          fi
+          echo "▶ watching Publish run $run_id"
+          gh run watch --repo "$GITHUB_REPOSITORY" "$run_id" --exit-status --interval 15
 
   examples:
     name: Examples catch up
