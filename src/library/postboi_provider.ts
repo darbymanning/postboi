@@ -58,7 +58,20 @@ export interface SendParams {
 	form?: boolean
 }
 
-type SendResponse = { id: string }
+type SendResponse = { id: string; sandbox?: boolean; claim_url?: string }
+
+// Sandboxed sends succeed but deliver nothing — worth exactly one line per process, so a
+// batch job doesn't scroll the reason a mailbox stays empty out of view.
+let announced_sandbox = false
+
+function announce_sandbox(data: { sandbox?: boolean; claim_url?: string } | undefined): void {
+	if (!data?.sandbox || announced_sandbox) return
+	announced_sandbox = true
+	const claim = data.claim_url ? ` Claim your project to deliver for real: ${data.claim_url}` : ""
+	console.log(
+		`postboi: this account is sandboxed — sends land in your Postboi message log, nothing is delivered.${claim}`
+	)
+}
 
 /** A message as returned by `GET /v1/messages/:id`. */
 export interface MessageDetails {
@@ -757,6 +770,9 @@ export default class Postboi extends ProviderBase<SendResponse> {
 		data: unknown,
 		recipients: Array<BatchRecipient>
 	): Array<SendResponse | PostboiError> {
+		announce_sandbox(
+			(data as { sandbox?: boolean; claim_url?: string } | null | undefined) ?? undefined
+		)
 		const ids = (data as { ids?: Array<string> } | null)?.ids ?? []
 		return recipients.map((_, i) =>
 			ids[i]
@@ -769,7 +785,9 @@ export default class Postboi extends ProviderBase<SendResponse> {
 	}
 
 	protected parse_response(_response: Response, data: unknown): SendResponse {
-		return data as SendResponse
+		const result = data as SendResponse
+		announce_sandbox(result)
+		return result
 	}
 
 	protected parse_error(_response: Response, data: unknown): ProviderError | undefined {

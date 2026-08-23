@@ -70,6 +70,25 @@ await mail.recipients.add('Newsletter', 'Ada Lovelace <ada@example.com>')
 [scheduling](/scheduling) and [batch sends with idempotency keys](/provider#batching--idempotency)
 are all documented in [The Postboi provider](/provider), along with plan limits.
 
+## Zero setup — no sign-in at all
+
+There's a version of the Postboi path with **no browser, no sign-in and no prompts**,
+built for AI coding agents, CI, and anyone who wants working mail before deciding
+anything:
+
+```bash
+bunx postboi init --agent
+```
+
+One round trip provisions a **claimable project**: the token lands in `.env`, the config
+is written, and your sending address is derived from your `package.json` name
+(`@acme/mail-site` sends from `mail-site@send.postboi.email`). Sends work immediately but
+are **sandboxed** — they run the full pipeline and land in your message log without
+delivering — until you open the printed **claim URL** and sign in once. Claiming lifts
+the sandbox on the spot; nothing else changes. The details (expiry, limits, how agents
+should surface the claim link) are in
+[Zero setup for agents & CI](/provider#zero-setup-for-agents--ci).
+
 ## Bringing your own provider
 
 Pick **Bring your own provider** and the CLI asks which one, then collects its credentials

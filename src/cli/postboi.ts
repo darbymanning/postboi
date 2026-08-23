@@ -121,6 +121,59 @@ export interface DeviceClaim {
 	send_address?: string
 }
 
+/** A zero-setup account, minted with no sign-in — sandboxed until claimed at `claim_url`. */
+export interface ProvisionResult {
+	token: string
+	send_address?: string
+	claim_url?: string
+	expires_in_days?: number
+}
+
+/**
+ * The `--agent` path: mint an account in one round trip, no browser and no human. The
+ * account is sandboxed (sends run the whole pipeline, nothing is delivered) until
+ * someone signs in at `claim_url` — which is why this needs no auth to call. `name` and
+ * `slug` come from the project's package.json, so the sending address reads like the
+ * project rather than a random phrase.
+ */
+export async function provision_account(
+	base: string,
+	body: { name?: string; slug?: string } = {},
+	fetch_fn: FetchLike = fetch
+): Promise<ProvisionResult> {
+	let response: Response
+	try {
+		response = await fetch_fn(`${base}/api/cli/provision`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+		})
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error)
+		throw new PostboiAuthError(`Could not reach ${base} (${reason}). Are you online?`)
+	}
+	const data = (await response.json().catch(() => undefined)) as
+		| (Partial<ProvisionResult> & { message?: string })
+		| undefined
+	if (!response.ok) {
+		throw new PostboiAuthError(
+			data?.message ?? `the Postboi provider responded with ${response.status} — try again shortly.`
+		)
+	}
+	if (typeof data?.token !== "string") {
+		// An older API without the provision endpoint answers with HTML or a 404 shape.
+		throw new PostboiAuthError(
+			"This Postboi API doesn't support zero-setup provisioning — run `postboi init` without --agent to sign in."
+		)
+	}
+	return {
+		token: data.token,
+		send_address: typeof data.send_address === "string" ? data.send_address : undefined,
+		claim_url: typeof data.claim_url === "string" ? data.claim_url : undefined,
+		expires_in_days: typeof data.expires_in_days === "number" ? data.expires_in_days : undefined,
+	}
+}
+
 /** Poll until the browser side authorises (resolves with the claim) or the code dies. */
 export async function poll_device_auth(
 	base: string,

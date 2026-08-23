@@ -83,6 +83,9 @@ async function whoami(): Promise<void> {
 		suspended: boolean
 		sends_today: number
 		sends_this_month: number
+		sandbox?: boolean
+		unclaimed?: boolean
+		claim_url?: string
 	}>("/v1/account")
 	console.log(`${bold(account.name ?? "My Team")} ${dim(`(${account.id})`)}`)
 	console.log(`  plan          ${account.plan}`)
@@ -91,6 +94,13 @@ async function whoami(): Promise<void> {
 		`  sends         ${account.sends_today} today, ${account.sends_this_month} this month`
 	)
 	if (account.suspended) console.log(`  ${red("suspended — contact support@postboi.app")}`)
+	if (account.unclaimed && account.claim_url) {
+		console.log(
+			`  ${yellow("unclaimed")}     sandboxed until claimed — claim it at ${cyan(account.claim_url)}`
+		)
+	} else if (account.sandbox) {
+		console.log(`  ${yellow("sandbox")}       sends are logged, nothing is delivered`)
+	}
 }
 
 /**

@@ -47,6 +47,43 @@ except the token.
 The Postboi provider also includes **managed invisible captcha** for your forms: one script tag from
 the dashboard, no Cloudflare account, no keys. See [Spam protection](/spam).
 
+## Zero setup for agents & CI
+
+`postboi init --agent` removes the last human step. No browser, no sign-in, no prompts —
+one API round trip mints a **claimable project** and the CLI wires everything exactly as
+the interactive flow would:
+
+```bash
+bunx postboi init --agent
+```
+
+- **The token lands in `.env`** (gitignored automatically), the config is written, the
+  package installed, the agent skill linked.
+- **Your sending address is your project's name.** The `package.json` name seeds the
+  slug: `@acme/mail-site` sends from `mail-site@send.postboi.email` (a suffix is added if
+  it's taken, and a friendly random slug stands in when the name can't be an address).
+- **Sends work immediately, sandboxed.** Every send runs the full pipeline — message log,
+  webhooks, status — but nothing is delivered and nothing can reach a real inbox. The
+  response says so: `{ id, sandbox: true, claim_url }`.
+- **One sign-in makes it real.** The CLI prints a **claim URL**; opening it and signing
+  in (a magic link — that's the account creation too) transfers the project to you and
+  lifts the sandbox. Everything the agent built keeps working unchanged, and the
+  sandboxed sends are waiting in your message log.
+- **Unclaimed projects expire.** A project nobody claims *and* nobody uses for 14 days is
+  deleted. Activity counts: while your token keeps sending sandboxed mail, the project
+  stays alive for you to claim.
+
+In development none of this even matters yet — with the [dev inbox](/dev-inbox) running,
+mail is captured locally before the provider is consulted, so the sandbox only shows up
+in deployed or production-mode sends.
+
+**If you're an AI coding agent:** run `init --agent` when no `POSTBOI_TOKEN` exists and
+no human is available to sign in, then **surface the claim URL prominently** in your
+summary — it's the one thing only your human can do. `postboi whoami` re-prints it any
+time. The other channels accept the flag too (`init --push --agent` mints VAPID keys and
+wires the service worker with no prompts); channels that need paid credentials (SMS,
+WhatsApp) will tell you exactly which env var they're missing instead of prompting.
+
 ## Your sending address
 
 Free-tier mail goes out from `you@send.postboi.email`, derived from your signup email.

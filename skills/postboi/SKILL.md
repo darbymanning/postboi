@@ -12,10 +12,12 @@ Every docs page is raw Markdown at `https://docs.postboi.app/raw/<slug>` — fet
 ## Setup
 
 ```bash
-bunx postboi init   # or npx — email; add --sms, --whatsapp, --push or --chat for a channel
+bunx postboi init --agent   # or npx — zero prompts, zero sign-in; add --sms, --whatsapp, --push or --chat for a channel
 ```
 
 Always start here: it picks a provider, writes secrets, and installs the package. Don't hand-write provider wiring unless the runtime demands it (see [Edge runtimes](#edge-runtimes)).
+
+**`--agent` means no human is needed**: no `POSTBOI_TOKEN` yet → it provisions a claimable sandbox project on the spot and prints a **claim URL** — relay that URL to your user prominently (see [Account setup](#account-setup--migration-cli--rest-api)). Have a token or a human at the keyboard who wants to sign in now → plain `bunx postboi init`.
 
 **The config split is a hard rule:** API keys/tokens → env file. Provider name, defaults, non-secret options → committed `postboi.config.ts`.
 
@@ -247,9 +249,19 @@ Cloudflare Workers, and anything else without a filesystem. `/raw/cloudflare-wor
 
 ## Account setup & migration (CLI + REST API)
 
-With the Postboi provider the whole account is manageable from the terminal. Exactly two steps need the human; everything else is agent-runnable:
+With the Postboi provider the whole account is manageable from the terminal — **including the account itself**:
 
-1. **Sign-in** — `bunx postboi init` is interactive and opens a browser to authorise. Have the user run it, or drive it yourself and relay the printed URL. Once `POSTBOI_TOKEN` is in the env, every command below is non-interactive and safe to run repeatedly.
+```bash
+bunx postboi init --agent   # zero prompts, zero sign-in: provisions a claimable project
+```
+
+**`--agent` is your default when the project has no `POSTBOI_TOKEN`.** It mints an account in one round trip (no browser, no human), writes the token to `.env`, writes the config, and derives the sending address from the package.json name (`@acme/mail-site` → `mail-site@send.postboi.email`). Sends work immediately but are **sandboxed** — full pipeline, message log, webhooks, `{ id, sandbox: true, claim_url }` responses — and nothing is delivered until a human claims the project. It also works per channel: `init --push --agent` mints VAPID keys and wires the service worker promptlessly; SMS/WhatsApp under `--agent` name the exact env var they're missing instead of prompting.
+
+**You MUST surface the claim URL prominently at the end of your task** — put it in your summary, not just the terminal scrollback. It is the one step only the human can do: one sign-in at that URL transfers the project to them and flips sandboxed sends to real delivery, with zero code changes. `bunx postboi whoami` re-prints it any time. Unclaimed projects idle for 14 days are deleted.
+
+The steps that still involve the human, when they come up later:
+
+1. **Claiming** — the claim URL above (only for `--agent` projects; interactive `bunx postboi init` signs in up front instead and is never sandboxed).
 2. **DNS approval** — `domains add` prints a one-click setup URL the user clicks at their registrar (or pastes the printed records).
 
 ```bash
@@ -273,9 +285,9 @@ Anything richer than the CLI exposes, use the REST API — interactive reference
 
 ### Fresh project playbook
 
-`init` (human signs in) → `whoami` → wire the code → optionally `domains add`, user clicks the setup link, `domains check` → only once **verified**, set `default.from` to the custom domain → `webhooks add` + `sync` if the app reacts to delivery events.
+`init --agent` (no human needed) → `whoami` → wire the code → **hand the user the claim URL** → optionally `domains add`, user clicks the setup link, `domains check` → only once **verified**, set `default.from` to the custom domain → `webhooks add` + `sync` if the app reacts to delivery events. When the human is present and wants to sign in now, plain `init` (interactive) does that instead and skips the sandbox.
 
-Until a domain verifies, sends come from the account's shared `send.postboi.email` address. That works immediately, so **never block the code migration on DNS**.
+Until a domain verifies, sends come from the account's shared `send.postboi.email` address. That works immediately, so **never block the code migration on DNS** — and never block wiring the code on the claim either: sandboxed sends prove the integration end to end (they're in the message log), and in dev the [dev inbox](https://docs.postboi.app/raw/dev-inbox) captures everything locally anyway.
 
 ### Migrating from another ESP
 

@@ -63,6 +63,7 @@ import {
 } from "./service_worker.js"
 import {
 	create_prompts,
+	create_auto_prompts,
 	PromptCancelledError,
 	bold,
 	dim,
@@ -77,6 +78,7 @@ import {
 	cloud_base,
 	start_device_auth,
 	poll_device_auth,
+	provision_account,
 	open_browser,
 	fetch_domains,
 	fetch_env_vars,
@@ -127,6 +129,8 @@ ${dim(`  v${version()}`)}
 
 ${bold("Usage")}
   ${cyan("bunx postboi init")}     Set up the Postboi provider or a provider of your own
+  ${dim("                          · --agent: zero prompts, zero sign-in — provisions a claimable")}
+  ${dim("                            sandbox account (made for AI coding agents and CI)")}
   ${cyan("bunx postboi sync")}     Pull synced team credentials and refresh the generated from/template types
   ${cyan("bunx postboi env")}      The synced credentials ${dim("· push · pull [--force] · remove <KEY>")}
   ${cyan("bunx postboi vapid")}    Mint a VAPID key pair for Web Push, printed to stdout
@@ -151,6 +155,17 @@ ${bold("Options")}
   -h, --help        Show this help
   -V, --version     Show the version
 `)
+}
+
+/** The committer's email from git config, or undefined — the unattended VAPID subject. */
+function git_email(): string | undefined {
+	try {
+		const result = spawnSync("git", ["config", "user.email"], { encoding: "utf8" })
+		const email = result.status === 0 ? result.stdout.trim() : ""
+		return email.includes("@") ? email : undefined
+	} catch {
+		return undefined
+	}
 }
 
 /** Is an executable named `cmd` on PATH? Lets us skip a push cleanly instead of failing per-var. */
@@ -196,6 +211,9 @@ async function choose_env_targets(
 ): Promise<Array<EnvTarget>> {
 	const detected = detect_env_targets(files)
 	if (detected.length === 1) return detected
+	// Unattended, "all of them" is the only answer that can't be wrong — every file a
+	// tool might load gets the secret, none is left silently stale.
+	if (prompts.agent) return detected
 
 	const choice = await prompts.select<EnvTarget | "all">(`\n${bold("Write to which env file?")}`, [
 		...detected.map((t) => ({
@@ -367,6 +385,10 @@ async function offer_host_push(
 	files: Array<string>,
 	values: Record<string, string>
 ): Promise<void> {
+	// Never unattended: it shells out to host CLIs, whose auth prompts and link flows
+	// belong to a human. The values are in the env files either way.
+	if (prompts.agent) return
+
 	const config_sources = [
 		"svelte.config.js",
 		"svelte.config.ts",
@@ -953,6 +975,16 @@ async function sync(): Promise<void> {
  * The Postboi provider onboarding: authorise this device in the browser, write the resulting
  * `POSTBOI_TOKEN`, then a `postboi.config.ts` for defaults and hooks. No provider account, no DNS.
  */
+/** The project's package.json name — seeds a provisioned account's name and sending slug. */
+function read_project_name(): string | undefined {
+	try {
+		const name: unknown = JSON.parse(readFileSync("package.json", "utf8")).name
+		return typeof name === "string" && name.trim() ? name.trim() : undefined
+	} catch {
+		return undefined
+	}
+}
+
 async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	const base = cloud_base()
 
@@ -965,9 +997,24 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 	const reused = cloud_account !== undefined
 	let token = existing_token ?? ""
 	let send_address = cloud_account?.send_address
+	let claim_url: string | undefined
+	let claim_days: number | undefined
 
 	if (reused) {
 		console.log(`${green("✓")} using your existing ${bold("POSTBOI_TOKEN")}`)
+	} else if (prompts.agent) {
+		// Zero setup: no browser, no sign-in, no human. One round trip mints a claimable
+		// project — sandboxed until someone claims it at the printed URL — and the
+		// package name seeds the sending address, so mail reads like the project.
+		const project = read_project_name()
+		const provisioned = await provision_account(base, { name: project, slug: project })
+		token = provisioned.token
+		send_address = provisioned.send_address
+		claim_url = provisioned.claim_url
+		claim_days = provisioned.expires_in_days
+		console.log(`${green("✓")} provisioned a Postboi project — no sign-in needed`)
+		if (send_address) console.log(`  ${dim("sends from")} ${bold(send_address)}`)
+		cloud_account = await fetch_domains(base, token)
 	} else {
 		const start = await start_device_auth(base)
 
@@ -1074,6 +1121,25 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 		? ""
 		: " Verify a domain in the dashboard to send from your own."
 	console.log(dim(`${from_note} — set reply_to to receive replies.${domain_hint}`) + "\n")
+
+	// The one thing a zero-setup run still owes a human: the claim link. Everything
+	// works right now (dev inbox locally, sandboxed sends in the message log), and one
+	// sign-in at this URL flips it to real delivery — so say it last, loudest.
+	if (claim_url) {
+		const expiry = claim_days
+			? ` Unclaimed and idle for ${claim_days} days, the project is deleted.`
+			: ""
+		console.log(`${yellow(bold("Claim your project"))} ${dim("(sends are sandboxed until then)")}`)
+		console.log(`\n  ${cyan(claim_url)}\n`)
+		console.log(
+			dim(
+				`Sandboxed sends run the full pipeline and land in your message log — nothing is delivered until you claim.${expiry}`
+			) + "\n"
+		)
+		console.log(
+			`${yellow("→")} ${bold("Agents:")} show this claim URL to your user — it's how they take ownership.\n`
+		)
+	}
 }
 
 /**
@@ -1350,7 +1416,18 @@ const CHANNEL_INIT = {
 		async mint(prompts: Prompts, provider: ChannelProvider, prefilled: Record<string, string>) {
 			if (provider.key === "apns")
 				return offer_auth_key(prompts, prefilled, key_search_paths(cwd()))
-			if (provider.key !== "webpush" || prefilled.VAPID_PRIVATE_KEY !== undefined) return
+			if (provider.key !== "webpush") return
+			// Unattended, the VAPID subject (a contact address for the push service) comes
+			// from git — the committer is the operator in the zero-setup flow, and asking
+			// would dead-end a run with nobody at the keyboard.
+			if (prompts.agent && prefilled.VAPID_SUBJECT === undefined) {
+				const email = git_email()
+				if (email) {
+					prefilled.VAPID_SUBJECT = email
+					console.log(`${green("✓")} ${bold("VAPID_SUBJECT")} — using your git email (${email})`)
+				}
+			}
+			if (prefilled.VAPID_PRIVATE_KEY !== undefined) return
 			if (!(await prompts.confirm("Generate a fresh VAPID key pair?"))) return
 			const pair = await generate_vapid_keys()
 			prefilled.VAPID_PUBLIC_KEY = pair.public_key
@@ -1510,12 +1587,26 @@ async function channel_init(
 	// Values the team already synced answer their prompts — type it once, on one machine.
 	const prefilled = prefill_from_team(team, provider.fields)
 
+	// Unattended, the project's own env answers prompts too: an agent whose .env already
+	// carries the credentials (or a re-run) shouldn't dead-end on questions the project
+	// can answer itself. `synced_credentials` above already loaded the env files.
+	if (prompts.agent) {
+		for (const field of provider.fields) {
+			const value = read_env(field.env)
+			if (prefilled[field.env] === undefined && value) {
+				console.log(`${green("✓")} ${bold(field.env)} — using the value already in your env`)
+				prefilled[field.env] = value
+			}
+		}
+	}
+
 	// Providers with a registered OAuth app (`connect` in the registry) don't need their
 	// webhook found and pasted at all: the browser opens the provider's consent screen,
 	// the user picks a channel there, and the created webhook URL comes back on a
 	// one-time code. Skipped when the team already synced one; every failure (older API,
-	// offline, consent denied, tab closed) falls back to the paste prompt.
-	if (provider.connect && prefilled[provider.connect.env] === undefined) {
+	// offline, consent denied, tab closed) falls back to the paste prompt. Unattended
+	// it's skipped outright — a consent screen needs a human in front of it.
+	if (provider.connect && !prompts.agent && prefilled[provider.connect.env] === undefined) {
 		const method = await prompts.select<"connect" | "paste">(bold(`Set up ${provider.name}?`), [
 			{
 				label: "Connect in the browser",
@@ -1642,8 +1733,10 @@ function write_channel_config(
 	console.log(`${green("✓")} wrote ${bold(file)}`)
 }
 
-async function init(channel?: "sms" | "chat" | "push" | "whatsapp"): Promise<void> {
-	const prompts = create_prompts()
+async function init(channel?: "sms" | "chat" | "push" | "whatsapp", agent = false): Promise<void> {
+	// `--agent` swaps the prompter for one that answers itself — same flow, no questions,
+	// and the Postboi auth step provisions a claimable project instead of opening a browser.
+	const prompts = agent ? create_auto_prompts() : create_prompts()
 	console.log()
 	console.log(banner())
 	console.log()
@@ -1652,6 +1745,10 @@ async function init(channel?: "sms" | "chat" | "push" | "whatsapp"): Promise<voi
 
 	try {
 		if (channel) return await channel_init(prompts, files, channel)
+		// Unattended there is no picker to answer: email through the Postboi provider is
+		// the only mode that needs zero credentials, which is the whole point of --agent.
+		// The other channels stay reachable as `--agent --push` etc.
+		if (agent) return await cloud_init(prompts, files)
 		const mode = await prompts.select<"cloud" | "byo" | "sms" | "chat" | "push" | "whatsapp">(
 			bold("What do you want to set up?"),
 			[
@@ -1728,7 +1825,7 @@ async function main(): Promise<void> {
 		const channel = (["sms", "chat", "push", "whatsapp"] as const).find((c) =>
 			argv.includes(`--${c}`)
 		)
-		return init(channel)
+		return init(channel, argv.includes("--agent"))
 	}
 	if (command === "skill") {
 		if (!skill_command()) exit(1)

@@ -44,12 +44,18 @@ import {
 	install_command,
 	is_bundled_framework,
 } from "./project.js"
-import { create_prompts, PromptCancelledError } from "./prompts.js"
+import {
+	create_prompts,
+	create_auto_prompts,
+	AgentAnswerError,
+	PromptCancelledError,
+} from "./prompts.js"
 import { banner } from "./banner.js"
 import {
 	cloud_base,
 	start_device_auth,
 	poll_device_auth,
+	provision_account,
 	fetch_domains,
 	fetch_env_vars,
 	push_env_vars,
@@ -533,6 +539,100 @@ describe("cloud device flow", () => {
 				}
 			)
 		).rejects.toThrow(/timed out/i)
+	})
+})
+
+describe("provision_account (zero setup)", () => {
+	const json = (body: unknown, status = 200) =>
+		({
+			ok: status >= 200 && status < 300,
+			status,
+			json: async () => body,
+		}) as Response
+
+	it("posts the project's name and slug and returns the claimable account", async () => {
+		let posted: { url: string; body: unknown } | undefined
+		const result = await provision_account(
+			"https://postboi.app",
+			{ name: "acme-site", slug: "acme-site" },
+			async (url, init) => {
+				posted = { url, body: JSON.parse(String(init?.body)) }
+				return json({
+					token: "pb_secret",
+					send_address: "acme-site@send.postboi.email",
+					claim_url: "https://postboi.app/claim/abc",
+					expires_in_days: 14,
+				})
+			}
+		)
+		expect(posted).toEqual({
+			url: "https://postboi.app/api/cli/provision",
+			body: { name: "acme-site", slug: "acme-site" },
+		})
+		expect(result).toEqual({
+			token: "pb_secret",
+			send_address: "acme-site@send.postboi.email",
+			claim_url: "https://postboi.app/claim/abc",
+			expires_in_days: 14,
+		})
+	})
+
+	it("relays the API's message on a rejection (rate limit)", async () => {
+		await expect(
+			provision_account("https://postboi.app", {}, async () =>
+				json({ message: "You've set up 5 projects today", code: "rate_limited" }, 429)
+			)
+		).rejects.toThrow(/5 projects today/)
+	})
+
+	it("explains itself against an API that predates provisioning", async () => {
+		await expect(
+			provision_account("https://postboi.app", {}, async () => json({ ok: true }))
+		).rejects.toThrow(/without --agent/)
+	})
+
+	it("wraps network failures in a friendly error", async () => {
+		await expect(
+			provision_account("https://postboi.app", {}, async () => {
+				throw new Error("ECONNREFUSED")
+			})
+		).rejects.toBeInstanceOf(PostboiAuthError)
+	})
+})
+
+describe("auto prompts (--agent)", () => {
+	const options = [
+		{ label: "One", value: 1 },
+		{ label: "Two", value: 2 },
+	]
+
+	it("answers every prompt the way pressing Enter would", async () => {
+		const prompts = create_auto_prompts()
+		expect(prompts.agent).toBe(true)
+		expect(await prompts.ask("Name?", { default: "acme" })).toBe("acme")
+		expect(await prompts.ask("Optional?")).toBe("")
+		expect(await prompts.select("Pick one", options)).toBe(1)
+		expect(await prompts.confirm("Sure?")).toBe(true)
+		expect(await prompts.confirm("Sure?", false)).toBe(false)
+	})
+
+	it("throws rather than loops on a required question with no default", async () => {
+		const prompts = create_auto_prompts()
+		await expect(prompts.ask("API key (RESEND_API_KEY)", { required: true })).rejects.toThrow(
+			AgentAnswerError
+		)
+		await expect(prompts.ask("API key (RESEND_API_KEY)", { required: true })).rejects.toThrow(
+			/RESEND_API_KEY/
+		)
+	})
+
+	it("the interactive prompter identifies itself as non-agent", async () => {
+		const prompts = create_prompts({
+			input: Readable.from([]),
+			output: new Writable({ write: (_chunk, _enc, cb) => cb() }),
+		})
+		expect(prompts.agent).toBe(false)
+		prompts.close()
 	})
 })
 
