@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Install and check every example — the loop CI's Examples job runs, shared with
-# the release workflow so "a green run here is a green run there" stays true by
-# construction rather than by copy-paste.
+# Install every example's pins from npm and run its ci script — the release
+# workflow's post-publish check that the pins and the published artifact hold
+# up. (CI's Examples job tests the other side: a tarball packed from the
+# commit under test, before any release exists.)
 
 failed=""
 for dir in examples/*/; do

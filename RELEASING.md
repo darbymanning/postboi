@@ -133,12 +133,13 @@ npm run release:examples -- X.Y.Z
 bash scripts/check-examples.sh
 ```
 
-Each `examples/*/package.json` pins `"postboi": "^X.Y.Z"`, and pre-1.0 a caret
-doesn't cross the minor — `^0.30.0` can never install `0.31.0` — so until they're
-bumped the examples keep building against the previous release, and the CI
-**Examples** job on `main` goes red the moment one of them uses something the
-release added. `check-examples.sh` is the same script the CI **Examples** job
-runs, so a green run here is a green run there.
+Each `examples/*/package.json` pins `"postboi": "^X.Y.Z"`. CI doesn't resolve
+those pins — the **Examples** job packs a tarball from the commit under test and
+installs that — so the bump exists for the person copying an example folder: the
+pin is what they actually install, and a stale one hands them a release that
+predates the code beside it. `check-examples.sh` is the other half: it installs
+the pins from npm, which is exactly the check the release workflow runs against
+the freshly published package.
 
 If tags can't be pushed from where you're releasing (e.g. a remote sandbox whose
 git proxy only allows branch pushes), push `main` with the version-bump commit
