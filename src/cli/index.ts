@@ -100,6 +100,7 @@ import {
 } from "./typegen.js"
 import { fetch_whatsapp_templates } from "./whatsapp_templates.js"
 import { offer_skill, refresh_skill, skill_command } from "./skill.js"
+import { detect_domains, type DomainHint } from "./domain_hint.js"
 import { api_command } from "./api.js"
 import { dev_command } from "./dev.js"
 import { ensure_env_loaded, read_env } from "../library/env.js"
@@ -1107,6 +1108,53 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 	}
 	if (types_file || cloud_account?.captcha_key) ensure_prepare()
 
+	// A custom sending domain, offered while we're here — optional and skippable, since
+	// the shared address already delivers. The project usually knows its own domain
+	// (astro `site`, package.json homepage, CNAME, wrangler routes, a SITE_URL), so the
+	// answer arrives prefilled; DNS is the human's click at their registrar either way,
+	// which is exactly why a wrong hint costs one keystroke and registering the right
+	// one costs none. Unattended, nothing is registered — ownership is the human's to
+	// assert — the hint just rides along in the closing summary for the agent to confirm.
+	let domain_hint: DomainHint | undefined
+	if (domains.length === 0) {
+		domain_hint = detect_domains()[0]
+		if (!prompts.agent) {
+			const hinted = domain_hint ? ` ${dim(`(${domain_hint.domain} detected)`)}` : ""
+			const wants = await prompts.confirm(
+				`\nSend from your own domain?${hinted} ${dim("— optional, DNS records at your registrar")}`,
+				Boolean(domain_hint)
+			)
+			if (wants) {
+				const answer = await prompts.ask(
+					`Domain ${dim(domain_hint ? `(${domain_hint.source})` : "(e.g. example.com)")}`,
+					{ default: domain_hint?.domain }
+				)
+				const domain = answer
+					.trim()
+					.toLowerCase()
+					.replace(/^https?:\/\//, "")
+					.replace(/^www\./, "")
+					.replace(/\/.*$/, "")
+				if (domain) {
+					// The token may only exist in the env file written moments ago — make it
+					// visible to the API commands' env lookup for the rest of this process.
+					env.POSTBOI_TOKEN = token
+					try {
+						await api_command("domains", ["add", domain])
+						console.log(
+							dim(
+								`\nOnce verified: bunx postboi send-address you@${domain} — until then, mail keeps sending from ${send_address ?? "your shared address"}.`
+							)
+						)
+					} catch (error) {
+						console.log(`${red("✗")} ${error instanceof Error ? error.message : String(error)}`)
+						console.log(dim(`  add it later: bunx postboi domains add ${domain}`))
+					}
+				}
+			}
+		}
+	}
+
 	await offer_skill(prompts)
 
 	console.log(`\n${green(bold("Done!"))} Just send:\n`)
@@ -1117,10 +1165,10 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 	const from_note = from
 		? `Emails send from ${from}`
 		: "Emails send from your account's send.postboi.email address"
-	const domain_hint = config_defaults.from
+	const verify_hint = config_defaults.from
 		? ""
-		: " Verify a domain in the dashboard to send from your own."
-	console.log(dim(`${from_note} — set reply_to to receive replies.${domain_hint}`) + "\n")
+		: " Verify a domain to send from your own — `bunx postboi domains add <domain>`."
+	console.log(dim(`${from_note} — set reply_to to receive replies.${verify_hint}`) + "\n")
 
 	// The one thing a zero-setup run still owes a human: the claim link. Everything
 	// works right now (dev inbox locally, sandboxed sends in the message log), and one
@@ -1138,6 +1186,17 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 		)
 		console.log(
 			`${yellow("→")} ${bold("Agents:")} show this claim URL to your user — it's how they take ownership.\n`
+		)
+	}
+
+	// Unattended domain hand-off: the CLI never registers a domain nobody confirmed, but
+	// the agent should walk away knowing what to ask its user and which command follows.
+	if (prompts.agent && domain_hint) {
+		console.log(
+			`${yellow("→")} ${bold("Agents:")} this project's domain looks like ${bold(domain_hint.domain)} ${dim(`(${domain_hint.source})`)}.`
+		)
+		console.log(
+			`  ${dim("Confirm it with your user, then:")} ${cyan(`bunx postboi domains add ${domain_hint.domain}`)} ${dim("— prints the DNS records and a one-click registrar link.")}\n`
 		)
 	}
 }

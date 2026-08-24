@@ -39,7 +39,11 @@ of failing, and only throws once you deploy.
 
 That's the setup. Mail sends from your account's `you@send.postboi.email` address — a real
 deliverable address, but not an inbox, so set `reply_to` if you want replies — until you
-[verify a domain](/provider#sending-from-your-own-domain) of your own.
+[verify a domain](/provider#sending-from-your-own-domain) of your own. `init` offers that
+too, at the end: it detects your project's domain (astro `site`, `package.json`
+`homepage`, a `CNAME` file, wrangler routes, `SITE_URL`-style env vars), prefills the
+prompt, registers the domain on a yes, and opens the one-click DNS link for your
+registrar. Skippable with one Enter — nothing waits on it.
 
 Because Postboi knows your account, `init` can wire up things a bring-your-own provider
 can't:

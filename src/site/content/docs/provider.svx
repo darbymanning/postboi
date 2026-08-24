@@ -84,6 +84,13 @@ time. The other channels accept the flag too (`init --push --agent` mints VAPID 
 wires the service worker with no prompts); channels that need paid credentials (SMS,
 WhatsApp) will tell you exactly which env var they're missing instead of prompting.
 
+`--agent` also **detects the project's domain** (astro `site`, `package.json`
+`homepage`, a `CNAME` file, wrangler routes, `SITE_URL`-style env vars) and prints it as
+a suggestion rather than registering it — ownership is the human's to assert. Confirm it
+with your user, run `bunx postboi domains add <domain>`, and hand them the printed
+one-click DNS link together with the claim URL: two clicks, and the project delivers
+from its own domain.
+
 ## Your sending address
 
 Free-tier mail goes out from `you@send.postboi.email`, derived from your signup email.
@@ -137,7 +144,11 @@ over your real mail, so inbound stays on `send.postboi.email`.
 
 ## Sending from your own domain
 
-Verify a domain in the dashboard: add a domain, publish the three DKIM CNAME records it
+`init` offers this at the end of setup — it detects your project's domain (astro `site`,
+`package.json` `homepage`, a `CNAME` file, wrangler routes, `SITE_URL`-style env vars)
+and prefills the prompt, so accepting is one Enter. Or do it any time from the terminal
+(`bunx postboi domains add yourdomain.com` — prints the records and a one-click
+registrar link) or the dashboard: add a domain, publish the three DKIM CNAME records it
 shows you, and hit **Check**. Once verified, any address at that domain is a valid `from`:
 
 ```ts

@@ -74,6 +74,7 @@ import {
 	from_status,
 } from "./typegen.js"
 import { bundled_skill, offer_skill, refresh_skill, skill_command } from "./skill.js"
+import { detect_domains, hostname_of } from "./domain_hint.js"
 import { find_auth_keys, offer_auth_key, verify_apns } from "./apns.js"
 
 // verify_apns drives the real APNs provider, whose transport is HTTP/2 rather than
@@ -597,6 +598,88 @@ describe("provision_account (zero setup)", () => {
 				throw new Error("ECONNREFUSED")
 			})
 		).rejects.toBeInstanceOf(PostboiAuthError)
+	})
+})
+
+describe("domain hints", () => {
+	/** A throwaway project directory holding exactly `files`. */
+	function project(files: Record<string, string>): string {
+		const dir = mkdtempSync(join(tmpdir(), "postboi-domains-"))
+		for (const [path, content] of Object.entries(files)) {
+			mkdirSync(dirname(join(dir, path)), { recursive: true })
+			writeFileSync(join(dir, path), content)
+		}
+		return dir
+	}
+
+	it("hostname_of normalises URLs, origins and bare hosts", () => {
+		expect(hostname_of("https://www.acme.com/about")).toBe("acme.com")
+		expect(hostname_of("acme.co.uk")).toBe("acme.co.uk")
+		expect(hostname_of('"https://acme.com"')).toBe("acme.com")
+	})
+
+	it("hostname_of rejects what can't be a sending domain", () => {
+		expect(hostname_of("http://localhost:5173")).toBeUndefined()
+		expect(hostname_of("192.168.0.1")).toBeUndefined()
+		expect(hostname_of("https://demo.vercel.app")).toBeUndefined()
+		expect(hostname_of("https://my-site.pages.dev")).toBeUndefined()
+		expect(hostname_of("https://example.com")).toBeUndefined()
+		expect(hostname_of("justoneword")).toBeUndefined()
+		expect(hostname_of("")).toBeUndefined()
+	})
+
+	it("reads the domain out of a CNAME file, verbatim", () => {
+		const dir = project({ CNAME: "acme.com\n" })
+		expect(detect_domains(dir)[0]).toEqual({ domain: "acme.com", source: "CNAME" })
+	})
+
+	it("reads astro's site, package.json homepage and wrangler routes", () => {
+		const astro = project({ "astro.config.mjs": 'export default { site: "https://www.acme.dev" }' })
+		expect(detect_domains(astro)[0]).toEqual({
+			domain: "acme.dev",
+			source: "astro.config.mjs site",
+		})
+
+		const pkg = project({ "package.json": '{ "homepage": "https://acme.studio" }' })
+		expect(detect_domains(pkg)[0]).toEqual({
+			domain: "acme.studio",
+			source: "package.json homepage",
+		})
+
+		const wrangler = project({
+			"wrangler.jsonc": '{ "routes": [{ "pattern": "acme.io/*", "custom_domain": true }] }',
+		})
+		expect(detect_domains(wrangler)[0]).toEqual({
+			domain: "acme.io",
+			source: "wrangler.jsonc routes",
+		})
+	})
+
+	it("reads site-URL env vars but never credential-shaped ones", () => {
+		const dir = project({
+			".env": [
+				"DATABASE_URL=postgres://db.supabase.co/postgres",
+				"PUBLIC_SITE_URL=https://acme.gallery",
+			].join("\n"),
+		})
+		const hints = detect_domains(dir)
+		expect(hints).toEqual([{ domain: "acme.gallery", source: ".env PUBLIC_SITE_URL" }])
+	})
+
+	it("ranks stronger signals first and dedupes across files", () => {
+		const dir = project({
+			CNAME: "acme.com",
+			"package.json": '{ "homepage": "https://acme.com" }',
+			".env": "PUBLIC_SITE_URL=https://app.acme.com",
+		})
+		expect(detect_domains(dir)).toEqual([
+			{ domain: "acme.com", source: "CNAME" },
+			{ domain: "app.acme.com", source: ".env PUBLIC_SITE_URL" },
+		])
+	})
+
+	it("finds nothing in a project that says nothing", () => {
+		expect(detect_domains(project({ "package.json": '{ "name": "quiet" }' }))).toEqual([])
 	})
 })
 

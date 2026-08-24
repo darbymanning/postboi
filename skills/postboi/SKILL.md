@@ -264,6 +264,8 @@ The steps that still involve the human, when they come up later:
 1. **Claiming** — the claim URL above (only for `--agent` projects; interactive `bunx postboi init` signs in up front instead and is never sandboxed).
 2. **DNS approval** — `domains add` prints a one-click setup URL the user clicks at their registrar (or pastes the printed records).
 
+**Custom sending domain — get it from the user or the project, never guess.** If the user named their domain, or the project states it unambiguously (astro `site`, `package.json` `homepage`, a `CNAME` file, wrangler routes, a `SITE_URL` env var — `init --agent` prints what it detected as a suggestion), confirm it and run `bunx postboi domains add <domain>` yourself, then surface the printed one-click DNS link **next to the claim URL** so the human's two clicks live in one place. If the domain is ambiguous or absent, ask — one question — or skip it: registering a domain the user doesn't own just parks an unverifiable entry on the account. Interactive `init` offers the same thing itself (prefilled with the detected domain), so don't double-register after a human ran it.
+
 ```bash
 bunx postboi whoami                                # account, plan, usage — run first to verify the token
 bunx postboi domains add example.com               # prints DNS records + one-click Domain Connect URL
