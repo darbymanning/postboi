@@ -628,6 +628,17 @@ describe("domain hints", () => {
 		expect(hostname_of("")).toBeUndefined()
 	})
 
+	it("hostname_of matches platform suffixes on label boundaries only", () => {
+		// Real customer domains that merely end with a platform suffix's spelling.
+		expect(hostname_of("https://butterfly.dev")).toBe("butterfly.dev")
+		expect(hostname_of("https://myweb.app")).toBe("myweb.app")
+		expect(hostname_of("https://snow.sh")).toBe("snow.sh")
+		expect(hostname_of("https://grandexample.com")).toBe("grandexample.com")
+		// The platforms themselves and their subdomains stay rejected.
+		expect(hostname_of("https://fly.dev")).toBeUndefined()
+		expect(hostname_of("https://my-app.fly.dev")).toBeUndefined()
+	})
+
 	it("reads the domain out of a CNAME file, verbatim", () => {
 		const dir = project({ CNAME: "acme.com\n" })
 		expect(detect_domains(dir)[0]).toEqual({ domain: "acme.com", source: "CNAME" })

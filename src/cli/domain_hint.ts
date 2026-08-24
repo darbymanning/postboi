@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { parse_env } from "./env.js"
 
 /**
  * Where a project says its own public domain out loud. Nothing here *decides* anything —
@@ -89,7 +90,15 @@ export function hostname_of(value: string): string | undefined {
 		return undefined
 	}
 	if (/^\d+(\.\d+)+$/.test(host)) return undefined
-	if (REJECT_SUFFIXES.some((suffix) => host === suffix || host.endsWith(suffix))) {
+	// Label-boundary match: `demo.vercel.app` is platform-owned, `butterfly.dev` is not
+	// `fly.dev` — a bare-string endsWith would reject real customer domains.
+	if (
+		REJECT_SUFFIXES.some((suffix) =>
+			suffix.startsWith(".")
+				? host.endsWith(suffix)
+				: host === suffix || host.endsWith(`.${suffix}`)
+		)
+	) {
 		return undefined
 	}
 	return host
@@ -216,12 +225,10 @@ export function detect_domains(dir = "."): Array<DomainHint> {
 		].flatMap((key) => [key, `PUBLIC_${key}`, `NEXT_PUBLIC_${key}`, `VITE_${key}`])
 	)
 	for (const env_file of [".env", ".env.local", ".env.production"]) {
-		const text = read_if_present(join(dir, env_file))
-		for (const line of text.split("\n")) {
-			const assignment = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.+)$/.exec(line)
-			if (assignment && SITE_KEYS.has(assignment[1])) {
-				add(assignment[2], `${env_file} ${assignment[1]}`)
-			}
+		// The CLI's own dotenv grammar (quotes, comments, CRLF) rather than a second one
+		// that would drift from it.
+		for (const [key, value] of Object.entries(parse_env(read_if_present(join(dir, env_file))))) {
+			if (SITE_KEYS.has(key)) add(value, `${env_file} ${key}`)
 		}
 	}
 

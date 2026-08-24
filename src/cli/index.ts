@@ -85,6 +85,7 @@ import {
 	push_env_vars,
 	start_connect,
 	poll_connect,
+	PostboiAuthError,
 	type ConnectResult,
 	type PostboiDomain,
 } from "./postboi.js"
@@ -100,7 +101,7 @@ import {
 } from "./typegen.js"
 import { fetch_whatsapp_templates } from "./whatsapp_templates.js"
 import { offer_skill, refresh_skill, skill_command } from "./skill.js"
-import { detect_domains, type DomainHint } from "./domain_hint.js"
+import { detect_domains, hostname_of, type DomainHint } from "./domain_hint.js"
 import { api_command } from "./api.js"
 import { dev_command } from "./dev.js"
 import { ensure_env_loaded, read_env } from "../library/env.js"
@@ -972,10 +973,6 @@ async function sync(): Promise<void> {
 	}
 }
 
-/**
- * The Postboi provider onboarding: authorise this device in the browser, write the resulting
- * `POSTBOI_TOKEN`, then a `postboi.config.ts` for defaults and hooks. No provider account, no DNS.
- */
 /** The project's package.json name — seeds a provisioned account's name and sending slug. */
 function read_project_name(): string | undefined {
 	try {
@@ -986,6 +983,10 @@ function read_project_name(): string | undefined {
 	}
 }
 
+/**
+ * The Postboi provider onboarding: authorise this device in the browser, write the resulting
+ * `POSTBOI_TOKEN`, then a `postboi.config.ts` for defaults and hooks. No provider account, no DNS.
+ */
 async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void> {
 	const base = cloud_base()
 
@@ -1004,6 +1005,15 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 	if (reused) {
 		console.log(`${green("✓")} using your existing ${bold("POSTBOI_TOKEN")}`)
 	} else if (prompts.agent) {
+		// A token that failed to verify is not the same as no token: `fetch_domains`
+		// also returns undefined on a 429, a 5xx or a network blip, and silently
+		// replacing a live production token with a fresh sandboxed account would turn
+		// every send into a quiet no-op. Unattended, the only safe answer is to stop.
+		if (existing_token) {
+			throw new PostboiAuthError(
+				"POSTBOI_TOKEN is already set but couldn't be verified — check connectivity (or `bunx postboi whoami`), and remove the token from your env first if you really want a fresh project."
+			)
+		}
 		// Zero setup: no browser, no sign-in, no human. One round trip mints a claimable
 		// project — sandboxed until someone claims it at the printed URL — and the
 		// package name seeds the sending address, so mail reads like the project.
@@ -1015,7 +1025,14 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 		claim_days = provisioned.expires_in_days
 		console.log(`${green("✓")} provisioned a Postboi project — no sign-in needed`)
 		if (send_address) console.log(`  ${dim("sends from")} ${bold(send_address)}`)
-		cloud_account = await fetch_domains(base, token)
+		// Everything a fresh account could report came back with the provision response
+		// (its domain list is empty by construction) — no second request needed.
+		cloud_account = {
+			send_address: provisioned.send_address,
+			domains: [],
+			webhook_secrets: [],
+			captcha_key: provisioned.captcha_key,
+		}
 	} else {
 		const start = await start_device_auth(base)
 
@@ -1129,12 +1146,16 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 					`Domain ${dim(domain_hint ? `(${domain_hint.source})` : "(e.g. example.com)")}`,
 					{ default: domain_hint?.domain }
 				)
-				const domain = answer
-					.trim()
-					.toLowerCase()
-					.replace(/^https?:\/\//, "")
-					.replace(/^www\./, "")
-					.replace(/\/.*$/, "")
+				// One grammar for detection and for what actually registers: hostname_of
+				// also rejects loopbacks, IPs and platform hosts (vercel.app, pages.dev)
+				// whose DNS nobody can edit — a registered-but-unverifiable domain helps no one.
+				const domain = answer ? hostname_of(answer) : undefined
+				if (answer && !domain) {
+					console.log(
+						`${yellow("!")} ${bold(answer.trim())} doesn't look like a public domain you could verify — skipped.`
+					)
+					console.log(dim(`  add one later: bunx postboi domains add <domain>`))
+				}
 				if (domain) {
 					// The token may only exist in the env file written moments ago — make it
 					// visible to the API commands' env lookup for the rest of this process.
@@ -1476,14 +1497,19 @@ const CHANNEL_INIT = {
 			if (provider.key === "apns")
 				return offer_auth_key(prompts, prefilled, key_search_paths(cwd()))
 			if (provider.key !== "webpush") return
-			// Unattended, the VAPID subject (a contact address for the push service) comes
-			// from git — the committer is the operator in the zero-setup flow, and asking
-			// would dead-end a run with nobody at the keyboard.
+			// Unattended, the VAPID subject (a contact address for the push service) is
+			// derived rather than asked: git's committer email, else the project's own
+			// domain as an https subject — CI runners routinely have neither git identity
+			// nor a human, and dead-ending there would break the promised promptless flow.
 			if (prompts.agent && prefilled.VAPID_SUBJECT === undefined) {
 				const email = git_email()
-				if (email) {
-					prefilled.VAPID_SUBJECT = email
-					console.log(`${green("✓")} ${bold("VAPID_SUBJECT")} — using your git email (${email})`)
+				const site = email ? undefined : detect_domains()[0]
+				const subject = email ?? (site ? `https://${site.domain}` : undefined)
+				if (subject) {
+					prefilled.VAPID_SUBJECT = subject
+					console.log(
+						`${green("✓")} ${bold("VAPID_SUBJECT")} — using ${email ? `your git email (${email})` : `your project's domain (${subject})`}`
+					)
 				}
 			}
 			if (prefilled.VAPID_PRIVATE_KEY !== undefined) return
@@ -1646,16 +1672,15 @@ async function channel_init(
 	// Values the team already synced answer their prompts — type it once, on one machine.
 	const prefilled = prefill_from_team(team, provider.fields)
 
-	// Unattended, the project's own env answers prompts too: an agent whose .env already
-	// carries the credentials (or a re-run) shouldn't dead-end on questions the project
-	// can answer itself. `synced_credentials` above already loaded the env files.
-	if (prompts.agent) {
-		for (const field of provider.fields) {
-			const value = read_env(field.env)
-			if (prefilled[field.env] === undefined && value) {
-				console.log(`${green("✓")} ${bold(field.env)} — using the value already in your env`)
-				prefilled[field.env] = value
-			}
+	// The project's own env answers prompts too — same idea as the team prefill, one
+	// layer down: a credential the project already holds shouldn't be re-typed on a
+	// re-run, and an unattended run shouldn't dead-end on it. `synced_credentials`
+	// above already loaded the env files.
+	for (const field of provider.fields) {
+		const value = read_env(field.env)
+		if (prefilled[field.env] === undefined && value) {
+			console.log(`${green("✓")} ${bold(field.env)} — using the value already in your env`)
+			prefilled[field.env] = value
 		}
 	}
 

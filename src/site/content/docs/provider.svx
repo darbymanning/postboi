@@ -70,8 +70,8 @@ bunx postboi init --agent
   lifts the sandbox. Everything the agent built keeps working unchanged, and the
   sandboxed sends are waiting in your message log.
 - **Unclaimed projects expire.** A project nobody claims *and* nobody uses for 14 days is
-  deleted. Activity counts: while your token keeps sending sandboxed mail, the project
-  stays alive for you to claim.
+  deleted. Activity counts — while your token keeps sending sandboxed mail, the project
+  stays alive for you to claim — but 60 days unclaimed is the ceiling, active or not.
 
 In development none of this even matters yet — with the [dev inbox](/dev-inbox) running,
 mail is captured locally before the provider is consulted, so the sandbox only shows up

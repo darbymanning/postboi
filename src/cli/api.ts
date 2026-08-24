@@ -1,7 +1,7 @@
 import { stdout } from "node:process"
 import { ensure_env_loaded, read_env } from "../library/env.js"
 import { cloud_base, open_browser, type PostboiDomain } from "./postboi.js"
-import { bold, cyan, dim, green, red, yellow } from "./prompts.js"
+import { bold, cyan, dim, green, red, strip_ansi, yellow } from "./prompts.js"
 
 /**
  * The resource commands (`postboi lists`, `postboi domains add …`) — thin wrappers over
@@ -50,8 +50,7 @@ async function api<T>(
 
 /** Visible width — cells may carry ANSI colour codes that padEnd would count. */
 function width(value: string): number {
-	// eslint-disable-next-line no-control-regex
-	return value.replace(/\x1b\[[0-9;]*m/g, "").length
+	return strip_ansi(value).length
 }
 
 /** Print rows as dimmed-header aligned columns. */

@@ -33,6 +33,11 @@ export class AgentAnswerError extends Error {}
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;]*m/g
 
+/** Drop the colour codes the helpers above add — the one home of the escape grammar. */
+export function strip_ansi(value: string): string {
+	return value.replace(ANSI, "")
+}
+
 /**
  * The prompter behind `--agent`: every question answers itself the way pressing Enter
  * would — a confirm takes its fallback, ask takes its default (or blank when optional),
@@ -52,12 +57,12 @@ export function create_auto_prompts() {
 			if (options.default !== undefined) return options.default
 			if (!options.required) return ""
 			throw new AgentAnswerError(
-				`--agent can't answer: ${question.replace(ANSI, "").trim()}\nPut the value in your env file and rerun, or run \`postboi init\` without --agent.`
+				`--agent can't answer: ${strip_ansi(question).trim()}\nPut the value in your env file and rerun, or run \`postboi init\` without --agent.`
 			)
 		},
 
 		async select<T>(message: string, options: Array<Option<T>>): Promise<T> {
-			console.log(`${message.replace(ANSI, "").trim()} ${dim(`→ ${options[0].label} (--agent)`)}`)
+			console.log(`${strip_ansi(message).trim()} ${dim(`→ ${options[0].label} (--agent)`)}`)
 			return options[0].value
 		},
 
