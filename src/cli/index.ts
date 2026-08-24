@@ -50,6 +50,7 @@ import {
 	add_remote_exclude,
 	add_vite_plugin,
 	has_dependency,
+	read_package,
 	type PackageJson,
 	install_command,
 	is_bundled_framework,
@@ -214,8 +215,13 @@ async function choose_env_targets(
 	const detected = detect_env_targets(files)
 	if (detected.length === 1) return detected
 	// Unattended, "all of them" is the only answer that can't be wrong — every file a
-	// tool might load gets the secret, none is left silently stale.
-	if (prompts.agent) return detected
+	// tool might load gets the secret, none is left silently stale. Except `.envrc`:
+	// direnv files are often committed on purpose, and a token must never land in a
+	// tracked file nobody chose.
+	if (prompts.agent) {
+		const safe = detected.filter((target) => target.file !== ".envrc")
+		return safe.length > 0 ? safe : detected
+	}
 
 	const choice = await prompts.select<EnvTarget | "all">(`\n${bold("Write to which env file?")}`, [
 		...detected.map((t) => ({
@@ -368,7 +374,11 @@ function write_pulled_vars(vars: Record<string, string>, force = false): Array<s
 /** Offer to gitignore any env file that isn't covered yet. */
 async function offer_gitignore(prompts: Prompts, targets: Array<EnvTarget>): Promise<void> {
 	const gitignore = existsSync(".gitignore") ? readFileSync(".gitignore", "utf8") : ""
-	const unignored = targets.map((t) => t.file).filter((file) => !is_gitignored(gitignore, file))
+	// Unattended, `.envrc` is never appended: gitignoring a committed direnv file would
+	// silently break the team's checkout on the next pull.
+	const unignored = targets
+		.map((t) => t.file)
+		.filter((file) => !is_gitignored(gitignore, file) && !(prompts.agent && file === ".envrc"))
 	if (
 		unignored.length > 0 &&
 		(await prompts.confirm(`\nAdd ${unignored.join(", ")} to .gitignore?`))
@@ -975,12 +985,63 @@ async function sync(): Promise<void> {
 
 /** The project's package.json name — seeds a provisioned account's name and sending slug. */
 function read_project_name(): string | undefined {
-	try {
-		const name: unknown = JSON.parse(readFileSync("package.json", "utf8")).name
-		return typeof name === "string" && name.trim() ? name.trim() : undefined
-	} catch {
-		return undefined
+	const name = read_package()?.name
+	return name?.trim() ? name.trim() : undefined
+}
+
+/**
+ * The end-of-init custom-domain offer. Detection prefills the prompt; `hostname_of` is
+ * the one grammar for what actually registers; the returned hint feeds the closing
+ * summary's hand-off. Unattended — or on an unclaimed project, where the API refuses
+ * domains until the claim — nothing is registered and the hint just rides along.
+ */
+async function offer_domain(
+	prompts: Prompts,
+	token: string,
+	send_address: string | undefined,
+	unclaimed: boolean
+): Promise<DomainHint | undefined> {
+	const hint = detect_domains()[0]
+	if (prompts.agent || unclaimed) return hint
+
+	const hinted = hint ? ` ${dim(`(${hint.domain} detected)`)}` : ""
+	const wants = await prompts.confirm(
+		`\nSend from your own domain?${hinted} ${dim("— optional, DNS records at your registrar")}`,
+		Boolean(hint)
+	)
+	if (!wants) return hint
+
+	const answer = await prompts.ask(
+		`Domain ${dim(hint ? `(${hint.source})` : "(e.g. example.com)")}`,
+		{ default: hint?.domain }
+	)
+	// One grammar for detection and for what actually registers: hostname_of also
+	// rejects loopbacks, IPs and platform hosts (vercel.app, pages.dev) whose DNS
+	// nobody can edit — a registered-but-unverifiable domain helps no one.
+	const domain = answer ? hostname_of(answer) : undefined
+	if (answer && !domain) {
+		console.log(
+			`${yellow("!")} ${bold(answer.trim())} doesn't look like a public domain you could verify — skipped.`
+		)
+		console.log(dim(`  add one later: bunx postboi domains add <domain>`))
 	}
+	if (!domain) return hint
+
+	// The token may only exist in the env file written moments ago — make it visible
+	// to the API commands' env lookup for the rest of this process.
+	env.POSTBOI_TOKEN = token
+	try {
+		await api_command("domains", ["add", domain])
+		console.log(
+			dim(
+				`\nOnce verified: bunx postboi send-address you@${domain} — until then, mail keeps sending from ${send_address ?? "your shared address"}.`
+			)
+		)
+	} catch (error) {
+		console.log(`${red("✗")} ${error instanceof Error ? error.message : String(error)}`)
+		console.log(dim(`  add it later: bunx postboi domains add ${domain}`))
+	}
+	return hint
 }
 
 /**
@@ -1004,6 +1065,9 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 
 	if (reused) {
 		console.log(`${green("✓")} using your existing ${bold("POSTBOI_TOKEN")}`)
+		// An unclaimed token verifies like any other — the claim URL rides back on
+		// /v1/domains so every re-run still ends on the one step a human owes.
+		claim_url = cloud_account?.claim_url
 	} else if (prompts.agent) {
 		// A token that failed to verify is not the same as no token: `fetch_domains`
 		// also returns undefined on a 429, a 5xx or a network blip, and silently
@@ -1032,6 +1096,8 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 			domains: [],
 			webhook_secrets: [],
 			captcha_key: provisioned.captcha_key,
+			unclaimed: true,
+			claim_url: provisioned.claim_url,
 		}
 	} else {
 		const start = await start_device_auth(base)
@@ -1126,54 +1192,10 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 	if (types_file || cloud_account?.captcha_key) ensure_prepare()
 
 	// A custom sending domain, offered while we're here — optional and skippable, since
-	// the shared address already delivers. The project usually knows its own domain
-	// (astro `site`, package.json homepage, CNAME, wrangler routes, a SITE_URL), so the
-	// answer arrives prefilled; DNS is the human's click at their registrar either way,
-	// which is exactly why a wrong hint costs one keystroke and registering the right
-	// one costs none. Unattended, nothing is registered — ownership is the human's to
-	// assert — the hint just rides along in the closing summary for the agent to confirm.
+	// the shared address already delivers. See offer_domain for the rules.
 	let domain_hint: DomainHint | undefined
 	if (domains.length === 0) {
-		domain_hint = detect_domains()[0]
-		if (!prompts.agent) {
-			const hinted = domain_hint ? ` ${dim(`(${domain_hint.domain} detected)`)}` : ""
-			const wants = await prompts.confirm(
-				`\nSend from your own domain?${hinted} ${dim("— optional, DNS records at your registrar")}`,
-				Boolean(domain_hint)
-			)
-			if (wants) {
-				const answer = await prompts.ask(
-					`Domain ${dim(domain_hint ? `(${domain_hint.source})` : "(e.g. example.com)")}`,
-					{ default: domain_hint?.domain }
-				)
-				// One grammar for detection and for what actually registers: hostname_of
-				// also rejects loopbacks, IPs and platform hosts (vercel.app, pages.dev)
-				// whose DNS nobody can edit — a registered-but-unverifiable domain helps no one.
-				const domain = answer ? hostname_of(answer) : undefined
-				if (answer && !domain) {
-					console.log(
-						`${yellow("!")} ${bold(answer.trim())} doesn't look like a public domain you could verify — skipped.`
-					)
-					console.log(dim(`  add one later: bunx postboi domains add <domain>`))
-				}
-				if (domain) {
-					// The token may only exist in the env file written moments ago — make it
-					// visible to the API commands' env lookup for the rest of this process.
-					env.POSTBOI_TOKEN = token
-					try {
-						await api_command("domains", ["add", domain])
-						console.log(
-							dim(
-								`\nOnce verified: bunx postboi send-address you@${domain} — until then, mail keeps sending from ${send_address ?? "your shared address"}.`
-							)
-						)
-					} catch (error) {
-						console.log(`${red("✗")} ${error instanceof Error ? error.message : String(error)}`)
-						console.log(dim(`  add it later: bunx postboi domains add ${domain}`))
-					}
-				}
-			}
-		}
+		domain_hint = await offer_domain(prompts, token, send_address, Boolean(claim_url))
 	}
 
 	await offer_skill(prompts)
@@ -1205,19 +1227,23 @@ async function cloud_init(prompts: Prompts, files: Array<string>): Promise<void>
 				`Sandboxed sends run the full pipeline and land in your message log — nothing is delivered until you claim.${expiry}`
 			) + "\n"
 		)
-		console.log(
-			`${yellow("→")} ${bold("Agents:")} show this claim URL to your user — it's how they take ownership.\n`
-		)
+		if (prompts.agent) {
+			console.log(
+				`${yellow("→")} ${bold("Agents:")} show this claim URL to your user — it's how they take ownership.\n`
+			)
+		}
 	}
 
-	// Unattended domain hand-off: the CLI never registers a domain nobody confirmed, but
-	// the agent should walk away knowing what to ask its user and which command follows.
-	if (prompts.agent && domain_hint) {
+	// Domain hand-off: nothing was registered (unattended, or the project is unclaimed
+	// and the API refuses domains until the claim), but whoever reads this should walk
+	// away knowing the domain and the one command that follows.
+	if (domain_hint && (prompts.agent || claim_url)) {
 		console.log(
-			`${yellow("→")} ${bold("Agents:")} this project's domain looks like ${bold(domain_hint.domain)} ${dim(`(${domain_hint.source})`)}.`
+			`${yellow("→")} This project's domain looks like ${bold(domain_hint.domain)} ${dim(`(${domain_hint.source})`)}.`
 		)
+		const when = claim_url ? "After claiming, run" : "Confirm it with your user, then run"
 		console.log(
-			`  ${dim("Confirm it with your user, then:")} ${cyan(`bunx postboi domains add ${domain_hint.domain}`)} ${dim("— prints the DNS records and a one-click registrar link.")}\n`
+			`  ${dim(`${when}:`)} ${cyan(`bunx postboi domains add ${domain_hint.domain}`)} ${dim("— prints the DNS records and a one-click registrar link.")}\n`
 		)
 	}
 }

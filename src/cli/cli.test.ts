@@ -82,6 +82,11 @@ import { find_auth_keys, offer_auth_key, verify_apns } from "./apns.js"
 const http2_fetch = vi.hoisted(() => vi.fn())
 vi.mock("../library/push/http2.js", () => ({ http2_fetch, close_http2_sessions: () => {} }))
 
+/** A fake fetch Response — the shape every API-flow test hands to its fetch stub. */
+function json(body: unknown, status = 200): Response {
+	return { ok: status >= 200 && status < 300, status, json: async () => body } as Response
+}
+
 describe("provider registry", () => {
 	it("lists the configurable providers with complete metadata", () => {
 		expect(PROVIDERS.length).toBeGreaterThanOrEqual(14)
@@ -457,13 +462,6 @@ describe("banner", () => {
 })
 
 describe("cloud device flow", () => {
-	const json = (body: unknown, status = 200) =>
-		({
-			ok: status >= 200 && status < 300,
-			status,
-			json: async () => body,
-		}) as Response
-
 	const start = { code: "abc123", url: "https://postboi.app/cli?code=abc123" }
 
 	it("cloud_base defaults to postboi.app and honours POSTBOI_API_URL", () => {
@@ -544,13 +542,6 @@ describe("cloud device flow", () => {
 })
 
 describe("provision_account (zero setup)", () => {
-	const json = (body: unknown, status = 200) =>
-		({
-			ok: status >= 200 && status < 300,
-			status,
-			json: async () => body,
-		}) as Response
-
 	it("posts the project's name and slug and returns the claimable account", async () => {
 		let posted: { url: string; body: unknown } | undefined
 		const result = await provision_account(
@@ -764,9 +755,6 @@ describe("prompts", () => {
 })
 
 describe("cloud domains & generated from types", () => {
-	const json = (body: unknown, status = 200) =>
-		({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response
-
 	const domains = [
 		{ domain: "example.com", status: "verified" },
 		{ domain: "other-domain.com", status: "pending" },
@@ -1140,9 +1128,6 @@ describe("add_vite_plugin", () => {
 })
 
 describe("synced credentials (postboi env)", () => {
-	const json = (body: unknown, status = 200) =>
-		({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response
-
 	it("fetch_env_vars parses the vars and drops non-string values", async () => {
 		const synced = await fetch_env_vars("https://postboi.app", "pb_secret", async (url, init) => {
 			expect(url).toBe("https://postboi.app/v1/env")

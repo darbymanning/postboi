@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { parse_env } from "./env.js"
+import { read_package } from "./project.js"
 
 /**
  * Where a project says its own public domain out loud. Nothing here *decides* anything —
@@ -142,47 +143,52 @@ export function detect_domains(dir = "."): Array<DomainHint> {
 	const cname = first(["CNAME", "static/CNAME", "public/CNAME"])
 	if (cname) add(cname.text.split("\n")[0], cname.path)
 
-	// 2. Framework configs that carry the site's canonical URL.
-	const astro = first(["astro.config.mjs", "astro.config.ts", "astro.config.js"])
-	if (astro) {
-		for (const url of matches(astro.text, /\bsite:\s*["'`](https?:\/\/[^"'`]+)/g)) {
-			add(url, `${astro.path} site`)
-		}
-	}
-	const svelte = first(["svelte.config.js", "svelte.config.ts"])
-	if (svelte) {
-		for (const url of matches(svelte.text, /\borigin:\s*["'`](https?:\/\/[^"'`]+)/g)) {
-			add(url, `${svelte.path} origin`)
-		}
-	}
-	const nuxt = first(["nuxt.config.ts", "nuxt.config.js"])
-	if (nuxt) {
-		for (const url of matches(nuxt.text, /\burl:\s*["'`](https?:\/\/[^"'`]+)/g)) {
-			add(url, `${nuxt.path} url`)
+	// 2. Framework configs that carry the site's canonical URL — one table, one loop,
+	// so a fifth framework is an entry rather than a pasted stanza.
+	const CONFIG_SIGNALS: Array<{ paths: Array<string>; regex: RegExp; label: string }> = [
+		{
+			paths: ["astro.config.mjs", "astro.config.ts", "astro.config.js"],
+			regex: /\bsite:\s*["'`](https?:\/\/[^"'`]+)/g,
+			label: "site",
+		},
+		{
+			paths: ["svelte.config.js", "svelte.config.ts"],
+			regex: /\borigin:\s*["'`](https?:\/\/[^"'`]+)/g,
+			label: "origin",
+		},
+		{
+			paths: ["nuxt.config.ts", "nuxt.config.js"],
+			regex: /\burl:\s*["'`](https?:\/\/[^"'`]+)/g,
+			label: "url",
+		},
+		// Next's metadataBase usually lives in the root layout rather than next.config.
+		{
+			paths: [
+				"next.config.ts",
+				"next.config.mjs",
+				"next.config.js",
+				"src/app/layout.tsx",
+				"src/app/layout.jsx",
+				"src/app/layout.ts",
+				"src/app/layout.js",
+				"app/layout.tsx",
+				"app/layout.jsx",
+				"app/layout.ts",
+				"app/layout.js",
+			],
+			regex: /metadataBase[^\n]*?["'`](https?:\/\/[^"'`]+)["'`]/g,
+			label: "metadataBase",
+		},
+	]
+	for (const signal of CONFIG_SIGNALS) {
+		const found = first(signal.paths)
+		if (!found) continue
+		for (const url of matches(found.text, signal.regex)) {
+			add(url, `${found.path} ${signal.label}`)
 		}
 	}
 
-	// 3. Next.js metadataBase — next.config or the root layout, where it usually lives.
-	const next = first([
-		"next.config.ts",
-		"next.config.mjs",
-		"next.config.js",
-		"src/app/layout.tsx",
-		"src/app/layout.jsx",
-		"src/app/layout.ts",
-		"src/app/layout.js",
-		"app/layout.tsx",
-		"app/layout.jsx",
-		"app/layout.ts",
-		"app/layout.js",
-	])
-	if (next) {
-		for (const url of matches(next.text, /metadataBase[^\n]*?["'`](https?:\/\/[^"'`]+)["'`]/g)) {
-			add(url, `${next.path} metadataBase`)
-		}
-	}
-
-	// 4. wrangler routes/custom domains — `"pattern": "acme.com/*"`, `route = "acme.com/*"`.
+	// 3. wrangler routes/custom domains — `"pattern": "acme.com/*"`, `route = "acme.com/*"`.
 	const wrangler = first(["wrangler.jsonc", "wrangler.json", "wrangler.toml"])
 	if (wrangler) {
 		const patterns = [
@@ -198,17 +204,10 @@ export function detect_domains(dir = "."): Array<DomainHint> {
 		}
 	}
 
-	// 5. package.json homepage.
-	try {
-		const pkg = JSON.parse(read_if_present(join(dir, "package.json")) || "{}") as {
-			homepage?: unknown
-		}
-		if (typeof pkg.homepage === "string") add(pkg.homepage, "package.json homepage")
-	} catch {
-		// Unparseable package.json says nothing about the domain.
-	}
+	// 4. package.json homepage.
+	add(read_package(join(dir, "package.json"))?.homepage, "package.json homepage")
 
-	// 6. Site-URL env vars. An allowlist, not a pattern: DATABASE_URL-style values also
+	// 5. Site-URL env vars. An allowlist, not a pattern: DATABASE_URL-style values also
 	// parse to hostnames, and suggesting your database's host as a sending domain is
 	// exactly the kind of clever that erodes trust.
 	const SITE_KEYS = new Set(

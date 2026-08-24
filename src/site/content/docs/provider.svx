@@ -86,10 +86,10 @@ WhatsApp) will tell you exactly which env var they're missing instead of prompti
 
 `--agent` also **detects the project's domain** (astro `site`, `package.json`
 `homepage`, a `CNAME` file, wrangler routes, `SITE_URL`-style env vars) and prints it as
-a suggestion rather than registering it — ownership is the human's to assert. Confirm it
-with your user, run `bunx postboi domains add <domain>`, and hand them the printed
-one-click DNS link together with the claim URL: two clicks, and the project delivers
-from its own domain.
+a suggestion rather than registering it — ownership is the human's to assert, and the
+API refuses domains on unclaimed projects outright, so an anonymous token can never
+squat one. After the claim, `bunx postboi domains add <domain>` prints the records and
+the one-click registrar link.
 
 ## Your sending address
 

@@ -169,9 +169,19 @@ export async function provision_account(
 	body: { name?: string; slug?: string } = {},
 	fetch_fn: FetchLike = fetch
 ): Promise<ProvisionResult> {
-	const data = (await post_json(base, "/api/cli/provision", body, fetch_fn)) as Partial<
-		Record<keyof ProvisionResult, unknown>
-	>
+	let data: Partial<Record<keyof ProvisionResult, unknown>>
+	try {
+		data = await post_json(base, "/api/cli/provision", body, fetch_fn)
+	} catch (error) {
+		// An API that predates provisioning 404s the route — "try again shortly" would
+		// send an unattended agent into a retry loop that can never succeed.
+		if (error instanceof PostboiAuthError && error.message.includes("404")) {
+			throw new PostboiAuthError(
+				"This Postboi API doesn't support zero-setup provisioning — run `postboi init` without --agent to sign in."
+			)
+		}
+		throw error
+	}
 	if (typeof data.token !== "string") {
 		// An older API without the provision endpoint answers with HTML or a 404 shape.
 		throw new PostboiAuthError(
@@ -289,6 +299,10 @@ export interface PostboiAccount {
 	captcha_key?: string
 	/** Every webhook endpoint's whsec_ secret — written to POSTBOI_WEBHOOK_SECRET together. */
 	webhook_secrets: Array<string>
+	/** True while the account is a zero-setup project nobody has claimed. */
+	unclaimed?: boolean
+	/** Where a human claims it — init re-surfaces this on every run until it's claimed. */
+	claim_url?: string
 }
 
 /**
@@ -312,7 +326,10 @@ export async function fetch_domains(
 			webhook_secrets?: unknown
 		}
 		if (!Array.isArray(data.domains)) return undefined
+		const extras = data as { unclaimed?: unknown; claim_url?: unknown }
 		return {
+			unclaimed: extras.unclaimed === true || undefined,
+			claim_url: typeof extras.claim_url === "string" ? extras.claim_url : undefined,
 			send_address: typeof data.send_address === "string" ? data.send_address : undefined,
 			domains: data.domains
 				.filter((d) => typeof d.domain === "string")

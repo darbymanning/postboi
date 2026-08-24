@@ -261,10 +261,10 @@ bunx postboi init --agent   # zero prompts, zero sign-in: provisions a claimable
 
 The steps that still involve the human, when they come up later:
 
-1. **Claiming** — the claim URL above (only for `--agent` projects; interactive `bunx postboi init` signs in up front instead and is never sandboxed).
+1. **Claiming** — the claim URL above. Interactive `bunx postboi init` signs in up front instead, but a re-run that reuses an unclaimed token still ends on the claim URL — surface it every time it prints.
 2. **DNS approval** — `domains add` prints a one-click setup URL the user clicks at their registrar (or pastes the printed records).
 
-**Custom sending domain — get it from the user or the project, never guess.** If the user named their domain, or the project states it unambiguously (astro `site`, `package.json` `homepage`, a `CNAME` file, wrangler routes, a `SITE_URL` env var — `init --agent` prints what it detected as a suggestion), confirm it and run `bunx postboi domains add <domain>` yourself, then surface the printed one-click DNS link **next to the claim URL** so the human's two clicks live in one place. If the domain is ambiguous or absent, ask — one question — or skip it: registering a domain the user doesn't own just parks an unverifiable entry on the account. Interactive `init` offers the same thing itself (prefilled with the detected domain), so don't double-register after a human ran it.
+**Custom sending domain — get it from the user or the project, never guess.** If the user named their domain, or the project states it unambiguously (astro `site`, `package.json` `homepage`, a `CNAME` file, wrangler routes, a `SITE_URL` env var — `init --agent` prints what it detected as a suggestion), confirm it and run `bunx postboi domains add <domain>`, which prints the one-click DNS link. **On an unclaimed `--agent` project the API refuses domains until the human claims** (an anonymous token must not squat someone else's domain), so tell your user: claim first, then you'll add the domain — or they run the printed command themselves after claiming. If the domain is ambiguous or absent, ask — one question — or skip it. Interactive `init` offers the same thing itself (prefilled with the detected domain), so don't double-register after a human ran it.
 
 ```bash
 bunx postboi whoami                                # account, plan, usage — run first to verify the token

@@ -1,11 +1,26 @@
+import { readFileSync } from "node:fs"
+
 /** Package managers the CLI can install with. */
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm"
 
 export type PackageJson = {
+	name?: string
+	homepage?: string
 	packageManager?: string
 	dependencies?: Record<string, string>
 	devDependencies?: Record<string, string>
 	peerDependencies?: Record<string, string>
+}
+
+/** The project's package.json, parsed — undefined when missing or malformed, so every
+ * caller shares one copy of the try/parse instead of hand-rolling its own. */
+export function read_package(path = "package.json"): PackageJson | undefined {
+	try {
+		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"))
+		return parsed && typeof parsed === "object" ? (parsed as PackageJson) : undefined
+	} catch {
+		return undefined
+	}
 }
 
 /**
