@@ -1,7 +1,7 @@
 import { stdout } from "node:process"
 import { ensure_env_loaded, read_env } from "../library/env.js"
 import { cloud_base, open_browser, type PostboiDomain } from "./postboi.js"
-import { bold, cyan, dim, green, red, yellow } from "./prompts.js"
+import { bold, cyan, dim, green, red, strip_ansi, yellow } from "./prompts.js"
 
 /**
  * The resource commands (`postboi lists`, `postboi domains add …`) — thin wrappers over
@@ -50,8 +50,7 @@ async function api<T>(
 
 /** Visible width — cells may carry ANSI colour codes that padEnd would count. */
 function width(value: string): number {
-	// eslint-disable-next-line no-control-regex
-	return value.replace(/\x1b\[[0-9;]*m/g, "").length
+	return strip_ansi(value).length
 }
 
 /** Print rows as dimmed-header aligned columns. */
@@ -83,6 +82,9 @@ async function whoami(): Promise<void> {
 		suspended: boolean
 		sends_today: number
 		sends_this_month: number
+		sandbox?: boolean
+		unclaimed?: boolean
+		claim_url?: string
 	}>("/v1/account")
 	console.log(`${bold(account.name ?? "My Team")} ${dim(`(${account.id})`)}`)
 	console.log(`  plan          ${account.plan}`)
@@ -91,6 +93,13 @@ async function whoami(): Promise<void> {
 		`  sends         ${account.sends_today} today, ${account.sends_this_month} this month`
 	)
 	if (account.suspended) console.log(`  ${red("suspended — contact support@postboi.app")}`)
+	if (account.unclaimed && account.claim_url) {
+		console.log(
+			`  ${yellow("unclaimed")}     sandboxed until claimed — claim it at ${cyan(account.claim_url)}`
+		)
+	} else if (account.sandbox) {
+		console.log(`  ${yellow("sandbox")}       sends are logged, nothing is delivered`)
+	}
 }
 
 /**

@@ -16,17 +16,20 @@ Postboi is a framework-agnostic messaging library optimised for SvelteKit — **
 
 📖 **Full documentation: [docs.postboi.app](https://docs.postboi.app)**
 
-🤖 **Using an AI coding agent?** The package ships a skill that teaches it the whole
-library. `bunx postboi skill` installs it at `.claude/skills/postboi/SKILL.md` (`init`
-offers the same thing), or read it in place at
-`node_modules/postboi/skills/postboi/SKILL.md`. Every docs page is also plain Markdown at
-[`docs.postboi.app/raw/<slug>`](https://docs.postboi.app/raw/push) — the HTML pages render
-client-side, so fetch those instead. All of it in one file:
+🤖 **Using an AI coding agent?** Setup needs no human at all: `bunx postboi init --agent`
+provisions a working, claimable account with zero prompts and zero sign-in — the agent
+wires everything, you claim the project with one click when you're ready. The package
+also ships a skill that teaches agents the whole library. `bunx postboi skill` installs
+it at `.claude/skills/postboi/SKILL.md` (`init` offers the same thing), or read it in
+place at `node_modules/postboi/skills/postboi/SKILL.md`. Every docs page is also plain
+Markdown at [`docs.postboi.app/raw/<slug>`](https://docs.postboi.app/raw/push) — the HTML
+pages render client-side, so fetch those instead. All of it in one file:
 [`/llms-full.txt`](https://docs.postboi.app/llms-full.txt).
 
 ### Features
 
 - ☁️ **Send with no provider account** - `postboi init`, sign in, send. The [Postboi provider](https://docs.postboi.app/provider) brings managed sending, domains, lists & broadcasts, suppressions and a message log — one token, no DNS, no card
+- 🤖 **Zero setup for agents & CI** - `postboi init --agent` needs no sign-in either: it provisions a [claimable sandbox project](https://docs.postboi.app/provider#zero-setup-for-agents--ci) in one round trip — an AI agent wires everything, you claim it with one click
 - 👨‍💻 **Zero configuration** - works out of the box with minimal setup
 - 🔌 **Provider-based** - or bring your own (Resend, SES, Mailgun, Postmark, …) and swap it without changing your code
 - 📝 **Smart FormData parsing** - automatically converts FormData to HTML tables
@@ -67,7 +70,16 @@ await mail({ to: "contact@example.com", subject: "Hi", body: "<p>Hello</p>" })
 
 That's the whole setup. Mail goes out from your `you@send.postboi.email` address (set
 `reply_to` to get replies) until you verify a domain of your own in the
-[dashboard](https://postboi.app/dashboard). `init` also:
+[dashboard](https://postboi.app/dashboard).
+
+No human at the keyboard? **`bunx postboi init --agent`** does the same thing with zero
+prompts and zero sign-in: it provisions a claimable project on the spot (your
+`package.json` name becomes the sending address — `@acme/mail-site` sends from
+`mail-site@send.postboi.email`), sends run sandboxed into your message log, and one click
+on the printed claim URL flips them to real delivery. Built for AI coding agents and CI —
+see [Zero setup](https://docs.postboi.app/provider#zero-setup-for-agents--ci).
+
+`init` also:
 
 - writes defaults, hooks and the publishable captcha key to a committed
   [`postboi.config.ts`](https://docs.postboi.app/config) — everything but the token lives in version control

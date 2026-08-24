@@ -47,6 +47,50 @@ except the token.
 The Postboi provider also includes **managed invisible captcha** for your forms: one script tag from
 the dashboard, no Cloudflare account, no keys. See [Spam protection](/spam).
 
+## Zero setup for agents & CI
+
+`postboi init --agent` removes the last human step. No browser, no sign-in, no prompts —
+one API round trip mints a **claimable project** and the CLI wires everything exactly as
+the interactive flow would:
+
+```bash
+bunx postboi init --agent
+```
+
+- **The token lands in `.env`** (gitignored automatically), the config is written, the
+  package installed, the agent skill linked.
+- **Your sending address is your project's name.** The `package.json` name seeds the
+  slug: `@acme/mail-site` sends from `mail-site@send.postboi.email` (a suffix is added if
+  it's taken, and a friendly random slug stands in when the name can't be an address).
+- **Sends work immediately, sandboxed.** Every send runs the full pipeline — message log,
+  webhooks, status — but nothing is delivered and nothing can reach a real inbox. The
+  response says so: `{ id, sandbox: true, claim_url }`.
+- **One sign-in makes it real.** The CLI prints a **claim URL**; opening it and signing
+  in (a magic link — that's the account creation too) transfers the project to you and
+  lifts the sandbox. Everything the agent built keeps working unchanged, and the
+  sandboxed sends are waiting in your message log.
+- **Unclaimed projects expire.** A project nobody claims *and* nobody uses for 14 days is
+  deleted. Activity counts — while your token keeps sending sandboxed mail, the project
+  stays alive for you to claim — but 60 days unclaimed is the ceiling, active or not.
+
+In development none of this even matters yet — with the [dev inbox](/dev-inbox) running,
+mail is captured locally before the provider is consulted, so the sandbox only shows up
+in deployed or production-mode sends.
+
+**If you're an AI coding agent:** run `init --agent` when no `POSTBOI_TOKEN` exists and
+no human is available to sign in, then **surface the claim URL prominently** in your
+summary — it's the one thing only your human can do. `postboi whoami` re-prints it any
+time. The other channels accept the flag too (`init --push --agent` mints VAPID keys and
+wires the service worker with no prompts); channels that need paid credentials (SMS,
+WhatsApp) will tell you exactly which env var they're missing instead of prompting.
+
+`--agent` also **detects the project's domain** (astro `site`, `package.json`
+`homepage`, a `CNAME` file, wrangler routes, `SITE_URL`-style env vars) and prints it as
+a suggestion rather than registering it — ownership is the human's to assert, and the
+API refuses domains on unclaimed projects outright, so an anonymous token can never
+squat one. After the claim, `bunx postboi domains add <domain>` prints the records and
+the one-click registrar link.
+
 ## Your sending address
 
 Free-tier mail goes out from `you@send.postboi.email`, derived from your signup email.
@@ -100,8 +144,14 @@ over your real mail, so inbound stays on `send.postboi.email`.
 
 ## Sending from your own domain
 
-Verify a domain in the dashboard: add a domain, publish the three DKIM CNAME records it
-shows you, and hit **Check**. Once verified, any address at that domain is a valid `from`:
+`init` offers this at the end of setup — it detects your project's domain (astro `site`,
+`package.json` `homepage`, a `CNAME` file, wrangler routes, `SITE_URL`-style env vars)
+and prefills the prompt, so accepting is one Enter. Or do it any time from the terminal
+(`bunx postboi domains add yourdomain.com` — prints the records and a one-click
+registrar link) or the dashboard: add a domain, publish the three DKIM CNAME records it
+shows you, and hit **Check**. Every plan includes one custom domain — Free included —
+and paid plans are uncapped (`domain_limit_exceeded` past the cap). Once verified, any
+address at that domain is a valid `from`:
 
 ```ts
 await mail({
@@ -183,12 +233,12 @@ prepare script: the narrowing applies to `from` everywhere.
 
 ## Limits
 
-| Plan    | Included   | Daily cap | Overage   |
-| ------- | ---------- | --------- | --------- |
-| Free    | 3,000/mo   | 100/day   | none (hard) |
-| Starter | 20,000/mo  | none      | £0.40/1k  |
-| Pro     | 100,000/mo | none      | £0.35/1k  |
-| Scale   | 500,000/mo | none      | £0.30/1k  |
+| Plan    | Included   | Daily cap | Overage     | Custom domains |
+| ------- | ---------- | --------- | ----------- | -------------- |
+| Free    | 3,000/mo   | 100/day   | none (hard) | 1              |
+| Starter | 20,000/mo  | none      | £0.40/1k    | unlimited      |
+| Pro     | 100,000/mo | none      | £0.35/1k    | unlimited      |
+| Scale   | 500,000/mo | none      | £0.30/1k    | unlimited      |
 
 The free tier stops at its caps; paid tiers keep sending and meter the overage. Every
 plan has a burst rate limit. When a limit is hit, `mail()` throws a `PostboiError` with a
@@ -200,6 +250,7 @@ machine-readable `code`:
 | `monthly_limit_exceeded` | Free-tier monthly wall: upgrade to keep sending     |
 | `rate_limited`           | Burst limit: back off and retry                     |
 | `from_not_allowed`       | `from` isn't your address or a verified domain      |
+| `domain_limit_exceeded`  | Free includes 1 custom domain: upgrade to add more  |
 | `sending_paused`         | Bounce/complaint rate tripped the safety threshold  |
 
 ## Delivery status

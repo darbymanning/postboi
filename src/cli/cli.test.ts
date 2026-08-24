@@ -44,12 +44,18 @@ import {
 	install_command,
 	is_bundled_framework,
 } from "./project.js"
-import { create_prompts, PromptCancelledError } from "./prompts.js"
+import {
+	create_prompts,
+	create_auto_prompts,
+	AgentAnswerError,
+	PromptCancelledError,
+} from "./prompts.js"
 import { banner } from "./banner.js"
 import {
 	cloud_base,
 	start_device_auth,
 	poll_device_auth,
+	provision_account,
 	fetch_domains,
 	fetch_env_vars,
 	push_env_vars,
@@ -68,12 +74,18 @@ import {
 	from_status,
 } from "./typegen.js"
 import { bundled_skill, offer_skill, refresh_skill, skill_command } from "./skill.js"
+import { detect_domains, hostname_of } from "./domain_hint.js"
 import { find_auth_keys, offer_auth_key, verify_apns } from "./apns.js"
 
 // verify_apns drives the real APNs provider, whose transport is HTTP/2 rather than
 // fetch — so this is the seam to stub, exactly as `fetch` is everywhere else.
 const http2_fetch = vi.hoisted(() => vi.fn())
 vi.mock("../library/push/http2.js", () => ({ http2_fetch, close_http2_sessions: () => {} }))
+
+/** A fake fetch Response — the shape every API-flow test hands to its fetch stub. */
+function json(body: unknown, status = 200): Response {
+	return { ok: status >= 200 && status < 300, status, json: async () => body } as Response
+}
 
 describe("provider registry", () => {
 	it("lists the configurable providers with complete metadata", () => {
@@ -450,13 +462,6 @@ describe("banner", () => {
 })
 
 describe("cloud device flow", () => {
-	const json = (body: unknown, status = 200) =>
-		({
-			ok: status >= 200 && status < 300,
-			status,
-			json: async () => body,
-		}) as Response
-
 	const start = { code: "abc123", url: "https://postboi.app/cli?code=abc123" }
 
 	it("cloud_base defaults to postboi.app and honours POSTBOI_API_URL", () => {
@@ -536,6 +541,186 @@ describe("cloud device flow", () => {
 	})
 })
 
+describe("provision_account (zero setup)", () => {
+	it("posts the project's name and slug and returns the claimable account", async () => {
+		let posted: { url: string; body: unknown } | undefined
+		const result = await provision_account(
+			"https://postboi.app",
+			{ name: "acme-site", slug: "acme-site" },
+			async (url, init) => {
+				posted = { url, body: JSON.parse(String(init?.body)) }
+				return json({
+					token: "pb_secret",
+					send_address: "acme-site@send.postboi.email",
+					claim_url: "https://postboi.app/claim/abc",
+					expires_in_days: 14,
+				})
+			}
+		)
+		expect(posted).toEqual({
+			url: "https://postboi.app/api/cli/provision",
+			body: { name: "acme-site", slug: "acme-site" },
+		})
+		expect(result).toEqual({
+			token: "pb_secret",
+			send_address: "acme-site@send.postboi.email",
+			claim_url: "https://postboi.app/claim/abc",
+			expires_in_days: 14,
+		})
+	})
+
+	it("relays the API's message on a rejection (rate limit)", async () => {
+		await expect(
+			provision_account("https://postboi.app", {}, async () =>
+				json({ message: "You've set up 5 projects today", code: "rate_limited" }, 429)
+			)
+		).rejects.toThrow(/5 projects today/)
+	})
+
+	it("explains itself against an API that predates provisioning", async () => {
+		await expect(
+			provision_account("https://postboi.app", {}, async () => json({ ok: true }))
+		).rejects.toThrow(/without --agent/)
+	})
+
+	it("wraps network failures in a friendly error", async () => {
+		await expect(
+			provision_account("https://postboi.app", {}, async () => {
+				throw new Error("ECONNREFUSED")
+			})
+		).rejects.toBeInstanceOf(PostboiAuthError)
+	})
+})
+
+describe("domain hints", () => {
+	/** A throwaway project directory holding exactly `files`. */
+	function project(files: Record<string, string>): string {
+		const dir = mkdtempSync(join(tmpdir(), "postboi-domains-"))
+		for (const [path, content] of Object.entries(files)) {
+			mkdirSync(dirname(join(dir, path)), { recursive: true })
+			writeFileSync(join(dir, path), content)
+		}
+		return dir
+	}
+
+	it("hostname_of normalises URLs, origins and bare hosts", () => {
+		expect(hostname_of("https://www.acme.com/about")).toBe("acme.com")
+		expect(hostname_of("acme.co.uk")).toBe("acme.co.uk")
+		expect(hostname_of('"https://acme.com"')).toBe("acme.com")
+	})
+
+	it("hostname_of rejects what can't be a sending domain", () => {
+		expect(hostname_of("http://localhost:5173")).toBeUndefined()
+		expect(hostname_of("192.168.0.1")).toBeUndefined()
+		expect(hostname_of("https://demo.vercel.app")).toBeUndefined()
+		expect(hostname_of("https://my-site.pages.dev")).toBeUndefined()
+		expect(hostname_of("https://example.com")).toBeUndefined()
+		expect(hostname_of("justoneword")).toBeUndefined()
+		expect(hostname_of("")).toBeUndefined()
+	})
+
+	it("hostname_of matches platform suffixes on label boundaries only", () => {
+		// Real customer domains that merely end with a platform suffix's spelling.
+		expect(hostname_of("https://butterfly.dev")).toBe("butterfly.dev")
+		expect(hostname_of("https://myweb.app")).toBe("myweb.app")
+		expect(hostname_of("https://snow.sh")).toBe("snow.sh")
+		expect(hostname_of("https://grandexample.com")).toBe("grandexample.com")
+		// The platforms themselves and their subdomains stay rejected.
+		expect(hostname_of("https://fly.dev")).toBeUndefined()
+		expect(hostname_of("https://my-app.fly.dev")).toBeUndefined()
+	})
+
+	it("reads the domain out of a CNAME file, verbatim", () => {
+		const dir = project({ CNAME: "acme.com\n" })
+		expect(detect_domains(dir)[0]).toEqual({ domain: "acme.com", source: "CNAME" })
+	})
+
+	it("reads astro's site, package.json homepage and wrangler routes", () => {
+		const astro = project({ "astro.config.mjs": 'export default { site: "https://www.acme.dev" }' })
+		expect(detect_domains(astro)[0]).toEqual({
+			domain: "acme.dev",
+			source: "astro.config.mjs site",
+		})
+
+		const pkg = project({ "package.json": '{ "homepage": "https://acme.studio" }' })
+		expect(detect_domains(pkg)[0]).toEqual({
+			domain: "acme.studio",
+			source: "package.json homepage",
+		})
+
+		const wrangler = project({
+			"wrangler.jsonc": '{ "routes": [{ "pattern": "acme.io/*", "custom_domain": true }] }',
+		})
+		expect(detect_domains(wrangler)[0]).toEqual({
+			domain: "acme.io",
+			source: "wrangler.jsonc routes",
+		})
+	})
+
+	it("reads site-URL env vars but never credential-shaped ones", () => {
+		const dir = project({
+			".env": [
+				"DATABASE_URL=postgres://db.supabase.co/postgres",
+				"PUBLIC_SITE_URL=https://acme.gallery",
+			].join("\n"),
+		})
+		const hints = detect_domains(dir)
+		expect(hints).toEqual([{ domain: "acme.gallery", source: ".env PUBLIC_SITE_URL" }])
+	})
+
+	it("ranks stronger signals first and dedupes across files", () => {
+		const dir = project({
+			CNAME: "acme.com",
+			"package.json": '{ "homepage": "https://acme.com" }',
+			".env": "PUBLIC_SITE_URL=https://app.acme.com",
+		})
+		expect(detect_domains(dir)).toEqual([
+			{ domain: "acme.com", source: "CNAME" },
+			{ domain: "app.acme.com", source: ".env PUBLIC_SITE_URL" },
+		])
+	})
+
+	it("finds nothing in a project that says nothing", () => {
+		expect(detect_domains(project({ "package.json": '{ "name": "quiet" }' }))).toEqual([])
+	})
+})
+
+describe("auto prompts (--agent)", () => {
+	const options = [
+		{ label: "One", value: 1 },
+		{ label: "Two", value: 2 },
+	]
+
+	it("answers every prompt the way pressing Enter would", async () => {
+		const prompts = create_auto_prompts()
+		expect(prompts.agent).toBe(true)
+		expect(await prompts.ask("Name?", { default: "acme" })).toBe("acme")
+		expect(await prompts.ask("Optional?")).toBe("")
+		expect(await prompts.select("Pick one", options)).toBe(1)
+		expect(await prompts.confirm("Sure?")).toBe(true)
+		expect(await prompts.confirm("Sure?", false)).toBe(false)
+	})
+
+	it("throws rather than loops on a required question with no default", async () => {
+		const prompts = create_auto_prompts()
+		await expect(prompts.ask("API key (RESEND_API_KEY)", { required: true })).rejects.toThrow(
+			AgentAnswerError
+		)
+		await expect(prompts.ask("API key (RESEND_API_KEY)", { required: true })).rejects.toThrow(
+			/RESEND_API_KEY/
+		)
+	})
+
+	it("the interactive prompter identifies itself as non-agent", async () => {
+		const prompts = create_prompts({
+			input: Readable.from([]),
+			output: new Writable({ write: (_chunk, _enc, cb) => cb() }),
+		})
+		expect(prompts.agent).toBe(false)
+		prompts.close()
+	})
+})
+
 describe("prompts", () => {
 	/** Build a prompter fed by `lines`; the input ends (EOF) once they run out. */
 	const prompter = (lines: Array<string>) =>
@@ -570,9 +755,6 @@ describe("prompts", () => {
 })
 
 describe("cloud domains & generated from types", () => {
-	const json = (body: unknown, status = 200) =>
-		({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response
-
 	const domains = [
 		{ domain: "example.com", status: "verified" },
 		{ domain: "other-domain.com", status: "pending" },
@@ -946,9 +1128,6 @@ describe("add_vite_plugin", () => {
 })
 
 describe("synced credentials (postboi env)", () => {
-	const json = (body: unknown, status = 200) =>
-		({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response
-
 	it("fetch_env_vars parses the vars and drops non-string values", async () => {
 		const synced = await fetch_env_vars("https://postboi.app", "pb_secret", async (url, init) => {
 			expect(url).toBe("https://postboi.app/v1/env")

@@ -90,23 +90,49 @@ async function poll_code<T>(
 	return "timeout"
 }
 
-export async function start_device_auth(
+/**
+ * One POST with the auth flows' shared failure behavior: network problems and non-OK
+ * statuses become a PostboiAuthError whose message is safe to print as-is — and lives
+ * here once, so a wording fix reaches every flow. A JSON error body's `message` wins
+ * over the generic status line (the API writes those to be shown).
+ */
+async function post_json(
 	base: string,
-	fetch_fn: FetchLike = fetch
-): Promise<DeviceStart> {
+	path: string,
+	body: unknown | undefined,
+	fetch_fn: FetchLike
+): Promise<Record<string, unknown>> {
 	let response: Response
 	try {
-		response = await fetch_fn(`${base}/api/cli/start`, { method: "POST" })
+		response = await fetch_fn(`${base}${path}`, {
+			method: "POST",
+			...(body !== undefined
+				? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+				: {}),
+		})
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
 		throw new PostboiAuthError(`Could not reach ${base} (${reason}). Are you online?`)
 	}
+	const data = (await response.json().catch(() => undefined)) as Record<string, unknown> | undefined
 	if (!response.ok) {
 		throw new PostboiAuthError(
-			`the Postboi provider responded with ${response.status} — try again shortly.`
+			typeof data?.message === "string" && data.message
+				? data.message
+				: `the Postboi provider responded with ${response.status} — try again shortly.`
 		)
 	}
-	const start = read_start((await response.json().catch(() => ({}))) as Partial<DeviceStart>, 600)
+	return data ?? {}
+}
+
+export async function start_device_auth(
+	base: string,
+	fetch_fn: FetchLike = fetch
+): Promise<DeviceStart> {
+	const start = read_start(
+		(await post_json(base, "/api/cli/start", undefined, fetch_fn)) as Partial<DeviceStart>,
+		600
+	)
 	if (!start) {
 		throw new PostboiAuthError(
 			"Unexpected response from the Postboi provider — update postboi and retry."
@@ -119,6 +145,56 @@ export async function start_device_auth(
 export interface DeviceClaim {
 	token: string
 	send_address?: string
+}
+
+/** A zero-setup account, minted with no sign-in — sandboxed until claimed at `claim_url`. */
+export interface ProvisionResult {
+	token: string
+	send_address?: string
+	claim_url?: string
+	expires_in_days?: number
+	/** Publishable managed-captcha key — rides along so init needs no second request. */
+	captcha_key?: string
+}
+
+/**
+ * The `--agent` path: mint an account in one round trip, no browser and no human. The
+ * account is sandboxed (sends run the whole pipeline, nothing is delivered) until
+ * someone signs in at `claim_url` — which is why this needs no auth to call. `name` and
+ * `slug` come from the project's package.json, so the sending address reads like the
+ * project rather than a random phrase.
+ */
+export async function provision_account(
+	base: string,
+	body: { name?: string; slug?: string } = {},
+	fetch_fn: FetchLike = fetch
+): Promise<ProvisionResult> {
+	let data: Partial<Record<keyof ProvisionResult, unknown>>
+	try {
+		data = await post_json(base, "/api/cli/provision", body, fetch_fn)
+	} catch (error) {
+		// An API that predates provisioning 404s the route — "try again shortly" would
+		// send an unattended agent into a retry loop that can never succeed.
+		if (error instanceof PostboiAuthError && error.message.includes("404")) {
+			throw new PostboiAuthError(
+				"This Postboi API doesn't support zero-setup provisioning — run `postboi init` without --agent to sign in."
+			)
+		}
+		throw error
+	}
+	if (typeof data.token !== "string") {
+		// An older API without the provision endpoint answers with HTML or a 404 shape.
+		throw new PostboiAuthError(
+			"This Postboi API doesn't support zero-setup provisioning — run `postboi init` without --agent to sign in."
+		)
+	}
+	return {
+		token: data.token,
+		send_address: typeof data.send_address === "string" ? data.send_address : undefined,
+		claim_url: typeof data.claim_url === "string" ? data.claim_url : undefined,
+		expires_in_days: typeof data.expires_in_days === "number" ? data.expires_in_days : undefined,
+		captcha_key: typeof data.captcha_key === "string" ? data.captcha_key : undefined,
+	}
 }
 
 /** Poll until the browser side authorises (resolves with the claim) or the code dies. */
@@ -223,6 +299,10 @@ export interface PostboiAccount {
 	captcha_key?: string
 	/** Every webhook endpoint's whsec_ secret — written to POSTBOI_WEBHOOK_SECRET together. */
 	webhook_secrets: Array<string>
+	/** True while the account is a zero-setup project nobody has claimed. */
+	unclaimed?: boolean
+	/** Where a human claims it — init re-surfaces this on every run until it's claimed. */
+	claim_url?: string
 }
 
 /**
@@ -246,7 +326,10 @@ export async function fetch_domains(
 			webhook_secrets?: unknown
 		}
 		if (!Array.isArray(data.domains)) return undefined
+		const extras = data as { unclaimed?: unknown; claim_url?: unknown }
 		return {
+			unclaimed: extras.unclaimed === true || undefined,
+			claim_url: typeof extras.claim_url === "string" ? extras.claim_url : undefined,
 			send_address: typeof data.send_address === "string" ? data.send_address : undefined,
 			domains: data.domains
 				.filter((d) => typeof d.domain === "string")

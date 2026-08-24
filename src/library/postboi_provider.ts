@@ -58,7 +58,7 @@ export interface SendParams {
 	form?: boolean
 }
 
-type SendResponse = { id: string }
+type SendResponse = { id: string; sandbox?: boolean; claim_url?: string }
 
 /** A message as returned by `GET /v1/messages/:id`. */
 export interface MessageDetails {
@@ -752,11 +752,27 @@ export default class Postboi extends ProviderBase<SendResponse> {
 	}
 
 	// Batch returns `{ ids }`, aligned to the request order.
+	// Sandboxed sends succeed but deliver nothing — worth exactly one line per instance,
+	// so a batch job doesn't scroll the reason a mailbox stays empty out of view.
+	// Per instance, not per module: two accounts in one process (or a fresh provider
+	// after claiming) each get their own say.
+	#announced_sandbox = false
+
+	#announce_sandbox(data: { sandbox?: boolean; claim_url?: string } | null): void {
+		if (!data?.sandbox || this.#announced_sandbox) return
+		this.#announced_sandbox = true
+		const claim = data.claim_url ? ` Claim your project to deliver for real: ${data.claim_url}` : ""
+		console.log(
+			`postboi: this account is sandboxed — sends land in your Postboi message log, nothing is delivered.${claim}`
+		)
+	}
+
 	protected parse_batch_response(
 		_response: Response,
 		data: unknown,
 		recipients: Array<BatchRecipient>
 	): Array<SendResponse | PostboiError> {
+		this.#announce_sandbox(data as { sandbox?: boolean; claim_url?: string } | null)
 		const ids = (data as { ids?: Array<string> } | null)?.ids ?? []
 		return recipients.map((_, i) =>
 			ids[i]
@@ -769,7 +785,9 @@ export default class Postboi extends ProviderBase<SendResponse> {
 	}
 
 	protected parse_response(_response: Response, data: unknown): SendResponse {
-		return data as SendResponse
+		const result = data as SendResponse
+		this.#announce_sandbox(result)
+		return result
 	}
 
 	protected parse_error(_response: Response, data: unknown): ProviderError | undefined {
