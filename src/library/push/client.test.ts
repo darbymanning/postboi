@@ -119,3 +119,64 @@ describe("subscribe() key resolution", () => {
 		expect((seen[0] as { userVisibleOnly: boolean }).userVisibleOnly)
 	})
 })
+
+describe("subscribe() service worker resolution", () => {
+	const KEY =
+		"BMOvqNa2X4FY7RtGBfHn0Lpg1II-PafsAq1IdktdxwU3y9sKm2YyP_r9kt-B11odlAj62DeC3v5qYUFTbMrLiA4"
+
+	/** A browser with no worker registered yet, recording what register() is asked for.
+	 * Paths in `serves` register; anything else rejects the way a 404 does. */
+	function unregistered(serves: Array<string>) {
+		const asked: Array<string> = []
+		const registration = {
+			active: { state: "activated" },
+			pushManager: {
+				getSubscription: async () => null,
+				subscribe: async () => fake_subscription(),
+			},
+		}
+		vi.stubGlobal("window", { PushManager: class {}, Notification: { permission: "granted" } })
+		vi.stubGlobal("Notification", { permission: "granted" })
+		vi.stubGlobal("navigator", {
+			serviceWorker: {
+				getRegistration: async () => undefined,
+				register: async (path: string) => {
+					asked.push(path)
+					if (!serves.includes(path)) throw new TypeError(`404 at ${path}`)
+					return registration
+				},
+				ready: Promise.resolve(registration),
+			},
+		})
+		return asked
+	}
+
+	it("finds SvelteKit's /service-worker.js when /sw.js isn't served", async () => {
+		const asked = unregistered(["/service-worker.js"])
+		expect(await subscribe({ key: KEY })).toEqual(STORED)
+		expect(asked).toEqual(["/sw.js", "/service-worker.js"])
+	})
+
+	it("stops at /sw.js when that's where the worker is", async () => {
+		const asked = unregistered(["/sw.js"])
+		expect(await subscribe({ key: KEY })).toEqual(STORED)
+		expect(asked).toEqual(["/sw.js"])
+	})
+
+	/** An explicit path failing is the error — not a cue to register a worker the caller
+	 * didn't mean. */
+	it("trusts an explicit sw path verbatim, with no fallback", async () => {
+		const asked = unregistered(["/service-worker.js"])
+		const error = await subscribe({ key: KEY, sw: "/mine.js" }).catch((caught) => caught)
+		expect(subscribe.reason(error)).toBe("no_service_worker")
+		expect(asked).toEqual(["/mine.js"])
+	})
+
+	it("names every path it tried when none of them register", async () => {
+		unregistered([])
+		const error = await subscribe({ key: KEY }).catch((caught) => caught)
+		expect(subscribe.reason(error)).toBe("no_service_worker")
+		expect(String(error)).toContain("/sw.js or /service-worker.js")
+		expect(String(error)).toContain("pass { sw }")
+	})
+})

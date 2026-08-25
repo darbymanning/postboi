@@ -17,6 +17,9 @@ export async function PUT() {
 	let sent = 0
 	for (const [endpoint, subscription] of subscriptions) {
 		try {
+			// `url` is optional — it's where clicking the notification takes the user
+			// (focusing a tab already there rather than opening a second one). Without
+			// it, a click just dismisses.
 			await push({
 				to: subscription,
 				title: "It works",
