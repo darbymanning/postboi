@@ -98,9 +98,10 @@ framework at all get the same line.
 gesture, and once denied **you cannot ask again** — the user has to change it in site
 settings. That's the single most common way to permanently lose a subscriber.
 
-The helper requests permission if needed, registers your service worker (`/sw.js` by
-default), waits for it to be *active* rather than merely registered, and reuses an existing
-subscription — so calling it on every page load is safe.
+The helper requests permission if needed, registers your service worker (found on its
+own — an already-registered worker first, then `/sw.js` and SvelteKit's
+`/service-worker.js`), waits for it to be *active* rather than merely registered, and
+reuses an existing subscription — so calling it on every page load is safe.
 
 Three questions a UI wants answered before it can render the button, none of which prompt:
 
@@ -207,7 +208,7 @@ try {
 | `permission_dismissed` | The prompt was closed without an answer. You can ask again later. |
 | `unsupported` | No Web Push in this browser. `subscribe.supported()` tells you first. |
 | `missing_key` | No `{ key }` and nothing baked — run `bunx postboi sync` with `VAPID_PUBLIC_KEY` set. |
-| `no_service_worker` | Your worker file didn't register — wrong path, or a 404. |
+| `no_service_worker` | No worker at `/sw.js` or `/service-worker.js` (or at the `sw` you passed). |
 | `failed` | The push service refused the subscription. |
 
 The reasons are a typed union, so a mistyped `case` is a compile error rather than a branch
@@ -260,9 +261,10 @@ inside a worker, and the one everybody skips. Nothing else: no fetch handler, no
 no claiming clients. A worker that intercepts requests is a different feature, and yours
 may already be one.
 
-**`subscribe()` looks for `/sw.js`.** A worker served anywhere else needs
-`service_worker` passed, which is the most common way a fully wired setup still answers
-`no_service_worker`. The CLI prints the right line for where it put the file.
+**`subscribe()` finds your worker on its own.** A worker already registered for the page
+is reused — SvelteKit registers the one it builds — and otherwise `/sw.js` and
+`/service-worker.js` are tried in turn, which covers every framework here with nothing
+passed. Only a worker served somewhere unconventional needs `sw` with its path.
 
 ### Adjusting the notification
 

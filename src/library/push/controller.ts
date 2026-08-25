@@ -42,8 +42,9 @@ export interface SubscriptionOptions {
 	 * a function receiving the removed subscription.
 	 */
 	unregister?: string | ((subscription: PushSubscriptionJSON) => Promise<unknown>)
-	/** Path to the service worker, when it isn't `/sw.js`. */
-	service_worker?: string
+	/** Path to the service worker, when it isn't served at a conventional one —
+	 * `subscribe()` finds `/sw.js` and SvelteKit's `/service-worker.js` on its own. */
+	sw?: string
 }
 
 async function file(
@@ -119,7 +120,7 @@ export function subscription(options: SubscriptionOptions = {}) {
 		try {
 			const subscription = await subscribe({
 				key: options.key,
-				service_worker: options.service_worker,
+				sw: options.sw,
 			})
 			if (options.register) {
 				try {

@@ -6,10 +6,10 @@
 	// the /push endpoint below — which is how the server learns where to push. `on`,
 	// `busy` and `reason` are reactive, so read them straight off it.
 	//
-	// `service_worker` because SvelteKit builds `src/service-worker.ts` and serves it at
-	// its own path; subscribe() looks for /sw.js otherwise. That worker is one line —
-	// `receive()` from postboi/push/sw — and handles the rotations nothing here can see.
-	const push = subscription({ register: "/push", service_worker: "/service-worker.js" })
+	// No worker path: subscribe() finds SvelteKit's /service-worker.js on its own. That
+	// worker is one line — `receive()` from postboi/push/sw — and handles the rotations
+	// nothing here can see.
+	const push = subscription({ register: "/push" })
 
 	let status = $state("")
 

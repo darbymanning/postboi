@@ -29,11 +29,25 @@ export interface SubscribeOptions {
 	 */
 	key?: string
 	/**
-	 * Path to your service worker. Defaults to `/sw.js`. Ignored when one is already
-	 * registered for the scope.
+	 * Path to your service worker, for when it's served somewhere unconventional. Left
+	 * unset, an already-registered worker is reused, then {@link WORKER_PATHS} are tried in
+	 * turn — which covers every framework postboi ships examples for, SvelteKit's
+	 * `/service-worker.js` included, with no option passed. Ignored when a worker is
+	 * already registered for the scope.
 	 */
-	service_worker?: string
+	sw?: string
 }
+
+/**
+ * Where a service worker is conventionally served, tried in order when none is registered
+ * and no `sw` path was passed. `/sw.js` is the static-directory convention (Next, Nuxt,
+ * Astro, Remix, and the file `bunx postboi init --push` generates); `/service-worker.js`
+ * is where SvelteKit serves the worker it builds — always that URL, even when
+ * `kit.files.serviceWorker` moves the source file. A path with no worker fails to
+ * register (a 404, or a dev server's HTML fallback failing the MIME check), so a probe
+ * costs one failed request before the next candidate.
+ */
+export const WORKER_PATHS: ReadonlyArray<string> = ["/sw.js", "/service-worker.js"]
 
 /** Thrown when a subscription can't be created, with `reason` saying which wall was hit. */
 export class PushSubscribeError extends Error {
@@ -109,6 +123,24 @@ async function existing(): Promise<PushSubscription | null> {
  */
 function reason(error: unknown): PushSubscribeError["reason"] | null {
 	return error instanceof PushSubscribeError ? error.reason : null
+}
+
+/**
+ * Register the worker at `path`, or find one at the conventional paths when no path was
+ * given. An explicit path is trusted verbatim — if it fails, that's the error, not a cue
+ * to go looking elsewhere for a worker the caller didn't mean.
+ */
+async function register(path: string | undefined): Promise<ServiceWorkerRegistration> {
+	if (path) return navigator.serviceWorker.register(path)
+	let refused: unknown
+	for (const candidate of WORKER_PATHS) {
+		try {
+			return await navigator.serviceWorker.register(candidate)
+		} catch (cause) {
+			refused = cause
+		}
+	}
+	throw refused
 }
 
 /** Does an existing subscription's server key match the one we're subscribing with? */
@@ -202,18 +234,17 @@ async function subscribe_now(options: SubscribeOptions = {}): Promise<PushSubscr
 
 	let registration: ServiceWorkerRegistration
 	try {
-		registration =
-			(await navigator.serviceWorker.getRegistration()) ??
-			(await navigator.serviceWorker.register(options.service_worker ?? "/sw.js"))
+		registration = (await navigator.serviceWorker.getRegistration()) ?? (await register(options.sw))
 		// `ready` rather than the registration itself: a worker that is installing has no
 		// active pushManager yet, and subscribing against it fails intermittently.
 		registration = await navigator.serviceWorker.ready
 	} catch (cause) {
+		const where = options.sw ?? WORKER_PATHS.join(" or ")
 		throw new PushSubscribeError(
 			"no_service_worker",
-			`Could not register a service worker at ${options.service_worker ?? "/sw.js"}: ${
+			`Could not register a service worker at ${where}: ${
 				cause instanceof Error ? cause.message : String(cause)
-			}`
+			}${options.sw ? "" : ". Serve one there, or pass { sw } with its path."}`
 		)
 	}
 

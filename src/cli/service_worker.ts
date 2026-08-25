@@ -13,6 +13,7 @@
  * prints a manual hint rather than guessing at somebody's worker.
  */
 import { has_dependency, type PackageJson } from "./project.js"
+import { WORKER_PATHS } from "../library/push/client.js"
 
 /** Can this worker file `import`, or is it served to the browser exactly as written? */
 export type WorkerKind = "bundled" | "raw"
@@ -22,9 +23,9 @@ export interface WorkerTarget {
 	/** Project-relative path. */
 	path: string
 	/**
-	 * The URL the browser registers. `subscribe()` defaults to `/sw.js`, so anything else
-	 * has to be passed as `service_worker` — the single most common reason a wired-up push
-	 * setup answers `no_service_worker`.
+	 * The URL the browser registers. `subscribe()` finds the conventional ones —
+	 * `/sw.js` and SvelteKit's `/service-worker.js` — on its own; anything else has to be
+	 * passed as `sw`.
 	 */
 	url: string
 	kind: WorkerKind
@@ -47,9 +48,53 @@ const CANDIDATES: ReadonlyArray<WorkerTarget> = [
 	{ path: "public/service-worker.js", url: "/service-worker.js", kind: "raw" },
 ]
 
-/** The worker this project already has, if any. */
-export function find_worker(exists: (path: string) => boolean): WorkerTarget | undefined {
-	return CANDIDATES.find((candidate) => exists(candidate.path))
+/** The file names a svelte config comes as. */
+const SVELTE_CONFIGS = [
+	"svelte.config.js",
+	"svelte.config.ts",
+	"svelte.config.mjs",
+	"svelte.config.mts",
+]
+
+/**
+ * The worker source a svelte config names via `kit.files.serviceWorker`, if it names one.
+ *
+ * That option moves the *source* file only — SvelteKit still builds and serves the worker
+ * at `/service-worker.js` whatever the source is called — so this is about finding the
+ * file to wire, not the URL. A config is arbitrary JS, so per this module's contract the
+ * read is textual and covers only the shape we're sure of: a string literal. (The other
+ * `serviceWorker` key, `kit.serviceWorker`, takes an object, so it can't match.) A value
+ * that's computed, or that doesn't resolve the way SvelteKit would resolve it, falls back
+ * to the standard locations.
+ */
+function configured_worker(
+	exists: (path: string) => boolean,
+	read: (path: string) => string | undefined
+): WorkerTarget | undefined {
+	const config = SVELTE_CONFIGS.find(exists)
+	const source = config && read(config)
+	const named = source && /\bserviceWorker\s*:\s*["'`]([^"'`\n]+)["'`]/.exec(source)?.[1]
+	if (!named) return undefined
+	// SvelteKit resolves the entry with or without an extension, and as a directory.
+	const path = [named, `${named}.ts`, `${named}.js`, `${named}/index.ts`, `${named}/index.js`]
+		.filter((candidate) => /\.(ts|js)$/.test(candidate))
+		.find(exists)
+	return path ? { path, url: "/service-worker.js", kind: "bundled" } : undefined
+}
+
+/**
+ * The worker this project already has, if any. A svelte config that points
+ * `kit.files.serviceWorker` somewhere custom wins over the standard locations — that's
+ * the file the framework actually builds.
+ */
+export function find_worker(
+	exists: (path: string) => boolean,
+	read?: (path: string) => string | undefined
+): WorkerTarget | undefined {
+	return (
+		(read && configured_worker(exists, read)) ??
+		CANDIDATES.find((candidate) => exists(candidate.path))
+	)
 }
 
 /**
@@ -252,10 +297,11 @@ self.addEventListener("pushsubscriptionchange", (event) => {
 }
 
 /**
- * The line the page needs, once the worker is in place. `subscribe()` looks for `/sw.js`,
- * so a worker served anywhere else has to say where it is.
+ * The line the page needs, once the worker is in place. `subscribe()` finds the
+ * conventional URLs on its own, so only a worker served somewhere unconventional has to
+ * say where it is.
  */
 export function page_snippet(target: WorkerTarget, register: string): string {
-	const path = target.url === "/sw.js" ? "" : `, service_worker: ${JSON.stringify(target.url)}`
+	const path = WORKER_PATHS.includes(target.url) ? "" : `, sw: ${JSON.stringify(target.url)}`
 	return `subscription({ register: ${JSON.stringify(register)}${path} })`
 }

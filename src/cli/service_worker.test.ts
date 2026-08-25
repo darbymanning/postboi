@@ -34,6 +34,36 @@ describe("find_worker", () => {
 	it("is undefined when there is no worker at all", () => {
 		expect(find_worker(none)).toBeUndefined()
 	})
+
+	/** `kit.files.serviceWorker` moves the source file, not the URL — SvelteKit serves the
+	 * built worker at /service-worker.js wherever the source lives. */
+	it("follows a svelte config's kit.files.serviceWorker to a custom source", () => {
+		const config = `export default { kit: { files: { serviceWorker: "src/lib/worker" } } }`
+		const exists = has("svelte.config.js", "src/lib/worker.ts")
+		expect(find_worker(exists, () => config)).toEqual({
+			path: "src/lib/worker.ts",
+			url: "/service-worker.js",
+			kind: "bundled",
+		})
+	})
+
+	it("prefers the configured source over the standard locations", () => {
+		const config = `export default { kit: { files: { serviceWorker: "src/lib/worker.ts" } } }`
+		const exists = has("svelte.config.js", "src/lib/worker.ts", "src/service-worker.ts")
+		expect(find_worker(exists, () => config)?.path).toBe("src/lib/worker.ts")
+	})
+
+	/** `kit.serviceWorker` (an object, for `register: false`) is a different option and must
+	 * not read as a path. */
+	it("ignores configs that don't name a worker source as a string", () => {
+		const registration = `export default { kit: { serviceWorker: { register: false } } }`
+		const exists = has("svelte.config.js", "src/service-worker.ts")
+		expect(find_worker(exists, () => registration)?.path).toBe("src/service-worker.ts")
+		// A named source that doesn't exist on disk falls back too, rather than wiring a
+		// file SvelteKit won't build.
+		const missing = `export default { kit: { files: { serviceWorker: "src/gone" } } }`
+		expect(find_worker(exists, () => missing)?.path).toBe("src/service-worker.ts")
+	})
 })
 
 describe("suggest_worker", () => {
@@ -123,9 +153,9 @@ describe("wire_worker", () => {
 })
 
 describe("page_snippet", () => {
-	/** `subscribe()` looks for `/sw.js`. A worker served anywhere else and no `service_worker`
-	 * is the most common way a fully wired setup still answers `no_service_worker`. */
-	it("names the worker's url whenever it isn't the default", () => {
+	/** `subscribe()` probes the conventional URLs itself, so the line only names a path for
+	 * a worker served somewhere it would never look. */
+	it("names the worker's url only when subscribe() wouldn't find it", () => {
 		expect(page_snippet({ path: "public/sw.js", url: "/sw.js", kind: "raw" }, "/r")).toBe(
 			'subscription({ register: "/r" })'
 		)
@@ -134,7 +164,10 @@ describe("page_snippet", () => {
 				{ path: "src/service-worker.ts", url: "/service-worker.js", kind: "bundled" },
 				"/r"
 			)
-		).toBe('subscription({ register: "/r", service_worker: "/service-worker.js" })')
+		).toBe('subscription({ register: "/r" })')
+		expect(page_snippet({ path: "public/pwa.js", url: "/pwa.js", kind: "raw" }, "/r")).toBe(
+			'subscription({ register: "/r", sw: "/pwa.js" })'
+		)
 	})
 })
 

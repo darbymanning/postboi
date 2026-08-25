@@ -1623,7 +1623,13 @@ async function offer_service_worker(
 		// that runs anywhere, which is the right answer when we know nothing.
 	}
 
-	const found = find_worker(existsSync)
+	const found = find_worker(existsSync, (path) => {
+		try {
+			return readFileSync(path, "utf8")
+		} catch {
+			return undefined
+		}
+	})
 	const target: WorkerTarget = found ?? suggest_worker(files, pkg, existsSync)
 
 	console.log(
@@ -1665,9 +1671,8 @@ async function offer_service_worker(
 		console.log(`${green("✓")} ${result.action} ${bold(target.path)}${how}`)
 	}
 
-	// The worker is only half of it: the page still has to subscribe, and `subscribe()`
-	// looks for /sw.js unless told otherwise — the most common way a fully wired setup
-	// still fails with `no_service_worker`.
+	// The worker is only half of it: the page still has to subscribe. `subscribe()` finds
+	// the conventional worker URLs on its own, so the line usually needs no path.
 	console.log(dim("\n  On the page:"))
 	console.log(`    ${cyan(page_snippet(target, register))}`)
 }
