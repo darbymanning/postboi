@@ -11,46 +11,71 @@ html {
 	scroll-behavior: smooth;
 }
 
+/* ---------- BRUTALIST ----------
+   The app (postboi-app) moved off soft UI and onto a brutalist system: ink
+   borders at 2px, hard shadows with no blur, square corners, a flat brand yellow
+   instead of a gradient. The docs site is the other half of the same product and
+   has to say the same thing, so the whole shift lands here, in the token layer
+   and the two material utilities, rather than across forty-three components.
+
+   The names are all unchanged. Every surface on the site already spells its
+   material as `card` / `inset-shadow` and its corners as a --radius-* token, so
+   this is the whole redesign for most of the pages. */
+
 :root {
 	--base-hue: 271;
 
-	--radius-base: 0.275rem;
+	/* Every radius utility on the site derives from this, so zero here squares
+	   the entire docs site. --radius-full is squared below for the same reason. */
+	--radius-base: 0rem;
 
-	--background-inset: oklch(0.9764 0.0013 var(--base-hue));
-	--background: oklch(1 0 0);
-	--background-muted: oklch(0.9264 0.002 var(--base-hue));
-	--foreground: oklch(0.1881 0.006 var(--base-hue));
-	--foreground-muted: oklch(0.5493 0.0081 var(--base-hue));
-	/* Light mode: interactive accent is the brand orange — the yellow is too pale
-	   to read on a white background. See BRANDING.md. */
-	--accent: oklch(0.7 0.19 55);
-	--accent-secondary: oklch(0.55 0.16 52);
-	--border: oklch(0 0.0013 var(--base-hue) / 0.08);
-	--highlight: oklch(0 0.0013 var(--base-hue));
+	/* Warm paper rather than screen-white, and near-zero chroma: the old
+	   blue-tinted 271 greys read as "tasteful", which is the register the product
+	   has left. */
+	--background-inset: oklch(0.95 0.02 95);
+	--background: oklch(0.99 0.008 95);
+	--background-muted: oklch(0.9 0.025 95);
+	--foreground: oklch(0.15 0 0);
+	--foreground-muted: oklch(0.42 0.01 95);
+	/* Light mode: interactive accent is the brand orange at full strength — the
+	   yellow is unreadable on paper. See BRANDING.md. */
+	--accent: oklch(0.62 0.23 38);
+	--accent-secondary: oklch(0.53 0.22 33);
+	/* The ink. It draws every border and every hard shadow on the site; it is no
+	   longer an 8%-alpha hairline. */
+	--border: oklch(0.15 0 0);
+	--highlight: oklch(0.15 0 0);
+	/* The colour a hard shadow is cast in, and the width of an edge. */
+	--drop: oklch(0.15 0 0);
+	--bd: 2px;
+	--bd-thick: 3px;
 
-	/* Brand (constant across modes) — the yellow #FDC005 is the hero colour,
-	   orange is its accent/gradient partner. Use these for logos, gradient fills
-	   and primary buttons; ink is the dark text that sits on top. */
-	--brand-yellow: oklch(0.84 0.17 85);
-	--brand-orange: oklch(0.74 0.17 55);
-	--brand-ink: oklch(0.18 0.025 var(--base-hue));
-	--brand-gradient: linear-gradient(100deg, var(--brand-yellow), var(--brand-orange));
+	/* Brand (constant across modes) — #FDC005 is the hero colour and it is a flat
+	   block now, not a gradient wash: yellow ground, black type, black frame, the
+	   same in both schemes. --brand-gradient is kept as a `background` value
+	   because callers assign it as one; there is simply no gradient left in it. */
+	--brand-yellow: oklch(0.86 0.18 88);
+	--brand-orange: oklch(0.72 0.19 48);
+	--brand-ink: oklch(0.15 0 0);
+	--brand-gradient: var(--brand-yellow);
 }
 
 .dark {
-	/* Neutrals carry the app's subtle cool tint: hue 271 with .02 chroma on
-	   surfaces/borders, lighter .005 on text. See the postboi-app --page-* palette. */
-	--background-inset: oklch(0.2099 0.02 var(--base-hue));
-	--background: oklch(0.2574 0.02 var(--base-hue));
-	--background-muted: oklch(0.3017 0.02 var(--base-hue));
-	--foreground: oklch(0.9674 0.005 var(--base-hue));
-	--foreground-muted: oklch(0.669 0.02 var(--base-hue));
-	/* Dark mode: the dark background gives the brand yellow enough contrast to be
-	   the interactive accent, matching the postboi-app dashboard. */
-	--accent: oklch(0.84 0.17 85);
-	--accent-secondary: oklch(0.74 0.17 55);
-	--border: oklch(1 0.02 var(--base-hue) / 0.05);
-	--highlight: oklch(1 0.02 var(--base-hue));
+	--background-inset: oklch(0.16 0 0);
+	--background: oklch(0.21 0 0);
+	--background-muted: oklch(0.27 0 0);
+	--foreground: oklch(0.97 0 0);
+	--foreground-muted: oklch(0.72 0 0);
+	/* Dark mode: the dark ground gives the brand yellow enough contrast to be the
+	   interactive accent, matching the app's dashboard. */
+	--accent: oklch(0.86 0.18 88);
+	--accent-secondary: oklch(0.8 0.175 82);
+	--border: oklch(0.93 0 0);
+	--highlight: oklch(0.93 0 0);
+	/* Black on near-black is no shadow at all, so dark mode drops a warm bone
+	   white instead — the same inversion the app makes, and what gives the dark
+	   theme its engraved look. */
+	--drop: oklch(0.9 0.03 90);
 }
 
 @theme {
@@ -87,24 +112,19 @@ html {
 	--radius-2xl: calc(var(--radius-base) * 8);
 	--radius-3xl: calc(var(--radius-base) * 12);
 	--radius-4xl: calc(var(--radius-base) * 16);
-	--radius-full: 9999px;
+	/* Squared with the rest. Kept as a name because `rounded-full` is spelled in a
+	   handful of components and the point is that they all go square together. */
+	--radius-full: 0px;
 
-	--shadow-xs: 0px 1px 1px -0.5px rgba(0, 0, 0, 0.06);
-	--shadow-sm: 0px 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06);
-	--shadow-md:
-		0px 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
-		0px 6px 6px -3px rgba(0, 0, 0, 0.06);
-	--shadow-lg:
-		0px 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
-		0px 6px 6px -3px rgba(0, 0, 0, 0.06), 0px 12px 12px -6px rgba(0, 0, 0, 0.06);
-	--shadow-xl:
-		0px 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
-		0px 6px 6px -3px rgba(0, 0, 0, 0.06), 0px 12px 12px -6px rgba(0, 0, 0, 0.06),
-		0px 24px 24px -12px rgba(0, 0, 0, 0.06);
-	--shadow-2xl:
-		0px 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
-		0px 6px 6px -3px rgba(0, 0, 0, 0.06), 0px 12px 12px -6px rgba(0, 0, 0, 0.06),
-		0px 24px 24px -12px rgba(0, 0, 0, 0.06), 0px 48px 48px -24px rgba(0, 0, 0, 0.06);
+	/* The whole shadow scale is offsets in ink, with no blur — "how far off the
+	   page is this" is the only question the material answers now. The stacked
+	   6%-black layers they replace were four ways of saying "slightly". */
+	--shadow-xs: 2px 2px 0 var(--drop);
+	--shadow-sm: 3px 3px 0 var(--drop);
+	--shadow-md: 4px 4px 0 var(--drop);
+	--shadow-lg: 6px 6px 0 var(--drop);
+	--shadow-xl: 8px 8px 0 var(--drop);
+	--shadow-2xl: 10px 10px 0 var(--drop);
 }
 
 @layer base {
@@ -112,40 +132,52 @@ html {
 		@apply bg-background font-sans text-foreground antialiased;
 	}
 
+	/* Three pixels of accent with three pixels of air, square — a focus ring here
+	   is a printer's registration mark, not a glow. */
 	* {
-		outline: 2px solid transparent;
-		outline-offset: 2px;
+		outline: 3px solid transparent;
+		outline-offset: 3px;
 		transition:
-			outline-color 0.15s ease-out,
-			outline-offset 0.15s ease-out;
+			outline-color 0.12s ease-out,
+			outline-offset 0.12s ease-out;
 	}
 
 	*:focus-visible {
 		outline-color: var(--color-accent);
-		outline-offset: 2px;
+		outline-offset: 3px;
 	}
 
+	/* A marker pen, not a translucent wash. Same gesture the app makes. */
 	::selection {
-		background-color: oklch(from var(--color-accent) l c h / 0.25);
-		color: var(--color-foreground);
+		background-color: var(--brand-yellow);
+		color: var(--brand-ink);
+	}
+
+	/* Docs headings set tight and heavy, to match the app's display register. */
+	h1,
+	h2,
+	h3 {
+		font-weight: 800;
+		letter-spacing: -0.035em;
 	}
 }
 
+/* The two materials the whole site is built out of.
+
+   `inset-shadow` is a well cut into the surface: a hard 2px ink ring drawn
+   inside, rather than the old four-layer soft bevel. A bevel is a gradient.
+
+   `card` is a sheet of paper on a desk: the same ink ring, plus a 4px offset
+   with no blur. The previous version deliberately built its edge out of shadow
+   so it would never read as a line — this design wants the line. */
 @utility inset-shadow {
 	position: relative;
 	isolation: isolate;
-	box-shadow:
-		inset 0px 1px 1px -0.5px rgba(0, 0, 0, 0.06),
-		inset 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
-		inset 0px 6px 6px -3px rgba(0, 0, 0, 0.06),
-		inset 0 -0.5px rgba(255, 255, 255, 0.08),
-		inset 0 0 0 0.5px oklch(from var(--highlight) l c h / 8%);
+	box-shadow: inset 0 0 0 var(--bd) var(--border);
 }
 
 @utility card {
 	box-shadow:
-		0 -0.5px rgba(255, 255, 255, 0.08),
-		0 4px 8px rgba(0, 0, 0, 0.06),
-		0 0 0 0.5px oklch(from var(--highlight) l c h / 8%),
-		0 1px 6px -4px #000;
+		0 0 0 var(--bd) var(--border),
+		4px 4px 0 var(--drop);
 }
