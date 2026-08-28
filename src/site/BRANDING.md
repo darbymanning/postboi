@@ -11,18 +11,18 @@ palette in a component.
 
 ## The three faces
 
-| Face | Package | What it sets |
-| --- | --- | --- |
-| **Archivo** | `@fontsource-variable/archivo/wdth.css` | headings, labels, buttons — here for its *width* axis (62–125), which is what lets one family cover a poster title and condensed tracked-out docket caps |
-| **Golos Text** | `@fontsource-variable/golos-text/wght.css` | everything you read |
-| **Monaspace Neon** | `@fontsource/monaspace-neon/latin.css` | anything a machine said: code, commands, keys, paths |
+| Face               | Package                                    | What it sets                                                                                                                                             |
+| ------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Archivo**        | `@fontsource-variable/archivo/wdth.css`    | headings, labels, buttons — here for its _width_ axis (62–125), which is what lets one family cover a poster title and condensed tracked-out docket caps |
+| **Golos Text**     | `@fontsource-variable/golos-text/wght.css` | everything you read                                                                                                                                      |
+| **Monaspace Neon** | `@fontsource/monaspace-neon/latin.css`     | anything a machine said: code, commands, keys, paths                                                                                                     |
 
 Archivo replaced Inter across the product. Inter is a fine typeface and the single
 most-used interface font on the web; a product whose whole voice is "this is not the
 sixth one of these you have seen" cannot be set in it.
 
 `@layer base` puts `h1`–`h6` in Archivo automatically, so a heading does not have to
-ask. That split *is* the typographic idea: the thing naming a section is the poster
+ask. That split _is_ the typographic idea: the thing naming a section is the poster
 face, the thing you read under it is the reading face.
 
 ## The three registers
@@ -49,7 +49,7 @@ floating on a page.
   masthead, a docket underscore, the frame of a key — and it is meant to be read.
 - `--brand-yellow` `#FDC005` never changes. `--accent` does: the yellow is too pale
   to read on paper, so light mode's interactive accent is the brand orange and dark
-  mode's is the yellow. `--hot` is the yellow when it has to be *text*.
+  mode's is the yellow. `--hot` is the yellow when it has to be _text_.
 - All colours are oklch.
 
 ## The furniture
