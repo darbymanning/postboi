@@ -192,15 +192,18 @@
 
 <svelte:document onkeydown={handleDocumentKeydown} />
 
+<!-- The phone's masthead: the mark, what this is, and a drawn rule under the pair
+     — the same header the desktop rail opens with. -->
 <div
-	class="fixed inset-x-0 top-0 z-50 flex items-center justify-between border-b border-border bg-background px-4 py-1.5 lg:hidden"
+	class="fixed inset-x-0 top-0 z-50 flex items-center justify-between border-b border-line bg-background px-4 py-1.5 lg:hidden"
 >
 	<a
 		href={resolve("/")}
-		class="inline-flex items-center px-2 py-2"
+		class="inline-flex items-center gap-2.5 px-2 py-2"
 		aria-label={brandingConfig.name}
 	>
-		<BrandLogo defaultRaw={brandingConfig.logoRaw} class="[&_svg]:size-4" />
+		<BrandLogo defaultRaw={brandingConfig.logoRaw} class="[&_svg]:size-6" />
+		<span class="docket text-foreground">Postboi Docs</span>
 	</a>
 	<button
 		id={toggleButtonId}
@@ -228,7 +231,7 @@
 
 	<div
 		id={panelId}
-		class="sidebar fixed inset-y-0 right-0 z-50 w-3/4 max-w-sm overflow-hidden border-l border-border bg-background-inset text-foreground-muted lg:hidden"
+		class="sidebar fixed inset-y-0 right-0 z-50 w-3/4 max-w-sm overflow-hidden border-l border-line bg-background text-foreground-muted lg:hidden"
 		class:active={isOpen}
 		role="dialog"
 		aria-modal="true"

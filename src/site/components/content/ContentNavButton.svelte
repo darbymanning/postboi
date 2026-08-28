@@ -14,23 +14,17 @@
 </script>
 
 <div
-	class={cn(
-		"group inset-shadow rounded-lg bg-background-inset p-1.5",
-		align === "right" && "sm:text-right",
-		forceSecondColumn && "sm:col-start-2"
-	)}
+	class={cn("group", align === "right" && "sm:text-right", forceSecondColumn && "sm:col-start-2")}
 >
 	<a
 		// @ts-expect-error arg cannot be cast as `resolve`s expected type
 		href={resolve(href)}
 		class={cn(
-			"group relative flex flex-col rounded-md bg-background px-4 py-3 card transition-[background-color] duration-150 ease-out hover:bg-background-muted"
+			"key relative flex flex-col gap-1 rounded-sm bg-background px-4 py-3 transition-[background-color] duration-150 ease-out hover:bg-background-muted"
 		)}
 	>
-		<span class="text-xs font-normal tracking-wide text-foreground-muted/70 uppercase">
-			{label}
-		</span>
-		<span class="text-lg font-medium tracking-tight text-foreground">
+		<span class="docket text-foreground-muted">{label}</span>
+		<span class="font-display text-lg font-bold tracking-tight text-balance text-foreground">
 			{title}
 		</span>
 	</a>

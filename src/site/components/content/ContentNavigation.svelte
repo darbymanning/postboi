@@ -22,7 +22,7 @@
 
 {#if enabled && (previous ?? next)}
 	<nav
-		class="relative mt-16 pt-9 after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:h-px after:bg-border after:shadow-2xs after:shadow-white after:content-[''] dark:after:bg-black dark:after:shadow-border"
+		class="relative mt-16 pt-9 after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:h-px after:bg-border after:content-['']"
 	>
 		<div class="grid gap-4 sm:grid-cols-2">
 			{#if previous}

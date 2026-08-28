@@ -11,14 +11,12 @@
 	const { children, class: className = "", ...restProps }: ComponentProps = $props()
 </script>
 
-<div class="inset-shadow mt-6 rounded-lg bg-background-inset p-1.5">
-	<blockquote
-		{...restProps}
-		class={cn(
-			"rounded-md  border-l-2 border-l-accent bg-background px-5 py-3 text-base font-normal text-foreground-muted italic card",
-			className
-		)}
-	>
-		{@render children?.()}
-	</blockquote>
-</div>
+<blockquote
+	{...restProps}
+	class={cn(
+		"mt-6 border-l-4 border-l-brand-yellow bg-background px-5 py-4 text-base font-normal text-pretty text-foreground-muted",
+		className
+	)}
+>
+	{@render children?.()}
+</blockquote>

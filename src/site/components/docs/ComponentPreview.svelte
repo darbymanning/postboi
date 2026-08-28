@@ -245,7 +245,7 @@
 		>
 			{#if tabs.length}
 				<div
-					class="relative flex items-center bg-background text-sm after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border after:shadow-2xs after:shadow-white after:content-[''] dark:after:bg-background-inset dark:after:shadow-border"
+					class="relative flex items-center bg-background text-sm after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border after:content-['']"
 				>
 					<div
 						class="relative flex flex-1 items-center overflow-x-auto"

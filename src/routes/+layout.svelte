@@ -159,6 +159,14 @@
 		versionItems,
 	})
 
+	// The masthead's file number. It is the doc's position in the section's reading
+	// order — the same sequence the previous/next pager walks — so it is a real
+	// reference and not a decorative serial.
+	const docNumber = $derived.by(() => {
+		const index = sectionManifest.findIndex((doc) => doc.slug === docSlug)
+		return index < 0 ? null : String(index + 1).padStart(3, "0")
+	})
+
 	const tocSelector = $derived(resolveTocSelector(sectionUi.toc, docSlug))
 	const mainId = $derived(`${sectionId}-main-content`)
 	const scrollContainerId = $derived(`${sectionId}-content-container`)
@@ -171,7 +179,7 @@
 	<meta name="author" content={siteConfig.author} />
 	<meta name="keywords" content={siteConfig.keywords.join(", ")} />
 
-	<meta name="theme-color" content="#ffffff" />
+	<meta name="theme-color" content="#f7f0e4" />
 	<meta
 		name="docs-package-manager-storage-key"
 		content={contentUiDefaults.packageManager.storageKey}
@@ -229,33 +237,44 @@
 	{#snippet main()}
 		<section class="flex min-w-0 flex-1 flex-col space-y-8">
 			{#if metadata?.sourceType === "svx"}
-				<div class="space-y-4">
-					{#if currentDoc?.category}
-						<p class="mb-2 text-sm font-medium tracking-normal text-foreground-muted/70 capitalize">
-							{currentDoc.category}
-						</p>
-					{/if}
-					<h1 class="scroll-m-20 text-3xl font-medium tracking-tight text-foreground">
+				<!-- The masthead: what file this is and where it sits, ruled off, then the
+				     title in the poster face and the standfirst in the reading face. The
+				     same header the app puts on every screen — see AGENTS.md, "One design
+				     language, two cuts". -->
+				<div>
+					<div class="flex items-baseline gap-4">
+						{#if currentDoc?.category}
+							<span class="docket text-foreground-muted">{currentDoc.category}</span>
+						{/if}
+						<span class="h-px flex-1 bg-border"></span>
+						{#if docNumber}
+							<span class="docket text-foreground-faint">File {docNumber}</span>
+						{/if}
+					</div>
+
+					<h1 class="poster mt-5 scroll-m-20 text-4xl text-foreground uppercase sm:text-5xl">
 						{metadata.title}
 					</h1>
+
+					<div class="mt-5 h-0.5 bg-line"></div>
+
 					{#if metadata.description}
-						<p class="max-w-4xl text-base font-normal tracking-normal text-foreground-muted">
+						<p class="mt-5 max-w-3xl text-lg leading-relaxed text-pretty text-foreground-muted">
 							{metadata.description}
 						</p>
 					{/if}
 
 					{#if showDocActions}
-						<MobileDocShareActions
-							{rawPath}
-							{rawUrl}
-							{githubUrl}
-							pageActionsConfig={sectionUi.pageActions}
-						/>
+						<div class="mt-5">
+							<MobileDocShareActions
+								{rawPath}
+								{rawUrl}
+								{githubUrl}
+								pageActionsConfig={sectionUi.pageActions}
+							/>
+						</div>
 					{/if}
 				</div>
-				<hr
-					class="h-px border-0 bg-border shadow-2xs shadow-white dark:bg-black dark:shadow-border"
-				/>
 			{/if}
 
 			<div class="flex-1">

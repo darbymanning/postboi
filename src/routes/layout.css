@@ -1,5 +1,23 @@
 @import "tailwindcss";
-@import "@fontsource/inter/latin.css";
+
+/* ---------- the three families ----------
+
+   The docs are set in the same language as the app and the marketing site — see
+   postboi-app's `AGENTS.md`, "One design language, two cuts". Three faces, and a
+   rule about which one speaks when:
+
+   ARCHIVO carries every heading, label and button, and it is here for its *width*
+   axis (62–125): one family covers a headline and the condensed, tracked-out caps
+   printed on a docket, with no second face pretending to agree with the first.
+
+   GOLOS TEXT is everything you read. It replaces Inter, which is a fine typeface
+   and the single most-used interface font on the web. Golos was cut by Paratype
+   for public-service interfaces: tall x-height, open apertures, sturdy at 12px,
+   and with enough of a form-filling accent to belong to a postal service.
+
+   MONASPACE NEON is anything a machine said: code, commands, keys, paths. */
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource-variable/golos-text/wght.css";
 @import "@fontsource/monaspace-neon/latin.css";
 
 /* The example apps under examples/ are separate projects — don't scan them for classes. */
@@ -11,51 +29,85 @@ html {
 	scroll-behavior: smooth;
 }
 
+/* ---------- the press ----------
+
+   Manila paper and ink navy. The names are the ones this site already used, so
+   every existing `bg-background` / `text-foreground-muted` in the tree re-renders
+   in the new language without being touched — what changed is what they resolve
+   to, not where they are.
+
+   Read `--background` as "a sheet" and `--background-inset` as "the mount it is
+   pinned to". That is why the doc panel is manila and the cards inside it are
+   white: a document laid on card, not a card floating on a page. */
 :root {
 	--base-hue: 271;
 
-	--radius-base: 0.275rem;
+	/* Printed things have corners. Not quite zero — at exactly 0 a nested panel's
+	   corner lands on its parent's and reads as a misprint, and a focus ring on a
+	   hard corner looks broken. One or two pixels is a cut edge. */
+	--radius-base: 0.0625rem;
 
-	--background-inset: oklch(0.9764 0.0013 var(--base-hue));
+	/* Manila, and the white sheet that sits on it. */
+	--paper: oklch(0.955 0.018 88);
+	--background-inset: var(--paper);
 	--background: oklch(1 0 0);
-	--background-muted: oklch(0.9264 0.002 var(--base-hue));
-	--foreground: oklch(0.1881 0.006 var(--base-hue));
-	--foreground-muted: oklch(0.5493 0.0081 var(--base-hue));
+	--background-muted: oklch(0.915 0.026 86);
+	--foreground: oklch(0.16 0.032 268);
+	--foreground-muted: oklch(0.45 0.02 268);
+	--foreground-faint: oklch(0.62 0.015 268);
 	/* Light mode: interactive accent is the brand orange — the yellow is too pale
 	   to read on a white background. See BRANDING.md. */
 	--accent: oklch(0.7 0.19 55);
 	--accent-secondary: oklch(0.55 0.16 52);
-	--border: oklch(0 0.0013 var(--base-hue) / 0.08);
+	/* A printed rule, not a browser default: ink at low alpha rather than a grey
+	   of its own, so it reads as the same substance as the type and flips polarity
+	   with the scheme for free. `--border` is the hairline between two areas;
+	   `--line` is the drawn rule — a docket underscore, a masthead, the frame of a
+	   key — and it is meant to be *read*. */
+	--border: oklch(0.16 0.032 268 / 0.18);
+	--line: oklch(0.16 0.032 268 / 0.85);
 	--highlight: oklch(0 0.0013 var(--base-hue));
 
 	/* Brand (constant across modes) — the yellow #FDC005 is the hero colour,
 	   orange is its accent/gradient partner. Use these for logos, gradient fills
 	   and primary buttons; ink is the dark text that sits on top. */
 	--brand-yellow: oklch(0.84 0.17 85);
+	--brand-yellow-deep: oklch(0.78 0.165 76);
 	--brand-orange: oklch(0.74 0.17 55);
-	--brand-ink: oklch(0.18 0.025 var(--base-hue));
-	--brand-gradient: linear-gradient(100deg, var(--brand-yellow), var(--brand-orange));
+	--brand-ink: oklch(0.16 0.032 268);
+	--brand-gradient: linear-gradient(100deg, var(--brand-yellow), oklch(0.8 0.165 82));
+	/* Yellow as *text* is unreadable on paper, so it resolves to the deep cut in
+	   light and the bright one in dark. `--brand-yellow` itself stays constant for
+	   fills, where ink sits on top of it either way. */
+	--hot: var(--brand-yellow-deep);
 }
 
 .dark {
-	/* Neutrals carry the app's subtle cool tint: hue 271 with .02 chroma on
-	   surfaces/borders, lighter .005 on text. See the postboi-app --page-* palette. */
-	--background-inset: oklch(0.2099 0.02 var(--base-hue));
-	--background: oklch(0.2574 0.02 var(--base-hue));
-	--background-muted: oklch(0.3017 0.02 var(--base-hue));
-	--foreground: oklch(0.9674 0.005 var(--base-hue));
-	--foreground-muted: oklch(0.669 0.02 var(--base-hue));
+	/* Ink with paper on it. The ladder is the one the app uses (postboi-app
+	   `--page-*`), so a reader moving between the two sees one product. */
+	--background-inset: oklch(0.16 0.032 268);
+	--background: oklch(0.21 0.03 268);
+	--background-muted: oklch(0.26 0.03 268);
+	--foreground: oklch(0.955 0.018 88);
+	--foreground-muted: oklch(0.72 0.02 268);
+	--foreground-faint: oklch(0.55 0.02 268);
 	/* Dark mode: the dark background gives the brand yellow enough contrast to be
 	   the interactive accent, matching the postboi-app dashboard. */
 	--accent: oklch(0.84 0.17 85);
 	--accent-secondary: oklch(0.74 0.17 55);
-	--border: oklch(1 0.02 var(--base-hue) / 0.05);
+	--border: oklch(0.955 0.018 88 / 0.18);
+	--line: oklch(0.955 0.018 88 / 0.7);
 	--highlight: oklch(1 0.02 var(--base-hue));
+	--hot: var(--brand-yellow);
 }
 
 @theme {
 	--font-sans:
-		"Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+		"Golos Text Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+		sans-serif;
+	/* Asked for by name where Archivo itself is wanted rather than one of the
+	   registers below: headings, keys, anything read as a readout. */
+	--font-display: "Archivo Variable", "Golos Text Variable", ui-sans-serif, system-ui, sans-serif;
 	--font-mono:
 		"Monaspace Neon", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 		"Courier New", monospace;
@@ -65,9 +117,13 @@ html {
 	--color-background-muted: var(--background-muted);
 	--color-foreground: var(--foreground);
 	--color-foreground-muted: var(--foreground-muted);
+	--color-foreground-faint: var(--foreground-faint);
 	--color-accent: var(--accent);
 	--color-accent-secoundary: var(--accent-secondary);
 	--color-border: var(--border);
+	--color-line: var(--line);
+	--color-hot: var(--hot);
+	--color-paper: var(--paper);
 	--color-brand-yellow: var(--brand-yellow);
 	--color-brand-orange: var(--brand-orange);
 	--color-brand-ink: var(--brand-ink);
@@ -79,37 +135,57 @@ html {
 	--tracking-wider: 0.03rem;
 	--tracking-widest: 0.08rem;
 
-	--radius-xs: calc(var(--radius-base) * 1);
-	--radius-sm: calc(var(--radius-base) * 2);
-	--radius-md: calc(var(--radius-base) * 3);
-	--radius-lg: calc(var(--radius-base) * 4);
-	--radius-xl: calc(var(--radius-base) * 6);
-	--radius-2xl: calc(var(--radius-base) * 8);
-	--radius-3xl: calc(var(--radius-base) * 12);
-	--radius-4xl: calc(var(--radius-base) * 16);
+	/* Set flat rather than derived: a multiplied ladder that starts at a cut edge
+	   ends at 16px, which is the corner this whole palette exists to get away
+	   from. `--radius-full` stays a real pill on purpose — it draws the things
+	   that are round because of what they are, not because of a house style. */
+	--radius-xs: 1px;
+	--radius-sm: 2px;
+	--radius-md: 2px;
+	--radius-lg: 3px;
+	--radius-xl: 4px;
+	--radius-2xl: 4px;
+	--radius-3xl: 5px;
+	--radius-4xl: 6px;
 	--radius-full: 9999px;
 
-	--shadow-xs: 0px 1px 1px -0.5px rgba(0, 0, 0, 0.06);
-	--shadow-sm: 0px 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06);
-	--shadow-md:
-		0px 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
-		0px 6px 6px -3px rgba(0, 0, 0, 0.06);
-	--shadow-lg:
-		0px 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
-		0px 6px 6px -3px rgba(0, 0, 0, 0.06), 0px 12px 12px -6px rgba(0, 0, 0, 0.06);
-	--shadow-xl:
-		0px 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
-		0px 6px 6px -3px rgba(0, 0, 0, 0.06), 0px 12px 12px -6px rgba(0, 0, 0, 0.06),
-		0px 24px 24px -12px rgba(0, 0, 0, 0.06);
-	--shadow-2xl:
-		0px 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
-		0px 6px 6px -3px rgba(0, 0, 0, 0.06), 0px 12px 12px -6px rgba(0, 0, 0, 0.06),
-		0px 24px 24px -12px rgba(0, 0, 0, 0.06), 0px 48px 48px -24px rgba(0, 0, 0, 0.06);
+	/* Printed things cast an edge, not a glow. Each step is a drawn hairline plus
+	   a hard offset with no blur in it, growing by offset rather than by spread —
+	   which is also the only kind of shadow that survives an ink-dark ground. */
+	--shadow-xs: 0 0 0 1px var(--border);
+	--shadow-sm: 0 0 0 1px var(--border), 2px 2px 0 var(--stamp-shadow);
+	--shadow-md: 0 0 0 1px var(--border), 4px 4px 0 var(--stamp-shadow);
+	--shadow-lg: 0 0 0 1px var(--border), 6px 6px 0 var(--stamp-shadow);
+	--shadow-xl: 0 0 0 1px var(--line), 8px 8px 0 var(--stamp-shadow);
+	--shadow-2xl: 0 0 0 1px var(--line), 10px 10px 0 var(--stamp-shadow);
+}
+
+/* The ink a hard shadow is printed in. Declared outside @theme because it is read
+   by the shadow tokens above, and Tailwind would otherwise offer `bg-stamp-shadow`
+   as a colour anyone could reach for — it is a shadow, not a fill. */
+:root {
+	--stamp-shadow: color-mix(in oklab, var(--foreground) 7%, transparent);
+}
+
+.dark {
+	--stamp-shadow: color-mix(in oklab, oklch(0 0 0) 32%, transparent);
 }
 
 @layer base {
 	body {
 		@apply bg-background font-sans text-foreground antialiased;
+	}
+
+	/* The typographic idea in one rule: the thing naming a section is the poster
+	   face, the thing you read under it is the reading face. */
+	h1,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6 {
+		font-family: var(--font-display);
+		font-stretch: 100%;
 	}
 
 	* {
@@ -131,21 +207,100 @@ html {
 	}
 }
 
+/* ---------- the registers ----------
+   Everything here is one of: a POSTER (large, expanded, black), a DOCKET (small,
+   condensed, tracked-out caps — the printing on a form) or MACHINE (mono —
+   anything a computer said). Three registers, no fourth. */
+
+@utility poster {
+	font-family: var(--font-display);
+	font-stretch: 112%;
+	font-weight: 800;
+	letter-spacing: -0.03em;
+	line-height: 0.95;
+	/* Tightening the tracking tightens the word space with it, and at this width
+	   two facing diagonals close it completely. Opening the word space back up is
+	   the other half of tracking a headline down, not an extra. */
+	word-spacing: 0.08em;
+	text-wrap: balance;
+}
+
+@utility docket {
+	font-family: var(--font-display);
+	font-size: 0.6875rem;
+	font-stretch: 78%;
+	font-weight: 700;
+	letter-spacing: 0.2em;
+	line-height: 1.2;
+	text-transform: uppercase;
+}
+
+@utility machine {
+	font-family: var(--font-mono);
+	font-size: 0.8125rem;
+	letter-spacing: -0.01em;
+}
+
+/* ---------- printed furniture ---------- */
+
+/* The mount a sheet is pinned to: a drawn edge and nothing else. This used to be
+   a four-layer inner glow doing an impression of depth for a design system that
+   no longer exists here. */
 @utility inset-shadow {
 	position: relative;
 	isolation: isolate;
-	box-shadow:
-		inset 0px 1px 1px -0.5px rgba(0, 0, 0, 0.06),
-		inset 0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
-		inset 0px 6px 6px -3px rgba(0, 0, 0, 0.06),
-		inset 0 -0.5px rgba(255, 255, 255, 0.08),
-		inset 0 0 0 0.5px oklch(from var(--highlight) l c h / 8%);
+	box-shadow: inset 0 0 0 1px var(--border);
 }
 
+/* A sheet on a desk: an edge all the way round and a hard offset with no blur. */
 @utility card {
 	box-shadow:
-		0 -0.5px rgba(255, 255, 255, 0.08),
-		0 4px 8px rgba(0, 0, 0, 0.06),
-		0 0 0 0.5px oklch(from var(--highlight) l c h / 8%),
-		0 1px 6px -4px #000;
+		0 0 0 1px var(--border),
+		3px 3px 0 var(--stamp-shadow);
+}
+
+/* A key you can press into its own shadow. `translate` rather than `scale`, so
+   the label doesn't resample: the whole key moves the width of its shadow and the
+   shadow goes, which is exactly what a physical key does. */
+@utility key {
+	box-shadow:
+		0 0 0 1px var(--line),
+		3px 3px 0 var(--stamp-shadow);
+	transition:
+		translate 100ms cubic-bezier(0.4, 0, 0.2, 1),
+		box-shadow 100ms cubic-bezier(0.4, 0, 0.2, 1);
+
+	&:active {
+		box-shadow: 0 0 0 1px var(--line);
+		translate: 3px 3px;
+	}
+}
+
+/* The torn edge of a strip of stamps. Full-bleed on the other axis on purpose:
+   a tile only as tall as the notch masks everything outside that band away. */
+@utility perforated-t {
+	--perf: 5px;
+	mask-image: radial-gradient(circle var(--perf) at 50% 0, transparent 97%, black 100%);
+	mask-repeat: repeat-x;
+	mask-size: calc(var(--perf) * 2.6) 100%;
+}
+
+/* The red-and-blue chevrons round an airmail envelope, drawn rather than
+   imported: two offset repeating gradients masked into a border. */
+@utility airmail {
+	background-image: repeating-linear-gradient(
+		-45deg,
+		oklch(0.6 0.216 28) 0 8px,
+		transparent 8px 16px,
+		oklch(0.52 0.16 254) 16px 24px,
+		transparent 24px 32px
+	);
+}
+
+/* Halftone — a printed screen rather than a gradient. Small enough to read as
+   dot gain at 100% zoom and not as polka dots. */
+@utility halftone {
+	background-image: radial-gradient(var(--foreground) 0.5px, transparent 0.6px);
+	background-size: 4px 4px;
+	opacity: 0.14;
 }

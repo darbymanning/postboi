@@ -198,7 +198,7 @@
 	{#if isOpen}
 		<div
 			class={cn(
-				"absolute z-50 flex min-w-full flex-col gap-1 overflow-y-auto rounded-sm bg-background p-1 shadow-2xl card",
+				"absolute z-50 flex min-w-full flex-col gap-1 overflow-y-auto rounded-sm bg-background p-1 ring-1 ring-line shadow-[0_16px_40px_var(--stamp-shadow)]",
 				direction === "up" ? "bottom-full mb-1" : "mt-1"
 			)}
 			style={menuMaxHeight ? `max-height: ${menuMaxHeight}px` : undefined}
@@ -209,7 +209,7 @@
 				{@const itemClass = cn(
 					"flex w-full items-start gap-3 rounded-xs px-3 py-1.5 text-left text-sm transition-colors duration-150 ease-out",
 					item.active
-						? "bg-accent/10 text-accent"
+						? "bg-background-muted font-medium text-foreground"
 						: "text-foreground-muted hover:bg-background-muted hover:text-foreground"
 				)}
 				{#if item.href}

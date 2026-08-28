@@ -11,9 +11,6 @@
 	const { children, class: className = "", ...restProps }: ComponentProps = $props()
 </script>
 
-<tr
-	{...restProps}
-	class={cn("text-base leading-loose font-normal [&_code]:text-sm [&strong]:text-base", className)}
->
+<tr {...restProps} class={cn("text-base leading-relaxed font-normal", className)}>
 	{@render children?.()}
 </tr>

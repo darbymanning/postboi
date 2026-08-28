@@ -52,7 +52,7 @@
 	{id}
 	{...restProps}
 	class={cn(
-		"group w-fit scroll-m-24 text-3xl font-medium tracking-tight text-foreground [&_code]:text-2xl",
+		"group w-fit scroll-m-24 text-3xl font-bold tracking-tight text-foreground [&_code]:text-2xl",
 		className
 	)}
 >
@@ -63,12 +63,12 @@
 
 		{#if id}
 			<div
-				class="inset-shadow flex items-center rounded-sm p-1 opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 focus-visible:opacity-100"
+				class="flex items-center opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 focus-visible:opacity-100"
 			>
 				<button
 					type="button"
 					class={cn(
-						"relative inline-flex size-6 shrink-0 items-center justify-center rounded-xs bg-background text-foreground card transition-[scale] duration-150 ease-out active:scale-[0.95]"
+						"key relative inline-flex size-6 shrink-0 items-center justify-center rounded-xs bg-background-muted text-foreground"
 					)}
 					onclick={copyHeadingUrl}
 					aria-label={copied ? "Copied heading link" : "Copy heading link"}

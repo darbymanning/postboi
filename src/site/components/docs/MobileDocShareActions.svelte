@@ -236,13 +236,13 @@
 	})
 
 	const buttonClass =
-		"card relative inline-flex h-9 w-full font-medium shrink-0 overflow-hidden items-center justify-center gap-2 rounded-sm bg-background px-4 py-2 text-sm whitespace-nowrap text-foreground transition-[background-color] duration-150 ease-out hover:bg-background-muted disabled:pointer-events-none disabled:opacity-50 has-[>svg]:px-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 flex-1"
+		"key relative inline-flex h-9 w-full font-medium shrink-0 overflow-hidden items-center justify-center gap-2 rounded-sm bg-background px-4 py-2 text-sm whitespace-nowrap text-foreground transition-[background-color] duration-150 ease-out hover:bg-background-muted disabled:pointer-events-none disabled:opacity-50 has-[>svg]:px-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 flex-1"
 </script>
 
 {#if hasActions}
 	<div class="relative z-20 mt-8 flex w-full gap-2 lg:hidden">
 		{#if canShowCopy}
-			<div class="inset-shadow w-full rounded-md bg-background-inset p-1.5">
+			<div class="w-full">
 				<button
 					type="button"
 					onclick={() => void handleCopy()}
@@ -288,7 +288,7 @@
 		{/if}
 
 		{#if hasMenuActions}
-			<div class="inset-shadow relative rounded-md bg-background-inset p-1.5">
+			<div class="relative">
 				<button
 					id={dropdownTriggerId}
 					type="button"

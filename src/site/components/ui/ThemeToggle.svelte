@@ -15,7 +15,7 @@
 <button
 	type="button"
 	class={cn(
-		"group transition-scale inset-shadow relative inline-flex size-7 items-center justify-center rounded-sm bg-background-inset text-foreground duration-150 ease-out active:scale-[0.95]",
+		"group key relative inline-flex size-7 items-center justify-center rounded-sm bg-background-muted text-foreground",
 		className
 	)}
 	onclick={themeStore.toggle}
