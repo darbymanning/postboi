@@ -162,7 +162,7 @@
 	// The masthead's file number. It is the doc's position in the section's reading
 	// order — the same sequence the previous/next pager walks — so it is a real
 	// reference and not a decorative serial.
-	const docNumber = $derived.by(() => {
+	const doc_number = $derived.by(() => {
 		const index = sectionManifest.findIndex((doc) => doc.slug === docSlug)
 		return index < 0 ? null : String(index + 1).padStart(3, "0")
 	})
@@ -247,8 +247,8 @@
 							<span class="docket text-foreground-muted">{currentDoc.category}</span>
 						{/if}
 						<span class="h-px flex-1 bg-border"></span>
-						{#if docNumber}
-							<span class="docket text-foreground-faint">File {docNumber}</span>
+						{#if doc_number}
+							<span class="docket text-foreground-faint">File {doc_number}</span>
 						{/if}
 					</div>
 

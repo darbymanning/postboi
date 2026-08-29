@@ -76,6 +76,9 @@ html {
 	--brand-orange: oklch(0.74 0.17 55);
 	--brand-ink: oklch(0.16 0.032 268);
 	--brand-gradient: linear-gradient(100deg, var(--brand-yellow), oklch(0.8 0.165 82));
+	/* The one hue that only ever appears on a stamp — a cancellation, an airmail
+	   stripe. Constant across modes: struck ink does not invert with the page. */
+	--postal-red: oklch(0.6 0.216 28);
 	/* Yellow as *text* is unreadable on paper, so it resolves to the deep cut in
 	   light and the bright one in dark. `--brand-yellow` itself stays constant for
 	   fills, where ink sits on top of it either way. */
@@ -127,6 +130,7 @@ html {
 	--color-brand-yellow: var(--brand-yellow);
 	--color-brand-orange: var(--brand-orange);
 	--color-brand-ink: var(--brand-ink);
+	--color-postal-red: var(--postal-red);
 
 	--tracking-tighter: -0.06rem;
 	--tracking-tight: -0.035rem;
@@ -290,7 +294,7 @@ html {
 @utility airmail {
 	background-image: repeating-linear-gradient(
 		-45deg,
-		oklch(0.6 0.216 28) 0 8px,
+		var(--postal-red) 0 8px,
 		transparent 8px 16px,
 		oklch(0.52 0.16 254) 16px 24px,
 		transparent 24px 32px

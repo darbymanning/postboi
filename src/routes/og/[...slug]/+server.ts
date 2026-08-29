@@ -13,8 +13,8 @@ import { contentSections } from "$site/config/navigation"
 // The static cuts, not the variable ones the site loads: the image renderer wants
 // a single instance per weight, and a variable file would arrive at whatever its
 // default axis happens to be.
-import archivo700DataUri from "@fontsource/archivo/files/archivo-latin-700-normal.woff2?inline"
-import golos400DataUri from "@fontsource/golos-text/files/golos-text-latin-400-normal.woff2?inline"
+import archivo_700 from "@fontsource/archivo/files/archivo-latin-700-normal.woff2?inline"
+import golos_400 from "@fontsource/golos-text/files/golos-text-latin-400-normal.woff2?inline"
 
 export const prerender = true
 
@@ -75,8 +75,8 @@ const dataUriToArrayBuffer = (dataUri: string) => {
 }
 
 const fontDataPromise = Promise.all([
-	Promise.resolve(dataUriToArrayBuffer(archivo700DataUri)),
-	Promise.resolve(dataUriToArrayBuffer(golos400DataUri)),
+	Promise.resolve(dataUriToArrayBuffer(archivo_700)),
+	Promise.resolve(dataUriToArrayBuffer(golos_400)),
 ])
 
 const takumiFontLoaders = [

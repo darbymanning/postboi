@@ -20,7 +20,7 @@
 	<div class="relative">
 		<img src={nervous} alt="A nervous-looking Postboi" class="w-40" />
 		<span
-			class="docket absolute -right-14 -bottom-2 -rotate-12 border-2 border-current px-2.5 py-1.5 text-[oklch(0.6_0.216_28)] sm:-right-20"
+			class="docket absolute -right-14 -bottom-2 -rotate-12 border-2 border-current px-2.5 py-1.5 text-postal-red sm:-right-20"
 		>
 			{cancellation}
 		</span>

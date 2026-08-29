@@ -20,7 +20,7 @@
 	// Anything a machine said gets a docket label: which language this slip is in,
 	// printed on the block the way a form names the box you are about to fill.
 	const language = $derived((props as ComponentProps)["data-language"])
-	const languageLabel = $derived(typeof language === "string" && language ? language : null)
+	const language_label = $derived(typeof language === "string" && language ? language : null)
 	const restProps = $derived.by(() => {
 		const {
 			class: _class,
@@ -42,21 +42,21 @@
 				: "group/pre relative rounded-sm bg-background p-4 font-mono text-base font-normal text-foreground card",
 			// A labelled slip reserves the strip the label sits in, so the last line
 			// of code never runs underneath it.
-			!unstyled && languageLabel && "pb-9",
+			!unstyled && language_label && "pb-9",
 			className
 		)}
 	>
 		<ScrollArea mode="horizontal" class="w-full" thumbTabbable={false}>
 			{@render children?.()}
 		</ScrollArea>
-		{#if !unstyled && languageLabel}
+		{#if !unstyled && language_label}
 			<!-- Bottom-right, not top-left: the top-left of a code block is the first
 			     token you read, and a label parked there is read as part of the code. -->
 			<span
 				class="docket pointer-events-none absolute right-3 bottom-3 text-foreground-faint"
 				aria-hidden="true"
 			>
-				{languageLabel}
+				{language_label}
 			</span>
 		{/if}
 		{#if code}
