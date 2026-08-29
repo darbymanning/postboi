@@ -9,9 +9,11 @@
  *
  * ```ts
  * import { analyze } from "postboi/inspect"
- * import { mock } from "postboi/mock"
+ * import Mock from "postboi/mock"
  *
- * const report = analyze({ html: mock.last.html, text: mock.last.text })
+ * const mail = new Mock()
+ * await mail.send({ to: "ada@example.com", subject: "Hi", body: template })
+ * const report = analyze({ html: mail.last?.html, text: mail.last?.text })
  * report.status // "pass" | "info" | "warning" | "error"
  * ```
  *
@@ -22,7 +24,7 @@
 import { pooled_map } from "../utils.js"
 import { tokenize } from "./html.js"
 import type { Tokenized } from "./html.js"
-import { run_checks } from "./checks.js"
+import { GMAIL_CLIP_BYTES, run_checks } from "./checks.js"
 import { compat_findings } from "./compat.js"
 import type {
 	AnalyzeInput,
@@ -34,7 +36,7 @@ import type {
 	Severity,
 } from "./types.js"
 
-export { GMAIL_CLIP_BYTES } from "./checks.js"
+export { GMAIL_CLIP_BYTES, MESSAGE_SIZE_LIMIT } from "./checks.js"
 export { COMPAT_CLIENTS, COMPAT_FEATURES } from "./caniemail_data.js"
 export type { Support, CompatClient, CompatFeature } from "./caniemail_data.js"
 export type { TagToken, Tokenized } from "./html.js"
@@ -111,8 +113,16 @@ export function analyze(input: AnalyzeInput): Report {
 	const images = extract_images(tokens)
 	const html_bytes = new TextEncoder().encode(html).length
 
+	// Header names are normalised here, once, so the checks can rely on lowercase
+	// and a caller handing over canonically-cased headers isn't silently misread.
+	const headers = input.headers
+		? Object.fromEntries(
+				Object.entries(input.headers).map(([name, value]) => [name.toLowerCase(), value])
+			)
+		: undefined
+
 	const findings = [
-		...run_checks({ input, tokens, links, images, html_bytes }),
+		...run_checks({ input: { ...input, headers }, tokens, links, images, html_bytes }),
 		...compat_findings(tokens, images),
 	].sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])
 
@@ -120,7 +130,11 @@ export function analyze(input: AnalyzeInput): Report {
 	return {
 		findings,
 		status: worst ?? "pass",
-		size: { html_bytes, gmail_clip: html_bytes > 102 * 1024 },
+		size: {
+			html_bytes,
+			gmail_clip: html_bytes > GMAIL_CLIP_BYTES,
+			message_bytes: input.size_bytes,
+		},
 		links,
 		images,
 	}

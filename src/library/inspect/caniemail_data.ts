@@ -191,7 +191,7 @@ export const COMPAT_FEATURES: Array<CompatFeature> = [
 		title: "gap, column-gap, row-gap",
 		url: "https://www.caniemail.com/features/css-gap/",
 		kind: "css_property",
-		param: "gap",
+		param: "gap|column-gap|row-gap",
 		support: {
 			"gmail-web": "p",
 			"gmail-ios": "p",

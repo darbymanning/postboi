@@ -52,6 +52,23 @@ function parse_attrs(source: string): Record<string, string> {
 	return attrs
 }
 
+/**
+ * Where a raw-text element's content ends: at `</name` followed by `>`, `/` or
+ * whitespace — the same rule clients apply, so `</styles>` inside a style block
+ * doesn't end it early — or at end of input when the tag is never closed.
+ */
+function raw_text_end(lower: string, name: string, start: number): number {
+	for (
+		let at = lower.indexOf(`</${name}`, start);
+		at !== -1;
+		at = lower.indexOf(`</${name}`, at + 1)
+	) {
+		const next = lower[at + name.length + 2]
+		if (next === undefined || next === ">" || next === "/" || /\s/.test(next)) return at
+	}
+	return lower.length
+}
+
 /** Walk the document once and collect every tag plus every `<style>` body. */
 export function tokenize(html: string): Tokenized {
 	const tags: Array<TagToken> = []
@@ -69,9 +86,9 @@ export function tokenize(html: string): Tokenized {
 		// this, `content: "</div>"` inside a style block would read as markup.
 		if (!closing && RAW_TEXT.has(name)) {
 			const start = match.index + match[0].length
-			const end = lower.indexOf(`</${name}`, start)
-			if (name === "style") styles.push(html.slice(start, end === -1 ? html.length : end))
-			MARKUP.lastIndex = end === -1 ? html.length : end
+			const end = raw_text_end(lower, name, start)
+			if (name === "style") styles.push(html.slice(start, end))
+			MARKUP.lastIndex = end
 		}
 	}
 
