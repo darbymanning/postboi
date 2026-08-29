@@ -231,6 +231,8 @@ await mail.send({ to: "a@b.c", subject: "Hi", body: "<p>x</p>" })
 
 Every channel has one: `postboi/sms-mock`, `postboi/whatsapp-mock`, `postboi/push-mock`, `postboi/chat-mock` — same `sent` array, same normalisation. Or set `provider: "mock"` in that channel's config section to route the zero-config function through it.
 
+Lint what the mock captured with `analyze` from `postboi/inspect` — synchronous, zero-network static analysis: client compatibility (caniemail-derived), Gmail clipping (~102KB), missing alt/lang/plain-text/List-Unsubscribe, dead and `http:` links. `report.status` is `"pass" | "info" | "warning" | "error"`; `check_links(report.links)` is the async opt-in that actually fetches the links. `/raw/email-testing`
+
 ## Edge runtimes
 
 Cloudflare Workers, and anything else without a filesystem. `/raw/cloudflare-workers`
@@ -334,4 +336,5 @@ Order matters — the old provider keeps sending until the new domain verifies.
 | Vite plugin                          | `postboi` from `postboi/vite`                                                                                                                                                                                                                                                            |
 | Global config                        | `config` from `postboi` (file) · `configure` from `postboi` (runtime)                                                                                                                                                                                                                    |
 | Tests                                | `postboi/mock`, `postboi/sms-mock`, `postboi/whatsapp-mock`, `postboi/push-mock`, `postboi/chat-mock`                                                                                                                                                                                    |
+| Email linting                        | `analyze`, `check_links` from `postboi/inspect`                                                                                                                                                                                                                                          |
 | Spam helpers                         | `is_spam`, `SkipSendError` from `postboi`                                                                                                                                                                                                                                                |
