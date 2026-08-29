@@ -49,4 +49,9 @@ describe("tokenize", () => {
 		const { styles } = tokenize(`<style>p { color: red }`)
 		expect(styles).toEqual(["p { color: red }"])
 	})
+
+	it("does not end a style block at a closing tag that merely starts with 'style'", () => {
+		const { styles } = tokenize(`<style>i::after { content: "</styles>" } b { color: red }</style>`)
+		expect(styles).toEqual([`i::after { content: "</styles>" } b { color: red }`])
+	})
 })

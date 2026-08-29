@@ -55,7 +55,7 @@ const FEATURES: Array<{ slug: string; kind: string; param: string }> = [
 	{ slug: "css-float", kind: "css_property", param: "float" },
 	{ slug: "css-max-width", kind: "css_property", param: "max-width" },
 	{ slug: "css-min-height", kind: "css_property", param: "min-height" },
-	{ slug: "css-gap", kind: "css_property", param: "gap" },
+	{ slug: "css-gap", kind: "css_property", param: "gap|column-gap|row-gap" },
 	{ slug: "css-aspect-ratio", kind: "css_property", param: "aspect-ratio" },
 	{ slug: "css-box-sizing", kind: "css_property", param: "box-sizing" },
 
@@ -158,11 +158,36 @@ if (missing.length) {
 	process.exit(1)
 }
 
-/** Latest verdict for one client: entries are oldest→newest, values like "y", "a #1", "n", "u". */
+/**
+ * Order two version keys ("2019", "2026-03", "16.80") by their numeric segments.
+ * Explicit rather than trusting JSON key order: JS reorders integer-like keys
+ * ahead of the rest, so a client mixing key styles would iterate out of sequence.
+ */
+function newer(a: string, b: string): boolean {
+	const parse = (key: string) =>
+		key
+			.split(/[^0-9]+/)
+			.filter(Boolean)
+			.map(Number)
+	const [left, right] = [parse(a), parse(b)]
+	for (let i = 0; i < Math.max(left.length, right.length); i++) {
+		if ((left[i] ?? 0) !== (right[i] ?? 0)) return (left[i] ?? 0) > (right[i] ?? 0)
+	}
+	return false
+}
+
+/** Latest verdict for one client — values like "y", "a #1", "n", "u". */
 function latest(versions: Record<string, string> | undefined): "y" | "p" | "n" | undefined {
 	if (!versions) return undefined
-	const values = Object.values(versions)
-	const grade = values[values.length - 1]?.trim()[0]
+	let newest: string | undefined
+	let verdict: string | undefined
+	for (const [version, value] of Object.entries(versions)) {
+		if (newest === undefined || newer(version, newest)) {
+			newest = version
+			verdict = value
+		}
+	}
+	const grade = verdict?.trim()[0]
 	if (grade === "y") return "y"
 	if (grade === "a") return "p"
 	if (grade === "n") return "n"

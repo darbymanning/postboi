@@ -32,6 +32,18 @@ const gmail_clip: Check = ({ html_bytes }) => {
 	}
 }
 
+/** Where big mail starts bouncing: Gmail and Outlook refuse messages around 25MB. */
+export const MESSAGE_SIZE_LIMIT = 25 * 1024 * 1024
+
+const message_size: Check = ({ input }) => {
+	if (!input.size_bytes || input.size_bytes <= MESSAGE_SIZE_LIMIT) return
+	return {
+		id: "message_size",
+		severity: "warning",
+		message: `The whole message is ${Math.round(input.size_bytes / 1024 / 1024)} MB — Gmail and Outlook refuse mail around 25 MB, and most other servers are close behind`,
+	}
+}
+
 const missing_plain_text: Check = ({ input }) => {
 	if (!input.html || input.text?.trim()) return
 	return {
@@ -88,12 +100,12 @@ const images_missing_alt: Check = ({ images }) => {
 }
 
 const image_no_dimensions: Check = ({ tokens }) => {
+	// Either surface counts, but only both dimensions together settle the layout.
+	const sized = (tag: { attrs: Record<string, string> }, dimension: "width" | "height") =>
+		tag.attrs[dimension] !== undefined ||
+		new RegExp(`(?:^|[;\\s])${dimension}\\s*:`, "i").test(tag.attrs.style ?? "")
 	const undimensioned = tokens.tags.filter(
-		(tag) =>
-			!tag.closing &&
-			tag.name === "img" &&
-			(tag.attrs.width === undefined || tag.attrs.height === undefined) &&
-			!/(?:^|[;\s])(?:width|height)\s*:/i.test(tag.attrs.style ?? "")
+		(tag) => !tag.closing && tag.name === "img" && !(sized(tag, "width") && sized(tag, "height"))
 	).length
 	if (!undimensioned) return
 	return {
@@ -120,6 +132,12 @@ const empty_links: Check = ({ tokens }) => {
 		(tag) =>
 			!tag.closing &&
 			tag.name === "a" &&
+			// An href-less <a> carrying name/id is an anchor *target* — the portable way
+			// to do in-email jump links — not a dead tap.
+			!(
+				tag.attrs.href === undefined &&
+				(tag.attrs.name !== undefined || tag.attrs.id !== undefined)
+			) &&
 			(tag.attrs.href === undefined ||
 				tag.attrs.href.trim() === "" ||
 				tag.attrs.href.trim() === "#" ||
@@ -153,6 +171,7 @@ const subject_length: Check = ({ input }) => {
 
 const CHECKS: Array<Check> = [
 	gmail_clip,
+	message_size,
 	missing_plain_text,
 	missing_list_unsubscribe,
 	missing_one_click_unsubscribe,

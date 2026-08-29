@@ -65,9 +65,9 @@ export interface AnalyzeInput {
 	/** The plain-text alternative, when one exists. */
 	text?: string
 	subject?: string
-	/** Lowercased header names → values, e.g. from a parsed MIME message. */
+	/** Header names → values, e.g. from a parsed MIME message. Matched case-insensitively. */
 	headers?: Record<string, string>
-	/** Raw message size in bytes, when known. */
+	/** Raw message size in bytes, when known — feeds the message-size check. */
 	size_bytes?: number
 }
 
@@ -81,6 +81,8 @@ export interface Report {
 		html_bytes: number
 		/** Whether Gmail will clip the message (~102KB of HTML). */
 		gmail_clip: boolean
+		/** The raw message size, echoed back when the input carried one. */
+		message_bytes?: number
 	}
 	links: Array<LinkInfo>
 	images: Array<ImageInfo>
