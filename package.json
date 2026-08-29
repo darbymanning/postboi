@@ -217,6 +217,10 @@
 			"types": "./dist/maizzle.d.ts",
 			"default": "./dist/maizzle.js"
 		},
+		"./inspect": {
+			"types": "./dist/inspect/index.d.ts",
+			"default": "./dist/inspect/index.js"
+		},
 		"./kit": {
 			"types": "./dist/kit.d.ts",
 			"svelte": "./dist/kit.js",

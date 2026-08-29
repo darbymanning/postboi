@@ -79,12 +79,17 @@ describe("package exports", () => {
 			"whatsapp/types.ts", // pure types, re-exported from the root
 			"whatsapp/provider.ts", // the WhatsApp base class, reached via each provider
 			"whatsapp/send.ts", // the zero-config whatsapp(), re-exported from the root
+			"inspect/types.ts", // pure types, re-exported from inspect/index.ts
+			"inspect/html.ts", // the HTML tokenizer, reached via inspect/index.ts
+			"inspect/checks.ts", // the static checks, reached via inspect/index.ts
+			"inspect/compat.ts", // the client-matrix matcher, reached via inspect/index.ts
+			"inspect/caniemail_data.ts", // generated support data, reached via inspect/index.ts
 		])
 		const providers = [
 			...readdirSync(`${root}src/library`).filter(
 				(f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !internal.has(f)
 			),
-			...["sms", "chat", "push", "whatsapp"].flatMap((dir) =>
+			...["sms", "chat", "push", "whatsapp", "inspect"].flatMap((dir) =>
 				readdirSync(`${root}src/library/${dir}`)
 					.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
 					.map((f) => `${dir}/${f}`)
