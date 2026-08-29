@@ -1,6 +1,8 @@
 # postboi
 
-Framework-agnostic email library (npm package at repo root) plus a docs site in `docs/`.
+Framework-agnostic email library (npm package at repo root) plus a docs site. The
+site is **not** in `docs/` — its routes are `src/routes/`, its components and content
+are `src/site/`, and it is built with SvelteKit and Tailwind v4.
 
 ## Cutting a release
 
@@ -24,6 +26,12 @@ channel work; it carries the `ProviderBase` split that everything else depends o
 ## Conventions
 
 - Code style: snake_case, no semicolons. Run `bun run check` and `bun run lint`.
-- Styling the docs site: follow **[docs/BRANDING.md](docs/BRANDING.md)** — brand yellow `#FDC005`, all colours in oklch, accent adapts per light/dark.
+- Styling the docs site: follow **[src/site/BRANDING.md](src/site/BRANDING.md)**. The
+  docs are the third cut of one design language shared with the app and the marketing
+  site — manila paper and ink navy, safety yellow `#FDC005`, square corners, drawn
+  rules, keys that press into their own shadow, and three faces (Archivo for anything
+  that names a thing, Golos Text for anything you read, Monaspace Neon for anything a
+  machine said). Every token lives in `src/routes/layout.css`; all colours are oklch
+  and the accent adapts per light/dark. Don't start a second palette in a component.
 - Release commits are the bare version (`0.7.0`); tags are `vX.Y.Z`.
 - Pre-1.0: breaking changes are **minor** bumps.

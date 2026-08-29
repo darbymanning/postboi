@@ -10,8 +10,11 @@ import {
 	getContentSectionManifest,
 } from "$site/content/sections"
 import { contentSections } from "$site/config/navigation"
-import interLatin400DataUri from "@fontsource/inter/files/inter-latin-400-normal.woff2?inline"
-import interLatin500DataUri from "@fontsource/inter/files/inter-latin-500-normal.woff2?inline"
+// The static cuts, not the variable ones the site loads: the image renderer wants
+// a single instance per weight, and a variable file would arrive at whatever its
+// default axis happens to be.
+import archivo_700 from "@fontsource/archivo/files/archivo-latin-700-normal.woff2?inline"
+import golos_400 from "@fontsource/golos-text/files/golos-text-latin-400-normal.woff2?inline"
 
 export const prerender = true
 
@@ -72,31 +75,40 @@ const dataUriToArrayBuffer = (dataUri: string) => {
 }
 
 const fontDataPromise = Promise.all([
-	Promise.resolve(dataUriToArrayBuffer(interLatin400DataUri)),
-	Promise.resolve(dataUriToArrayBuffer(interLatin500DataUri)),
+	Promise.resolve(dataUriToArrayBuffer(archivo_700)),
+	Promise.resolve(dataUriToArrayBuffer(golos_400)),
 ])
 
 const takumiFontLoaders = [
 	{
-		key: "inter-latin-400-normal",
-		name: "Inter",
-		weight: 400,
+		key: "archivo-latin-700-normal",
+		name: "Archivo",
+		weight: 700,
 		style: "normal" as const,
 		data: async () => (await fontDataPromise)[0],
 	},
 	{
-		key: "inter-latin-500-normal",
-		name: "Inter",
-		weight: 500,
+		key: "golos-text-latin-400-normal",
+		name: "Golos Text",
+		weight: 400,
 		style: "normal" as const,
 		data: async () => (await fontDataPromise)[1],
 	},
 ]
 
-// Brand orange (oklch(0.74 0.17 55)) as hex — the OG card is on white, where the
-// brand yellow would be illegible. The renderer needs a literal colour. See BRANDING.md.
+/* The press, as literals. The renderer has no CSS engine, so the oklch tokens in
+   layout.css are converted here once rather than approximated per use. */
+const PAPER = "#f5f0e3"
+const INK = "#080c1b"
+const MUTED = "#505561"
+const YELLOW = "#fdc010"
+
+// The mark is drawn in currentColor, and the renderer has no cascade to take it
+// from — so it is substituted here. Ink, not the brand orange the white card used
+// to need: on manila this is a printed mark, and the yellow block under the title
+// is where the brand colour lands. See BRANDING.md.
 const logoDataUri = `data:image/svg+xml,${encodeURIComponent(
-	brandLogoRaw.replaceAll("currentColor", "#f88825")
+	brandLogoRaw.replaceAll("currentColor", "#080c1b")
 )}`
 const LOGO_DISPLAY_HEIGHT = 78
 
@@ -164,9 +176,9 @@ export const GET: RequestHandler = async ({ params }) => {
 				justifyContent: "space-between",
 				width: "100%",
 				height: "100%",
-				padding: 40,
-				background: "#ffffff",
-				fontFamily: "Inter, sans-serif",
+				padding: 56,
+				background: PAPER,
+				fontFamily: "Golos Text, sans-serif",
 			},
 		},
 		el(
@@ -174,7 +186,7 @@ export const GET: RequestHandler = async ({ params }) => {
 			{
 				style: {
 					display: "flex",
-					alignItems: "flex-start",
+					alignItems: "center",
 					justifyContent: "space-between",
 				},
 			},
@@ -192,12 +204,15 @@ export const GET: RequestHandler = async ({ params }) => {
 				{
 					style: {
 						display: "flex",
-						fontSize: 24,
-						color: "#8a8f98",
-						fontWeight: 400,
+						fontFamily: "Archivo, sans-serif",
+						fontSize: 20,
+						letterSpacing: "0.2em",
+						textTransform: "uppercase",
+						color: MUTED,
+						fontWeight: 700,
 					},
 				},
-				pageUrl
+				pageUrl.replace(/^https?:\/\//, "")
 			)
 		),
 		el(
@@ -206,7 +221,7 @@ export const GET: RequestHandler = async ({ params }) => {
 				style: {
 					display: "flex",
 					flexDirection: "column",
-					gap: 24,
+					gap: 26,
 				},
 			},
 			el(
@@ -214,11 +229,12 @@ export const GET: RequestHandler = async ({ params }) => {
 				{
 					style: {
 						display: "flex",
-						fontSize: 21,
-						letterSpacing: "0.06em",
+						fontFamily: "Archivo, sans-serif",
+						fontSize: 20,
+						letterSpacing: "0.2em",
 						textTransform: "uppercase",
-						color: "#8a8f98",
-						fontWeight: 400,
+						color: MUTED,
+						fontWeight: 700,
 					},
 				},
 				category
@@ -229,13 +245,24 @@ export const GET: RequestHandler = async ({ params }) => {
 					style: {
 						display: "flex",
 						maxWidth: 1060,
-						fontSize: 98,
-						lineHeight: 0.99,
-						color: "#111318",
-						fontWeight: 500,
+						fontFamily: "Archivo, sans-serif",
+						fontSize: 92,
+						lineHeight: 0.98,
+						letterSpacing: "-0.03em",
+						textTransform: "uppercase",
+						color: INK,
+						fontWeight: 700,
 					},
 				},
 				title
+			),
+			// The rule the site draws under every masthead, with the brand's own
+			// block struck on the left of it.
+			el(
+				"div",
+				{ style: { display: "flex", height: 6 } },
+				el("div", { style: { display: "flex", width: 96, height: 6, background: YELLOW } }),
+				el("div", { style: { display: "flex", flexGrow: 1, height: 6, background: INK } })
 			),
 			el(
 				"div",
@@ -243,9 +270,9 @@ export const GET: RequestHandler = async ({ params }) => {
 					style: {
 						display: "flex",
 						maxWidth: 1020,
-						fontSize: 36,
-						lineHeight: 1.28,
-						color: "#5f6672",
+						fontSize: 34,
+						lineHeight: 1.3,
+						color: MUTED,
 						fontWeight: 400,
 					},
 				},

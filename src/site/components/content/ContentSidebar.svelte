@@ -393,16 +393,21 @@
 <aside class="flex h-full min-h-0 flex-col bg-background" aria-label={navigationLabel + " sidebar"}>
 	{#if showBranding}
 		<!-- lg:pt-2/pl-1 on top of the shell's p-4 lands the logo at 24px/20px — same spot as the app sidebar. -->
-		<div class="mb-4 flex items-center gap-2 p-4 pb-0 lg:p-0 lg:pt-2 lg:pl-1">
-			<a href={resolve("/")} class="flex items-center" aria-label={brandingConfig.name}>
-				<BrandLogo defaultRaw={logoRaw} wink={!page.error} class="[&_svg]:size-10" />
-			</a>
-			<span
-				class="rounded-full border border-border px-2 py-0.5 text-xs font-medium tracking-normal text-foreground-muted"
-				title={`Postboi is in pre-release — currently v${version}`}
-			>
-				Pre-release
-			</span>
+		<!-- The masthead, not a logo row: a mark, the state of the thing, and a rule
+		     drawn under the pair. Every page in the product opens this way. -->
+		<div class="mb-4 p-4 pb-0 lg:p-0 lg:pt-2 lg:pl-1">
+			<div class="flex items-center gap-2.5">
+				<a href={resolve("/")} class="flex items-center" aria-label={brandingConfig.name}>
+					<BrandLogo defaultRaw={logoRaw} wink={!page.error} class="[&_svg]:size-10" />
+				</a>
+				<span
+					class="docket border border-line px-1.5 py-1 text-foreground"
+					title={`Postboi is in pre-release — currently v${version}`}
+				>
+					Pre-release
+				</span>
+			</div>
+			<div class="mt-3 h-px bg-line lg:mr-4"></div>
 		</div>
 	{/if}
 
@@ -453,13 +458,17 @@
 								showHoverIndicator(event.currentTarget)
 							}}
 							class={cn(
-								"relative z-10 flex w-full items-center justify-between rounded-sm px-3 py-1.5 text-sm font-medium tracking-normal transition-colors duration-150 ease-out hover:text-foreground",
+								"relative z-10 flex w-full items-center gap-2.5 rounded-sm px-3 py-2 transition-colors duration-150 ease-out hover:text-foreground",
 								groupIsActive ? "text-foreground" : "text-foreground-muted"
 							)}
 						>
-							<span>{item.name}</span>
+							<span class="docket">{item.name}</span>
+							<span class="h-px flex-1 bg-border"></span>
 							<ChevronRight
-								class={cn("size-4 transition-transform duration-150", groupIsActive && "rotate-90")}
+								class={cn(
+									"size-3.5 transition-transform duration-150",
+									groupIsActive && "rotate-90"
+								)}
 							/>
 						</button>
 						{#if groupIsActive}
@@ -481,9 +490,9 @@
 											}}
 											use:registerActiveChild={isActive}
 											class={cn(
-												"relative flex items-center gap-2 rounded-sm px-3 py-1.5 text-sm font-medium tracking-normal transition-colors duration-150 ease-out",
+												"relative flex items-center gap-2 rounded-sm px-3 py-1.5 text-sm tracking-normal transition-colors duration-150 ease-out",
 												isActive
-													? "sidebar-active-child text-accent"
+													? "sidebar-active-child font-medium text-foreground"
 													: "text-foreground-muted hover:text-foreground"
 											)}
 										>
@@ -511,7 +520,9 @@
 						}}
 						class={cn(
 							"relative z-10 block rounded-sm px-3 py-1.5 text-sm tracking-normal transition-colors duration-150 ease-out",
-							isActive ? "text-accent" : "text-foreground-muted hover:text-foreground"
+							isActive
+								? "font-medium text-foreground"
+								: "text-foreground-muted hover:text-foreground"
 						)}
 					>
 						{item.name}
@@ -532,7 +543,7 @@
 			<ThemeToggle />
 		{/if}
 		<a
-			class="group transition-scale inset-shadow relative inline-flex size-7 cursor-pointer items-center justify-center rounded-sm bg-background-inset text-foreground duration-150 ease-out active:scale-[0.95]"
+			class="group key relative inline-flex size-7 cursor-pointer items-center justify-center rounded-sm bg-background-muted text-foreground"
 			href={siteConfig.links.site}
 			target="_blank"
 			rel="external"
@@ -542,7 +553,7 @@
 		</a>
 		{#if showRepositoryLink}
 			<a
-				class="group transition-scale inset-shadow relative inline-flex size-7 cursor-pointer items-center justify-center rounded-sm bg-background-inset text-foreground duration-150 ease-out active:scale-[0.95]"
+				class="group key relative inline-flex size-7 cursor-pointer items-center justify-center rounded-sm bg-background-muted text-foreground"
 				href={repositoryUrl}
 				target="_blank"
 				rel="external"
@@ -561,7 +572,6 @@
 		inset-inline: 0px;
 		top: 0;
 		height: var(--sidebar-hover-height);
-		border-radius: var(--radius-sm);
 		background: var(--color-background-muted);
 		opacity: var(--sidebar-hover-opacity);
 		pointer-events: none;
@@ -574,23 +584,18 @@
 		z-index: 0;
 	}
 
+	/* Where you are, stamped rather than lit: a solid block of safety yellow that
+	   slides between rows. Same gesture as the app's sidebar and its tab strip —
+	   one product, one way of saying "this is the page you are on". A gradient
+	   with a glow behind it is a different design language's answer. */
 	.sidebar-nav::after {
 		content: "";
 		position: absolute;
 		top: 0;
 		left: 0;
-		width: 1px;
+		width: 3px;
 		height: var(--sidebar-active-height);
-		border-radius: 9999px;
-		background-image: linear-gradient(
-			to bottom,
-			transparent,
-			oklch(from var(--color-accent) l c h / 0.68) 18%,
-			var(--color-accent) 50%,
-			oklch(from var(--color-accent) l c h / 0.68) 82%,
-			transparent
-		);
-		filter: drop-shadow(0 0 6px oklch(from var(--color-accent) l c h / 0.38));
+		background: var(--brand-yellow);
 		opacity: var(--sidebar-active-opacity);
 		pointer-events: none;
 		transform: translate(var(--sidebar-active-left), var(--sidebar-active-top));

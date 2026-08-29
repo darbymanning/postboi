@@ -52,23 +52,23 @@
 	{id}
 	{...restProps}
 	class={cn(
-		"group mt-12 w-fit scroll-m-24 text-2xl font-medium tracking-tight text-foreground [&_code]:text-xl",
+		"group mt-14 flex w-full scroll-m-24 items-center gap-4 text-2xl font-bold tracking-tight text-foreground [&_code]:text-xl",
 		className
 	)}
 >
-	<span class="inline-flex items-center gap-2 align-baseline leading-none">
+	<span class="inline-flex min-w-0 shrink items-center gap-2 align-baseline leading-none">
 		<span class="min-w-0 [&_a]:text-2xl">
 			{@render children?.()}
 		</span>
 
 		{#if id}
 			<div
-				class="inset-shadow flex items-center rounded-sm p-1 opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 focus-visible:opacity-100"
+				class="flex items-center opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 focus-visible:opacity-100"
 			>
 				<button
 					type="button"
 					class={cn(
-						"relative inline-flex size-6 shrink-0 items-center justify-center rounded-xs bg-background text-foreground card transition-[scale] duration-150 ease-out active:scale-[0.95]"
+						"key relative inline-flex size-6 shrink-0 items-center justify-center rounded-xs bg-background-muted text-foreground"
 					)}
 					onclick={copyHeadingUrl}
 					aria-label={copied ? "Copied heading link" : "Copy heading link"}
@@ -94,4 +94,7 @@
 			</div>
 		{/if}
 	</span>
+	<!-- The rule that closes the section header. Same figure as the sidebar's group
+	     labels and the doc masthead: a name, then a line out to the margin. -->
+	<span class="h-px flex-1 bg-border"></span>
 </h2>

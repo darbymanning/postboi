@@ -144,12 +144,12 @@
 <div class="inset-shadow my-6 rounded-lg bg-background-inset p-1.5">
 	<div class="relative w-full rounded-md bg-background card">
 		<div
-			class="relative flex items-center justify-between rounded-t-md after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border after:shadow-2xs after:shadow-white after:content-[''] dark:after:bg-background-inset dark:after:shadow-border"
+			class="relative flex items-center justify-between rounded-t-md after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border after:content-['']"
 		>
 			<div class="relative flex items-center" bind:this={tabList}>
 				{#if activeIndicatorWidth > 0}
 					<div
-						class="tab-active-line pointer-events-none absolute bottom-0 left-0 z-10 h-0.5 transition-[transform,width] duration-150 ease-out"
+						class="tab-active-line pointer-events-none absolute bottom-0 left-0 z-10 h-[3px] transition-[transform,width] duration-150 ease-out"
 						style={`
 									width: ${activeIndicatorWidth.toString()}px;
 									transform: translateX(${activeIndicatorLeft.toString()}px);
@@ -161,9 +161,9 @@
 					<button
 						onclick={() => (packageManagerStore.active = pm)}
 						class={cn(
-							"package-manager-tab relative z-20 px-4 py-2.5 text-sm font-medium tracking-normal transition-colors duration-150 ease-out outline-none select-none",
+							"package-manager-tab docket relative z-20 px-4 py-3 transition-colors duration-150 ease-out outline-none select-none",
 							packageManagerStore.active === pm
-								? "text-accent"
+								? "text-foreground"
 								: "text-foreground-muted hover:text-foreground"
 						)}
 						data-package-manager={pm}
@@ -203,15 +203,7 @@
 
 	<style>
 		.tab-active-line {
-			background-image: linear-gradient(
-				to right,
-				transparent,
-				oklch(from var(--color-accent) l c h / 0.68) 18%,
-				var(--color-accent) 50%,
-				oklch(from var(--color-accent) l c h / 0.68) 82%,
-				transparent
-			);
-			filter: drop-shadow(0 0 6px oklch(from var(--color-accent) l c h / 0.38));
+			background-color: var(--brand-yellow);
 		}
 
 		.package-manager-tab::after {
@@ -219,18 +211,10 @@
 			right: 0;
 			bottom: 0;
 			left: 0;
-			height: 2px;
+			height: 3px;
 			pointer-events: none;
 			content: "";
-			background-image: linear-gradient(
-				to right,
-				transparent,
-				oklch(from var(--color-accent) l c h / 0.68) 18%,
-				var(--color-accent) 50%,
-				oklch(from var(--color-accent) l c h / 0.68) 82%,
-				transparent
-			);
-			filter: drop-shadow(0 0 6px oklch(from var(--color-accent) l c h / 0.38));
+			background-color: var(--brand-yellow);
 			opacity: 0;
 		}
 
@@ -260,7 +244,7 @@
 			.package-manager-tab[data-package-manager="bun"],
 		:global(html[data-docs-package-manager="yarn"]:not([data-docs-package-manager-ready]))
 			.package-manager-tab[data-package-manager="yarn"] {
-			color: var(--color-accent);
+			color: var(--color-foreground);
 		}
 
 		:global(html[data-docs-package-manager="npm"]:not([data-docs-package-manager-ready]))

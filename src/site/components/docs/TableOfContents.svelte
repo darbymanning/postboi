@@ -673,9 +673,7 @@
 >
 	{#if renderedHeadings.length > 0}
 		<nav aria-label={title}>
-			<div
-				class="mb-2 flex items-center gap-2 text-xs font-medium tracking-wide text-foreground-muted/70 uppercase"
-			>
+			<div class="docket mb-3 flex items-center gap-2 text-foreground-muted">
 				<TableOfContents size={16} />
 				{title}
 			</div>
@@ -722,9 +720,9 @@
 									pulseDot(heading.id)
 								}}
 								class={cn(
-									"flex max-w-48 items-center gap-2 py-1 font-medium tracking-normal transition-[color] duration-150 ease-out",
+									"flex max-w-48 items-center gap-2 py-1 tracking-normal transition-[color] duration-150 ease-out",
 									isLinkHighlighted(heading.id)
-										? "text-accent"
+										? "font-medium text-foreground"
 										: "text-foreground-muted hover:text-foreground"
 								)}
 								{@attach fromAction(registerLink, () => heading.id)}
@@ -732,7 +730,7 @@
 								<span
 									aria-hidden="true"
 									class={cn(
-										"toc-dot relative size-1.5 flex-none rounded-full transition-[background-color,box-shadow,scale] duration-150 ease-out",
+										"toc-dot relative size-1.5 flex-none transition-[background-color,scale] duration-150 ease-out",
 										isLinkHighlighted(heading.id) && "toc-dot-active",
 										pulsingDotIds.includes(heading.id) && "toc-dot-pulse"
 									)}
@@ -740,7 +738,7 @@
 								<span
 									class={cn(
 										"min-w-0 truncate pl-1",
-										isLinkHighlighted(heading.id) && "text-accent"
+										isLinkHighlighted(heading.id) && "text-foreground"
 									)}
 								>
 									{heading.text}
@@ -752,67 +750,46 @@
 			</div>
 		</nav>
 	{:else}
-		<div class="hidden text-sm tracking-normal text-foreground-muted/70 lg:block">{emptyLabel}</div>
+		<div class="docket hidden text-foreground-faint lg:block">{emptyLabel}</div>
 	{/if}
 </div>
 
 <style>
+	/* The rail is a drawn rule and the run you are inside is printed over it in
+	   safety yellow — flat, no gradient, no glow. Same block the sidebar stamps
+	   beside the live page, turned on its side. */
 	.toc-active-line {
-		background-image: linear-gradient(
-			to bottom,
-			transparent,
-			oklch(from var(--color-accent) l c h / 0.68) 22%,
-			var(--color-accent) 50%,
-			oklch(from var(--color-accent) l c h / 0.68) 78%,
-			transparent
-		);
-		filter: drop-shadow(0 0 6px oklch(from var(--color-accent) l c h / 0.38));
+		background-color: var(--brand-yellow);
 	}
 
+	/* Square ticks, not glowing dots: this is an index, and index marks are cut. */
 	.toc-dot {
 		background-color: var(--color-foreground-muted);
-		box-shadow: 0 0 0 2px var(--color-background);
-		opacity: 0.72;
+		opacity: 0.6;
 	}
 
 	.toc-dot-active {
-		background-color: var(--color-accent);
-		box-shadow:
-			inset 0 1px oklch(from var(--color-white-fixed) l c h / 0.35),
-			0 0 0 2px var(--color-background),
-			0 0 10px oklch(from var(--color-accent) l c h / 0.38);
+		background-color: var(--brand-yellow);
 		opacity: 1;
 	}
 
-	.toc-dot-active::after {
-		content: "";
-		position: absolute;
-		inset: 0;
-		border-radius: 9999px;
-		box-shadow: 0 0 9px oklch(from var(--color-accent) l c h / 0.5);
-	}
-
 	.toc-dot-pulse {
-		animation: toc-dot-pulse 0.52s ease-out both;
+		animation: toc-dot-pulse 0.4s var(--ease-swift, cubic-bezier(0.4, 0, 0.2, 1)) both;
 	}
 
+	/* A struck tick, the way a stamp lands: it overshoots and settles. */
 	@keyframes toc-dot-pulse {
 		0% {
-			transform: scale(1);
-			box-shadow: 0 0 0 2px var(--color-background);
+			scale: 1;
 		}
 
-		12% {
-			transform: scale(1.15);
-			background-color: var(--color-accent);
-			box-shadow:
-				0 0 0 2px var(--color-background),
-				0 0 0 3px oklch(from var(--color-accent) l c h / 0.18),
-				0 0 18px oklch(from var(--color-accent) l c h / 0.52);
+		30% {
+			background-color: var(--brand-yellow);
+			scale: 1.9;
 		}
 
 		100% {
-			transform: scale(1);
+			scale: 1;
 		}
 	}
 </style>

@@ -238,7 +238,7 @@
 		}}
 	>
 		<div
-			class="relative w-full max-w-164 transform-gpu rounded-lg bg-background shadow-2xl card"
+			class="relative w-full max-w-164 transform-gpu rounded-sm bg-background ring-1 ring-line shadow-[0_24px_60px_var(--stamp-shadow)]"
 			role="document"
 			transition:scale={{
 				duration: 300,
@@ -251,7 +251,7 @@
 			}}
 		>
 			<div
-				class="relative flex items-center px-3 after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border after:shadow-2xs after:shadow-white after:content-[''] dark:after:bg-background-inset dark:after:shadow-border"
+				class="relative flex items-center px-3 after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border after:content-['']"
 			>
 				<Search size={24} class="mr-2 text-foreground-muted/70" />
 				<input
@@ -313,7 +313,7 @@
 
 										<div class="flex w-full flex-col items-start gap-0.5">
 											{#if result.matchType !== "content"}
-												<div class="flex items-center gap-2 font-medium tracking-normal">
+												<div class="flex items-center gap-2 font-display font-bold tracking-normal">
 													{#if result.matchType === "heading"}
 														<span class="opacity-70">#</span>
 													{/if}
@@ -354,7 +354,7 @@
 				</div>
 			</div>
 			<div
-				class="relative flex w-full flex-row items-center justify-start gap-2 rounded-b-lg bg-background p-2 after:absolute after:inset-x-0 after:top-0 after:h-px after:bg-border after:shadow-2xs after:shadow-white after:content-[''] dark:after:bg-background-inset dark:after:shadow-border"
+				class="relative flex w-full flex-row items-center justify-start gap-2 rounded-b-lg bg-background p-2 after:absolute after:inset-x-0 after:top-0 after:h-px after:bg-border after:content-['']"
 			>
 				<kbd
 					class="pointer-events-none inset-shadow relative hidden h-5 items-center gap-1 rounded-[calc(var(--radius-base)*1.5)] bg-background-inset px-1.5 font-mono text-[10px] font-medium text-foreground-muted/70 select-none sm:flex"

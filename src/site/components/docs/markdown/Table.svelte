@@ -12,12 +12,10 @@
 	const { children, class: className = "", ...restProps }: ComponentProps = $props()
 </script>
 
-<div class="inset-shadow my-8 rounded-lg bg-background-inset p-1.5">
-	<div class="relative rounded-md bg-background card">
-		<ScrollArea mode="horizontal" class="w-full rounded-md" viewportClass="rounded-md">
-			<table {...restProps} class={cn("w-full text-lg [&_code]:text-base", className)}>
-				{@render children?.()}
-			</table>
-		</ScrollArea>
-	</div>
+<div class="relative my-8 rounded-sm bg-background card">
+	<ScrollArea mode="horizontal" class="w-full rounded-sm" viewportClass="rounded-sm">
+		<table {...restProps} class={cn("w-full text-base", className)}>
+			{@render children?.()}
+		</table>
+	</ScrollArea>
 </div>

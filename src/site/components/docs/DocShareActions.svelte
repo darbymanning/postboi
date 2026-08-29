@@ -139,6 +139,10 @@
 
 {#if hasActions}
 	<div class="mt-auto">
+		<div class="mb-3 flex items-center gap-2">
+			<span class="docket text-foreground-muted">Take this page</span>
+			<span class="h-px flex-1 bg-border"></span>
+		</div>
 		<div
 			class="doc-share-actions relative flex flex-col gap-1 text-sm"
 			bind:this={actionsElement}
@@ -278,7 +282,6 @@
 		inset-inline: 0px;
 		top: 0;
 		height: var(--doc-share-hover-height);
-		border-radius: var(--radius-sm);
 		background: var(--color-background-muted);
 		opacity: var(--doc-share-hover-opacity);
 		pointer-events: none;

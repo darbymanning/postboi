@@ -15,23 +15,21 @@
 
 <div class={cn("relative pl-8", className)}>
 	{#if title}
-		<div class="mb-4 flex h-10 items-center">
-			<div
-				class="inset-shadow absolute -left-5 flex size-10 rounded-full bg-background-inset p-1.5"
-			>
+		<div class="mb-4 flex h-8 items-center">
+			<div class="absolute -left-4 flex size-8 bg-background-inset p-0.5">
 				<span
-					class="flex h-full w-full items-center justify-center rounded-full bg-background text-xs font-medium text-foreground card [counter-increment:step] before:content-[counter(step)]"
+					class="docket flex h-full w-full items-center justify-center bg-brand-yellow text-brand-ink [counter-increment:step] before:content-[counter(step)]"
 				>
 				</span>
 			</div>
-			<h3 class="relative z-10 text-lg leading-none font-medium tracking-tight">
+			<h3 class="relative z-10 text-lg leading-none font-bold tracking-tight">
 				{title}
 			</h3>
 		</div>
 	{:else}
-		<div class="inset-shadow absolute -left-5 flex size-10 rounded-full bg-background-inset p-1.5">
+		<div class="absolute -left-4 flex size-8 bg-background-inset p-0.5">
 			<span
-				class="flex h-full w-full items-center justify-center rounded-full bg-background text-xs font-medium text-foreground card [counter-increment:step] before:content-[counter(step)]"
+				class="docket flex h-full w-full items-center justify-center bg-brand-yellow text-brand-ink [counter-increment:step] before:content-[counter(step)]"
 			>
 			</span>
 		</div>

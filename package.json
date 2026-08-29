@@ -273,7 +273,8 @@
 	},
 	"devDependencies": {
 		"@eslint/js": "10.0.1",
-		"@fontsource/inter": "5.3.0",
+		"@fontsource/archivo": "5.3.0",
+		"@fontsource/golos-text": "5.3.0",
 		"@fontsource/monaspace-neon": "5.3.0",
 		"@maizzle/framework": "6.1.0",
 		"@sveltejs/adapter-cloudflare": "7.2.9",
@@ -315,5 +316,9 @@
 	},
 	"keywords": [
 		"svelte"
-	]
+	],
+	"dependencies": {
+		"@fontsource-variable/archivo": "5.3.0",
+		"@fontsource-variable/golos-text": "5.3.0"
+	}
 }

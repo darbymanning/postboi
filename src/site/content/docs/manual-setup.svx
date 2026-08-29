@@ -18,9 +18,10 @@ hand? It's three steps.
 	</Step>
 
 	<Step title="Set your provider and credentials">
-		Pick the provider and non-secret config in a committed
-		[`postboi.config.ts`](/config); keep the secret(s) in your env file. Each provider
-		reads its own credential env var. See [Providers](/providers) for the full list.
+
+Pick the provider and non-secret config in a committed [`postboi.config.ts`](/config);
+keep the secret(s) in your env file. Each provider reads its own credential env var.
+See [Providers](/providers) for the full list.
 
 ```ts
 // postboi.config.ts  (commit this)
