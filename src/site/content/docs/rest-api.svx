@@ -33,7 +33,8 @@ curl https://api.postboi.app/v1/contacts/ada@example.com/lists \
 ```
 
 `/v1/inbound` is the other direction — mail that arrived at your
-[sending address](/provider#replies), newest first, with `/v1/inbound/{id}` for one
+[sending address](/provider#replies) or your
+[reply subdomain](/provider#receiving-on-your-own-domain), newest first, with `/v1/inbound/{id}` for one
 message and its body:
 
 ```bash
