@@ -86,6 +86,8 @@ export default class Microsoft365 extends ProviderBase<SendResponse> {
 	#token_expires = 0
 	/** Message-IDs minted per prepared message — read back after the 202 (see deliver). */
 	#minted = new WeakMap<PreparedMessage, string>()
+	/** Messages whose retry must skip the mint — a tenant whose Graph rejected it. */
+	#skip_mint = new WeakSet<PreparedMessage>()
 
 	constructor({ tenant_id, client_id, client_secret, ...options }: Options) {
 		super(options)
@@ -174,9 +176,11 @@ export default class Microsoft365 extends ProviderBase<SendResponse> {
 		// Graph never returns a message id from sendMail, so mint the internet Message-ID
 		// ourselves — the message-trace API reports the same id, which is what lets
 		// poll() events correlate back to this send.
-		const minted = `<pb-${crypto.randomUUID()}@${from.address.split("@")[1] ?? "postboi"}>`
-		graph.internetMessageId = minted
-		this.#minted.set(message, minted)
+		if (!this.#skip_mint.has(message)) {
+			const minted = `<pb-${crypto.randomUUID()}@${from.address.split("@")[1] ?? "postboi"}>`
+			graph.internetMessageId = minted
+			this.#minted.set(message, minted)
+		}
 
 		// ponytail: sendMail has no native scheduling, so scheduled_at is ignored (sends immediately).
 		const params: SendParams = { message: graph, saveToSentItems: false }
@@ -197,10 +201,25 @@ export default class Microsoft365 extends ProviderBase<SendResponse> {
 	}
 
 	protected async deliver(message: PreparedMessage): Promise<SendResponse> {
-		const accepted = await super.deliver(message)
-		const message_id = this.#minted.get(message)
-		this.#minted.delete(message)
-		return message_id ? { ...accepted, message_id } : accepted
+		try {
+			const accepted = await super.deliver(message)
+			const message_id = this.#minted.get(message)
+			this.#minted.delete(message)
+			return message_id ? { ...accepted, message_id } : accepted
+		} catch (error) {
+			// internetMessageId is a documented writable message property, but a tenant
+			// whose Graph rejects it must still be able to send: a rejection that names
+			// the property means nothing went out, so one retry without the mint is safe.
+			// The response then simply carries no message_id — poll() events for this
+			// tenant correlate by recipient/subject/time instead.
+			const detail = error instanceof Error ? error.message : ""
+			if (!this.#skip_mint.has(message) && /internetMessageId/i.test(detail)) {
+				this.#skip_mint.add(message)
+				this.#minted.delete(message)
+				return super.deliver(message)
+			}
+			throw error
+		}
 	}
 
 	protected parse_error(_response: Response, data: unknown): ProviderError | undefined {

@@ -752,6 +752,29 @@ describe("Microsoft 365", () => {
 		expect(result).toEqual({ accepted: true, message_id: body.message.internetMessageId })
 	})
 
+	it("retries once without the minted id when a tenant's Graph rejects the property", async () => {
+		fetch
+			.mockResolvedValueOnce(respond({ json: { access_token: "tok", expires_in: 3600 } }))
+			.mockResolvedValueOnce(
+				respond({
+					ok: false,
+					status: 400,
+					json: {
+						error: { code: "RequestBodyRead", message: "Invalid property 'internetMessageId'." },
+					},
+				})
+			)
+			.mockResolvedValueOnce(respond({ status: 202 }))
+
+		const result = await mail().send({ to: "to@test.com", body: "<p>x</p>" })
+		// A 400 means nothing was sent, so the one retry is safe — and the retry's
+		// payload carries no minted id, so the response can't either.
+		expect(result).toEqual({ accepted: true })
+		expect(fetch).toHaveBeenCalledTimes(3)
+		const retry = JSON.parse(String(fetch.mock.calls[2][1]?.body))
+		expect(retry.message.internetMessageId).toBeUndefined()
+	})
+
 	it("caches the token across sends", async () => {
 		mock_token_then_send()
 		fetch.mockResolvedValueOnce(respond({ status: 202 }))
