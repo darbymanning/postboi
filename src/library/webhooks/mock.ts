@@ -8,6 +8,7 @@
  */
 import { PostboiError } from "../index.js"
 import { MODULES, type WebhookEvent, type WebhookEventType } from "./index.js"
+import { POLL_MODULES, type PollResult } from "./poll.js"
 import { parse_user_agent } from "./ua.js"
 import { generate_svix_secret, generate_token } from "./crypto.js"
 
@@ -105,4 +106,37 @@ export async function mock_request(
 		// Asymmetric schemes generate their own keypair and hand back the public key.
 		secret: sample.secret ?? secret,
 	}
+}
+
+/**
+ * A realistic {@link PollResult} for a polling provider — the analog of `mock_request`
+ * for providers that report delivery by `poll()` instead of pushing webhooks. Each
+ * fixture is run through the adapter's own normalization, so it can't drift from the
+ * real mapping.
+ *
+ * @example
+ * ```ts
+ * const { events } = await mock_poll({ provider: "smtp", type: "bounced" })
+ * expect(events[0].bounce?.category).toBe("hard")
+ * ```
+ */
+export async function mock_poll(
+	options: {
+		/** Which provider's poll result to fake. Defaults to "smtp". */
+		provider?: string
+		/** The event type the result describes. Defaults to "delivered". */
+		type?: WebhookEventType
+	} = {}
+): Promise<PollResult> {
+	const provider = options.provider ?? "smtp"
+	const load = POLL_MODULES[provider]
+	const mod = load ? await load() : undefined
+	if (!mod?.mock) {
+		throw new PostboiError({
+			provider,
+			code: "polling_not_supported",
+			message: `No mock poll builder for provider "${provider}".`,
+		})
+	}
+	return mod.mock({ type: options.type ?? "delivered" })
 }

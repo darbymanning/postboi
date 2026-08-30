@@ -30,7 +30,20 @@ import type { EmailClient } from "./ua.js"
 
 export { parse_user_agent, type EmailClient } from "./ua.js"
 export { WebhookVerificationError, type WebhookVerificationCode } from "./errors.js"
-export { mock_event, mock_request } from "./mock.js"
+export { mock_event, mock_request, mock_poll } from "./mock.js"
+export {
+	poll,
+	poll_adapter_for,
+	POLL_MODULES,
+	POLL_FIELDS,
+	type PollAdapter,
+	type PollContext,
+	type PollResult,
+	type PollModule,
+	type PollOptions,
+} from "./poll.js"
+export { parse_dsn } from "./dsn.js"
+import { POLL_MODULES } from "./poll.js"
 
 /** Normalized delivery-event types, common across every provider. */
 export type WebhookEventType =
@@ -186,7 +199,7 @@ export interface ReceiveOptions {
 }
 
 /** Resolve the provider key the same way the zero-config `mail()` does. */
-async function resolve_key(): Promise<string> {
+export async function resolve_key(): Promise<string> {
 	const config = await load_config()
 	await ensure_env_loaded()
 	const key =
@@ -211,7 +224,10 @@ export async function adapter_for(key: string): Promise<WebhookAdapter> {
 		throw new PostboiError({
 			provider: key,
 			code: "webhooks_not_supported",
-			message: `Provider "${key}" has no webhook support — it does not emit delivery events postboi can receive.`,
+			message:
+				key in POLL_MODULES
+					? `Provider "${key}" doesn't push webhooks — it reports delivery by polling. Use poll() from postboi/webhooks instead.`
+					: `Provider "${key}" has no webhook support — it does not emit delivery events postboi can receive.`,
 		})
 	}
 	return (await load()).default

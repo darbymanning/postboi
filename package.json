@@ -213,6 +213,10 @@
 			"types": "./dist/webhooks/index.d.ts",
 			"default": "./dist/webhooks/index.js"
 		},
+		"./registry": {
+			"types": "./dist/registry.d.ts",
+			"default": "./dist/registry.js"
+		},
 		"./maizzle": {
 			"types": "./dist/maizzle.d.ts",
 			"default": "./dist/maizzle.js"

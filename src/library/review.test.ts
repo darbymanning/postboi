@@ -304,11 +304,18 @@ describe("provider inference reads intent, not ambience", () => {
 			// Wherever wrangler has run.
 			"CLOUDFLARE_ACCOUNT_ID",
 			"CLOUDFLARE_API_TOKEN",
+			"CLOUDFLARE_QUEUE_ID",
 			// What every CI notification action sets.
 			"DISCORD_WEBHOOK_URL",
 			// Mailjet's own SDK default pair.
 			"MJ_APIKEY_PRIVATE",
 			"MJ_APIKEY_PUBLIC",
+			// Somebody else's bounce mailbox.
+			"POP3_HOST",
+			"POP3_PASS",
+			"POP3_PORT",
+			"POP3_SECURE",
+			"POP3_USER",
 			"SLACK_WEBHOOK_URL",
 			// Somebody else's mailer.
 			"SMTP_HOST",

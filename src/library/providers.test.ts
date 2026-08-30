@@ -746,7 +746,10 @@ describe("Microsoft 365", () => {
 				contentBytes: b64("filedata"),
 			},
 		])
-		expect(result).toEqual({ accepted: true })
+		// sendMail returns no id, so the provider mints the internet Message-ID itself —
+		// the same id the message-trace API (and poll()) reports for this message.
+		expect(body.message.internetMessageId).toMatch(/^<pb-[0-9a-f-]+@test\.com>$/)
+		expect(result).toEqual({ accepted: true, message_id: body.message.internetMessageId })
 	})
 
 	it("caches the token across sends", async () => {

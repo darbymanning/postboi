@@ -18,6 +18,12 @@ export type PostboiOptions = CommonProviderOptions & {
 	token?: string
 	/** Override the API base URL. Defaults to `POSTBOI_API_URL` or `https://postboi.app`. */
 	base_url?: string
+	/**
+	 * Postboi Cloud relay: ask the API to send through the named provider using the
+	 * credentials synced to the account (e.g. `"resend"`), instead of Postboi's own
+	 * sending infrastructure. Requires the account to hold that provider's credentials.
+	 */
+	send_via?: string
 }
 
 interface EmailName {
@@ -56,6 +62,8 @@ export interface SendParams {
 	captcha_ip?: string
 	/** True when the send originated from a form submission — the only sends captcha gates. */
 	form?: boolean
+	/** Relay this send through the named provider using the account's synced credentials. */
+	send_via?: string
 }
 
 type SendResponse = { id: string; sandbox?: boolean; claim_url?: string }
@@ -320,12 +328,14 @@ export default class Postboi extends ProviderBase<SendResponse> {
 	protected override readonly captcha_mode = "managed" as const
 	#token: string | undefined
 	#host: string
+	#send_via: string | undefined
 
-	constructor({ token, base_url, ...options }: PostboiOptions = {}) {
+	constructor({ token, base_url, send_via, ...options }: PostboiOptions = {}) {
 		// Defaults can come from the environment (POSTBOI_FROM, …); anything passed
 		// explicitly via `default` wins.
 		super({ ...options, default: { ...env_defaults(), ...options.default } })
 		this.#token = token ?? read_env("POSTBOI_TOKEN")
+		this.#send_via = send_via
 		const host = base_url ?? read_env("POSTBOI_API_URL") ?? "https://postboi.app"
 		this.#host = host.replace(/\/$/, "")
 	}
@@ -717,6 +727,7 @@ export default class Postboi extends ProviderBase<SendResponse> {
 			captcha_token: message.captcha?.token,
 			captcha_ip: message.captcha?.remoteip,
 			form: message.captcha ? true : undefined,
+			send_via: this.#send_via,
 		}
 	}
 

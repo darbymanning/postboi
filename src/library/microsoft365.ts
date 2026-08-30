@@ -37,6 +37,8 @@ interface GraphMessage {
 	replyTo?: Array<Recipient>
 	attachments?: Array<Attachment>
 	internetMessageHeaders?: Array<{ name: string; value: string }>
+	/** Writable at creation — lets the sender know the Message-ID Graph won't return. */
+	internetMessageId?: string
 }
 
 export interface SendParams {
@@ -44,7 +46,15 @@ export interface SendParams {
 	saveToSentItems: boolean
 }
 
-type SendResponse = { accepted: true }
+type SendResponse = {
+	accepted: true
+	/**
+	 * The internet Message-ID postboi minted for the send. `sendMail` returns 202 with an
+	 * empty body, so this is the only send-time handle — it matches the `messageId` the
+	 * Graph message-trace API (and `poll()`) reports for the same message.
+	 */
+	message_id?: string
+}
 
 /**
  * Microsoft 365 (Microsoft Graph) mailer — https://learn.microsoft.com/graph/api/user-sendmail
@@ -74,6 +84,8 @@ export default class Microsoft365 extends ProviderBase<SendResponse> {
 	#client_secret: string
 	#token?: string
 	#token_expires = 0
+	/** Message-IDs minted per prepared message — read back after the 202 (see deliver). */
+	#minted = new WeakMap<PreparedMessage, string>()
 
 	constructor({ tenant_id, client_id, client_secret, ...options }: Options) {
 		super(options)
@@ -159,6 +171,13 @@ export default class Microsoft365 extends ProviderBase<SendResponse> {
 				: undefined,
 		}
 
+		// Graph never returns a message id from sendMail, so mint the internet Message-ID
+		// ourselves — the message-trace API reports the same id, which is what lets
+		// poll() events correlate back to this send.
+		const minted = `<pb-${crypto.randomUUID()}@${from.address.split("@")[1] ?? "postboi"}>`
+		graph.internetMessageId = minted
+		this.#minted.set(message, minted)
+
 		// ponytail: sendMail has no native scheduling, so scheduled_at is ignored (sends immediately).
 		const params: SendParams = { message: graph, saveToSentItems: false }
 
@@ -172,9 +191,16 @@ export default class Microsoft365 extends ProviderBase<SendResponse> {
 		}
 	}
 
-	/** sendMail returns 202 with an empty body on success — there is no message id. */
+	/** sendMail returns 202 with an empty body on success — the id comes from our mint. */
 	protected parse_response(): SendResponse {
 		return { accepted: true }
+	}
+
+	protected async deliver(message: PreparedMessage): Promise<SendResponse> {
+		const accepted = await super.deliver(message)
+		const message_id = this.#minted.get(message)
+		this.#minted.delete(message)
+		return message_id ? { ...accepted, message_id } : accepted
 	}
 
 	protected parse_error(_response: Response, data: unknown): ProviderError | undefined {

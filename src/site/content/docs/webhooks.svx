@@ -171,11 +171,38 @@ Providers fall into three camps:
 | Postmark, Brevo, SparkPost, Mailjet, ZeptoMail, Elastic Email, Plunk | Shared secret | `<PROVIDER>_WEBHOOK_SECRET`, a token you make up; put the same value in the webhook URL as `?token=…` (or the provider's auth-header option) |
 | Amazon SES, Scaleway | Shared secret over SNS | `SES_WEBHOOK_SECRET` / `SCALEWAY_WEBHOOK_SECRET` as `?token=…` on the subscription URL; SNS subscription handshakes confirm automatically |
 
-SMTP, Microsoft 365 and Cloudflare don't emit delivery-event webhooks, so `receive()`
-throws `webhooks_not_supported` for them.
-
 To skip verification deliberately (a local experiment, a payload replay), pass
 `{ verify: false }`: it's always an explicit opt-out, never a fallback.
+
+## Providers that don't push: `poll()`
+
+SMTP, Microsoft 365 and Cloudflare Email Service don't emit delivery-event webhooks —
+`receive()` throws `webhooks_not_supported` and points here. Each still has somewhere the
+events can be fetched from, and `poll()` fetches what's new since the last call,
+returning the same normalized events plus an opaque cursor to persist:
+
+```typescript
+import { poll } from 'postboi/webhooks'
+
+const { events, cursor } = await poll({ provider: 'microsoft365', cursor: saved })
+for (const event of events) handle(event)
+await save(cursor) // hand it back next time — polls are incremental
+```
+
+Run it on whatever schedule suits you (a cron, a queue worker); `more: true` in the
+result means the provider had more ready than one call returned — poll again soon.
+Credentials resolve like sending: explicit `options`, else the provider's env vars.
+
+| Provider | Where events come from | Setup beyond the send credentials |
+| -------- | ---------------------- | --------------------------------- |
+| Microsoft 365 | The Graph [message-trace API](https://learn.microsoft.com/graph/api/resources/exchangemessagetrace) | Grant the app registration the **ExchangeMessageTrace.Read.All** application permission (admin consent) and provision a service principal for Microsoft app id `8bd644d1-64a1-4d4b-ae52-2e0cbf64e373`. `send()` mints the internet Message-ID it returns, and trace events carry the same id, so events correlate to sends. Tenant rate limit: 100 trace queries per 5 minutes. |
+| Cloudflare | A [Queue](https://developers.cloudflare.com/queues/) fed by an Email Sending event subscription, pulled over HTTP | The first poll auto-creates a `postboi-email-events` queue with an HTTP-pull consumer (the API token needs Queues edit access). Add the event subscription once — Queues → the queue → Subscriptions → Email Sending — and the poll self-heals when the first event lands; or provision everything yourself and set `CLOUDFLARE_QUEUE_ID`. Give that queue no other consumer. |
+| SMTP | The return-path's bounce mailbox, read over POP3, parsing RFC 3464 delivery status notifications | Set `POP3_HOST`, `POP3_USER`, `POP3_PASS` (and `POP3_PORT`/`POP3_SECURE` if not 995/implicit TLS) for the mailbox your bounce address delivers to. Messages are left on the server by default — pass `{ options: { delete: '1' } }` to remove processed mail. `parse_dsn` is exported on its own too, if bounces already reach you some other way (an inbound route, for instance). |
+
+Two honest caveats. Cloudflare pulls are acked in-call, and SMTP deletion is
+irreversible: persist the returned events before doing anything that can fail. And SMTP
+only ever reports what the DSN says — servers that bounce in prose instead of RFC 3464
+parse to nothing (the raw mail stays in the mailbox as the escape hatch).
 
 ## Testing without a provider
 
@@ -192,6 +219,16 @@ await my_handler(mock_event('opened', { email: 'user@example.com' }))
 const { request, secret } = await mock_request({ provider: 'resend', type: 'clicked' })
 const events = await receive(request, { provider: 'resend', secret })
 // events[0].url === "https://example.com/pricing"
+```
+
+Polling providers get the same treatment: `mock_poll` builds a realistic `poll()` result
+— each fixture runs through the adapter's real normalization, so it can't drift:
+
+```typescript
+import { mock_poll } from 'postboi/webhooks'
+
+const { events } = await mock_poll({ provider: 'smtp', type: 'bounced' })
+// events[0].bounce.category === "hard"
 ```
 
 ## Custom providers
