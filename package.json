@@ -109,6 +109,14 @@
 			"types": "./dist/mailpace.d.ts",
 			"default": "./dist/mailpace.js"
 		},
+		"./lettermint": {
+			"types": "./dist/lettermint.d.ts",
+			"default": "./dist/lettermint.js"
+		},
+		"./unosend": {
+			"types": "./dist/unosend.d.ts",
+			"default": "./dist/unosend.js"
+		},
 		"./scaleway": {
 			"types": "./dist/scaleway.d.ts",
 			"default": "./dist/scaleway.js"

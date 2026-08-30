@@ -38,6 +38,9 @@ const LOADERS: Record<string, () => Promise<ProviderConstructor>> = {
 	plunk: () => import("./plunk.js").then((m) => m.default as unknown as ProviderConstructor),
 	mailtrap: () => import("./mailtrap.js").then((m) => m.default as unknown as ProviderConstructor),
 	mailpace: () => import("./mailpace.js").then((m) => m.default as unknown as ProviderConstructor),
+	lettermint: () =>
+		import("./lettermint.js").then((m) => m.default as unknown as ProviderConstructor),
+	unosend: () => import("./unosend.js").then((m) => m.default as unknown as ProviderConstructor),
 	scaleway: () => import("./scaleway.js").then((m) => m.default as unknown as ProviderConstructor),
 	ses: () => import("./ses.js").then((m) => m.default as unknown as ProviderConstructor),
 	microsoft365: () =>
