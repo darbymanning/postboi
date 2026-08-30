@@ -359,7 +359,9 @@ describe("poll — microsoft365 (Graph message trace)", () => {
 })
 
 describe("poll — cloudflare (Queues pull)", () => {
-	const CF_OPTIONS = { api_key: "cf-token", account_id: "acct" }
+	// queue_id pinned empty: the polluted-env CI run fills CLOUDFLARE_QUEUE_ID, and these
+	// tests exercise the provisioning path a configured id would skip.
+	const CF_OPTIONS = { api_key: "cf-token", account_id: "acct", queue_id: "" }
 	const envelope = (result: unknown) => graph_json({ success: true, errors: [], result })
 	const event = (kind: string) => ({
 		body: JSON.stringify({
