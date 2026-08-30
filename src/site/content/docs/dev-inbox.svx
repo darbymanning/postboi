@@ -142,6 +142,7 @@ The inbox lists messages newest-first and shows each one four ways:
 | **Message**     | The HTML, rendered in a sandboxed frame — scripts blocked, as a real client would |
 | **Plain Text**  | The `text` part, including the one [auto-derived](/config) from your HTML |
 | **Source**      | The raw HTML, for when a provider mangles something                 |
+| **Report**      | The [email-testing](/email-testing) analysis over what you sent — client compatibility, clipping, dead links |
 | **Attachments** | Every file, downloadable, with its type and size                    |
 
 Above them: `from`, `to`, `cc`, `bcc` and `reply_to` exactly as the provider would have

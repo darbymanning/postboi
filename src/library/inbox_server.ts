@@ -1,6 +1,7 @@
 import type { SentMessage } from "./mock.js"
 import type { InboxMessage } from "./inbox.js"
 import { INBOX_PATH } from "./inbox.js"
+import { analyze } from "./inspect/index.js"
 import { inbox_ui, type InboxUiOptions } from "./inbox_ui.js"
 import { SOUNDS } from "./inbox_sounds.js"
 import { ART } from "./inbox_art.js"
@@ -472,6 +473,24 @@ export function inbox_middleware(
 			response.setHeader("content-type", "text/html; charset=utf-8")
 			response.setHeader("cache-control", "no-store")
 			return void response.end(body_document(message))
+		}
+
+		// The captured message through postboi/inspect — the Report tab's data. Computed
+		// on request rather than at capture: analysis is milliseconds, and this way a
+		// message captured before the tab existed still gets a report.
+		const report_match = /^\/api\/messages\/([^/]+)\/report$/.exec(route)
+		if (report_match && method === "GET") {
+			const message = store.get(report_match[1])
+			if (!message) return void send_json(response, 404, { error: "no such message" })
+			return void send_json(
+				response,
+				200,
+				analyze({
+					html: message.html ?? undefined,
+					text: message.text ?? undefined,
+					subject: message.subject,
+				})
+			)
 		}
 
 		const attachment_match = /^\/api\/messages\/([^/]+)\/attachments\/(\d+)$/.exec(route)

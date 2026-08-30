@@ -231,7 +231,7 @@ await mail.send({ to: "a@b.c", subject: "Hi", body: "<p>x</p>" })
 
 Every channel has one: `postboi/sms-mock`, `postboi/whatsapp-mock`, `postboi/push-mock`, `postboi/chat-mock` — same `sent` array, same normalisation. Or set `provider: "mock"` in that channel's config section to route the zero-config function through it.
 
-Lint what the mock captured with `analyze` from `postboi/inspect` — synchronous, zero-network static analysis: client compatibility (caniemail-derived), Gmail clipping (~102KB), missing alt/lang/plain-text/List-Unsubscribe, dead and `http:` links. `report.status` is `"pass" | "info" | "warning" | "error"`; `check_links(report.links)` is the async opt-in that actually fetches the links. `/raw/email-testing`
+Lint what the mock captured with `analyze` from `postboi/inspect` — synchronous, zero-network static analysis: client compatibility (caniemail-derived), Gmail clipping (~102KB), missing alt/lang/plain-text/List-Unsubscribe, dead and `http:` links. `report.status` is `"pass" | "info" | "warning" | "error"`; `check_links(report.links)` is the async opt-in that actually fetches the links. In CI: `bunx postboi inspect file.html` (exit 1 on warnings; `--links --json --subject`). The dev inbox shows the same analysis on every capture under its Report tab. `/raw/email-testing`
 
 ## Edge runtimes
 

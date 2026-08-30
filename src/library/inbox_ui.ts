@@ -345,6 +345,19 @@ td.chanco { width: 78px }
 #pane pre { margin: 0; padding: 10px; font: 12px ui-monospace, "Courier New", monospace; white-space: pre-wrap; word-wrap: break-word }
 #pane .files { padding: 10px }
 #pane .files a { display: block; margin-bottom: 5px; color: #0000ee }
+/* The Report tab: postboi/inspect's findings, set like a system dialog would set them. */
+#pane .report { padding: 10px 12px; font: 12px "MS Sans Serif", Tahoma, sans-serif }
+#pane .report .r-status { font-weight: bold; margin-bottom: 8px }
+#pane .report .r-status.pass { color: #006600 }
+#pane .report .r-status.error { color: #aa0000 }
+#pane .report ul { margin: 0; padding: 0; list-style: none }
+#pane .report li { margin-bottom: 7px; line-height: 1.45 }
+#pane .report .r-mark { display: inline-block; width: 14px; font-weight: bold }
+#pane .report li.error .r-mark { color: #aa0000 }
+#pane .report li.warning .r-mark { color: #7a5200 }
+#pane .report li.info .r-mark { color: #808080 }
+#pane .report .r-clients { color: #808080; margin-left: 14px }
+#pane .report .r-size { color: #808080; margin-top: 9px }
 #blank { display: flex; height: 100%; align-items: center; justify-content: center; color: #808080; text-align: center; line-height: 1.7 }
 #readerfoot { display: flex; align-items: center; gap: 10px; padding: 0 10px 10px; background: #c0c0c0 }
 #readerfoot #r-count { flex: 1; text-align: center; font-weight: bold; color: #17265c }
@@ -966,6 +979,7 @@ var messages = []
 var current = null
 var selected = null
 var tab = "html"
+var reports = {}
 var seen = 0
 var loaded = false
 var read = {}
@@ -1292,6 +1306,8 @@ function render_reader() {
 		pane.innerHTML = '<pre class="selectable">' + esc(current.text || "(no plain-text part)") + "</pre>"
 	} else if (tab === "source") {
 		pane.innerHTML = '<pre class="selectable">' + esc(current.html || current.text || "") + "</pre>"
+	} else if (tab === "report") {
+		render_report(pane)
 	} else {
 		var files = current.attachments || []
 		if (!files.length) {
@@ -1304,6 +1320,44 @@ function render_reader() {
 			}).join("") + "</div>"
 		}
 	}
+}
+
+/*
+ * The Report tab: the captured message through postboi/inspect, fetched once per
+ * message and remembered — the analysis is deterministic, so asking twice buys nothing.
+ */
+function render_report(pane) {
+	var id = current.id
+	if (reports[id]) return void (pane.innerHTML = report_html(reports[id]))
+	pane.innerHTML = '<div id="blank">Checking\\u2026</div>'
+	fetch(api + "/messages/" + id + "/report").then(function (r) { return r.json() }).then(function (report) {
+		reports[id] = report
+		if (current && current.id === id && tab === "report") pane.innerHTML = report_html(report)
+	}).catch(function () {
+		if (current && current.id === id && tab === "report") {
+			pane.innerHTML = '<div id="blank">The report did not load. Close the reader and try again.</div>'
+		}
+	})
+}
+
+function report_html(report) {
+	var MARKS = { error: "\\u2717", warning: "!", info: "\\u00b7" }
+	var kb = Math.round(report.size.html_bytes / 102.4) / 10
+	var head = report.findings.length
+		? '<div class="r-status' + (report.status === "error" ? " error" : "") + '">' +
+			report.findings.length + " finding" + (report.findings.length === 1 ? "" : "s") + "</div>"
+		: '<div class="r-status pass">Looks good \\u2014 nothing to flag.</div>'
+	var rows = report.findings.map(function (f) {
+		var clients = (f.clients || []).map(function (c) {
+			return c.name + (c.support === "partial" ? " (partial)" : "")
+		}).join(", ")
+		return '<li class="' + esc(f.severity) + '"><span class="r-mark">' + MARKS[f.severity] + "</span>" +
+			esc(f.message) + (clients ? '<br><span class="r-clients">' + esc(clients) + "</span>" : "") + "</li>"
+	}).join("")
+	return '<div class="report selectable">' + head + "<ul>" + rows + "</ul>" +
+		'<div class="r-size">HTML: ' + kb + " KB" + (report.size.gmail_clip ? " \\u2014 Gmail will clip this" : "") +
+		" \\u00b7 " + report.links.length + " link" + (report.links.length === 1 ? "" : "s") +
+		" \\u00b7 " + report.images.length + " image" + (report.images.length === 1 ? "" : "s") + "</div></div>"
 }
 
 function load() {
@@ -4249,6 +4303,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			<button data-tab="html" class="on">Message</button>
 			<button data-tab="text">Plain Text</button>
 			<button data-tab="source">Source</button>
+			<button data-tab="report">Report</button>
 			<button data-tab="files">Attachments</button>
 		</div>
 		<div id="pane" class="thin-sunken"></div>

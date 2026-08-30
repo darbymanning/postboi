@@ -103,6 +103,27 @@ It deduplicates, runs a few requests at a time (`concurrency`), gives each ten s
 (`timeout_ms`), and takes an injectable `fetch` for stubbing. Run it where outbound
 requests are cheap — not on every render.
 
+## At the command line
+
+The same analysis, as a CI step:
+
+```bash
+bunx postboi inspect build/welcome.html
+```
+
+Findings print one per line; the exit code is the contract — 0 when the email passes,
+1 on warnings or errors, so the command drops straight into a pipeline. `--links`
+also fetches every link, `--subject "…"` includes the subject in the analysis,
+`--json` emits the full report, and `-` reads stdin. (One check is deliberately
+skipped here: an HTML file has nowhere to carry a plain-text part, so its absence
+proves nothing at the command line.)
+
+## In the dev inbox
+
+Every message the [dev inbox](/dev-inbox) captures gets a **Report** tab — the same
+findings, computed on the spot over what your code actually sent. Send from your app,
+click the capture, read the verdict; no configuration, nothing leaves your machine.
+
 ## How detection works
 
 No HTML parser and no DOM: email HTML is table soup, and repairing it into a tree means
