@@ -123,5 +123,5 @@ Static analysis tells you what will degrade; it can't show you the pixels. That'
 dashboard, send your email to the address it gives you — from any sender, any
 provider — and read the full report: this same analysis over the exact bytes that
 arrived, plus SPF, DKIM and DMARC verdicts from a real receiving mail server and your
-actual DNS records alongside. Real-client screenshots land in the same report as the
-rendering partnership rolls out.
+actual DNS records alongside — plus real-client screenshots (Outlook on Windows,
+Gmail, Apple Mail and friends) where rendering is enabled.
