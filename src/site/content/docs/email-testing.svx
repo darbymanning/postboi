@@ -143,6 +143,10 @@ Static analysis tells you what will degrade; it can't show you the pixels. That'
 [Postboi](https://postboi.email)'s hosted testing is for: create a test in the
 dashboard, send your email to the address it gives you — from any sender, any
 provider — and read the full report: this same analysis over the exact bytes that
-arrived, plus SPF, DKIM and DMARC verdicts from a real receiving mail server and your
-actual DNS records alongside — plus real-client screenshots (Outlook on Windows,
-Gmail, Apple Mail and friends) where rendering is enabled.
+arrived, plus SPF, DKIM and DMARC verdicts from a real receiving mail server, your
+actual DNS records, a real SpamAssassin score, and real-client screenshots (Outlook
+on Windows, Gmail, Apple Mail and friends) where rendering is enabled.
+
+No sender handy? Paste the HTML straight into the run (or `POST` it to
+`/v1/testing/{id}/source`) and the report and screenshots run on it directly — the
+transport-dependent panels stay empty, because nothing travelled.
