@@ -233,6 +233,8 @@ Every channel has one: `postboi/sms-mock`, `postboi/whatsapp-mock`, `postboi/pus
 
 Lint what the mock captured with `analyze` from `postboi/inspect` — synchronous, zero-network static analysis: client compatibility (caniemail-derived), Gmail clipping (~102KB), missing alt/lang/plain-text/List-Unsubscribe, dead and `http:` links. `report.status` is `"pass" | "info" | "warning" | "error"`; `check_links(report.links)` is the async opt-in that actually fetches the links. In CI: `bunx postboi inspect file.html` (exit 1 on warnings; `--links --json --subject`). The dev inbox shows the same analysis on every capture under its Report tab. `/raw/email-testing`
 
+For real-client verdicts, `hosted_test` from `postboi/inspect` drives Postboi's hosted testing (needs `POSTBOI_TOKEN`): `await hosted_test({ html, subject })` pastes and returns the report + screenshot run in one call; `const t = await hosted_test({ label }); await mail({ to: t.address, ... }); const done = await t.wait()` sends for real and gets SPF/DKIM/DMARC + a SpamAssassin score. `t.url` is the run's dashboard page. Runs count against the account's daily cap and screenshots against the rendering allowance — gate it behind a flag in CI. `/raw/email-testing`
+
 ## Edge runtimes
 
 Cloudflare Workers, and anything else without a filesystem. `/raw/cloudflare-workers`

@@ -84,6 +84,7 @@ describe("package exports", () => {
 			"inspect/checks.ts", // the static checks, reached via inspect/index.ts
 			"inspect/compat.ts", // the client-matrix matcher, reached via inspect/index.ts
 			"inspect/caniemail_data.ts", // generated support data, reached via inspect/index.ts
+			"inspect/hosted.ts", // the hosted testing client, reached via inspect/index.ts
 		])
 		const providers = [
 			...readdirSync(`${root}src/library`).filter(

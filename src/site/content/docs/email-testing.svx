@@ -150,3 +150,57 @@ on Windows, Gmail, Apple Mail and friends) where rendering is enabled.
 No sender handy? Paste the HTML straight into the run (or `POST` it to
 `/v1/testing/{id}/source`) and the report and screenshots run on it directly — the
 transport-dependent panels stay empty, because nothing travelled.
+
+### From code
+
+`hosted_test()` drives those same runs from a script or a test suite. It needs an
+API token — set `POSTBOI_TOKEN` (create one under **Account → API tokens**) or pass
+`token`. Two ways in:
+
+**Paste path** — hand over the HTML, get the report back on the same call. This is
+the tight loop for iterating on a template: same analysis, same screenshots, one
+await.
+
+```ts
+import { hosted_test } from 'postboi/inspect'
+
+const test = await hosted_test({ html, subject: 'Welcome v3' })
+
+test.report?.status // "pass" | "info" | "warning" | "error"
+test.url // the run's dashboard page — screenshots develop there
+```
+
+**Send path** — mint the address, send to it with your real sending code, then wait.
+This exercises the whole journey, so SPF, DKIM, DMARC and the SpamAssassin score are
+judged over the exact bytes that arrived:
+
+```ts
+import { hosted_test } from 'postboi/inspect'
+import { mail } from 'postboi'
+
+const test = await hosted_test({ label: 'welcome v3' })
+await mail({ to: test.address, subject: 'Welcome', body: html })
+
+const done = await test.wait() // polls until the email lands
+done.authentication?.spf // "pass"
+done.spam?.score // 0.1
+done.report?.findings // same findings as analyze(), over the real bytes
+```
+
+`wait()` polls every five seconds and gives up after two minutes (both tunable);
+`clients` picks the screenshot clients by id (`GET /v1/testing/clients` lists them,
+or choose in the dashboard once and omit it). Every run counts against the account's
+daily cap and every screenshot client draws from the monthly rendering allowance, so
+a suite that runs on every commit wants this behind a flag — keep `analyze()` in the
+hot path and save `hosted_test()` for release checks:
+
+```ts
+if (process.env.HOSTED_TEST) {
+	const test = await hosted_test({ html: mail.last?.html, subject: mail.last?.subject })
+	expect(test.report?.status).not.toBe('error')
+}
+```
+
+And in the [dev inbox](/dev-inbox), the same thing with no code at all: with
+`POSTBOI_TOKEN` set, every capture's Report tab grows a **Photograph in real
+clients** button that orders screenshots for exactly what your app just sent.
