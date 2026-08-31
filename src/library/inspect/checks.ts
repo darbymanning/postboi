@@ -45,6 +45,8 @@ const message_size: Check = ({ input }) => {
 }
 
 const missing_plain_text: Check = ({ input }) => {
+	// Bare HTML has nowhere to carry a text part — absence proves nothing there.
+	if (input.source === "html" && !input.text) return
 	if (!input.html || input.text?.trim()) return
 	return {
 		id: "missing_plain_text",

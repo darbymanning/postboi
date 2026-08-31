@@ -51,6 +51,15 @@ describe("analyze", () => {
 		expect(finding(analyze({ html: CLEAN, text: "Hello." }), "missing_plain_text")).toBeUndefined()
 	})
 
+	it("stays quiet about the text part when the input is bare HTML", () => {
+		// A file has nowhere to carry a plain-text part — absence proves nothing.
+		expect(finding(analyze({ html: CLEAN, source: "html" }), "missing_plain_text")).toBeUndefined()
+		// But a bare-HTML caller that does hand text over gets judged on it as usual.
+		expect(
+			finding(analyze({ html: CLEAN, text: " ", source: "html" }), "missing_plain_text")
+		).toBeDefined()
+	})
+
 	it("only nags about headers when headers were provided", () => {
 		expect(finding(analyze({ html: CLEAN }), "missing_list_unsubscribe")).toBeUndefined()
 		const bare = analyze({ html: CLEAN, headers: { from: "a@example.com" } })

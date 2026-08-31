@@ -69,6 +69,12 @@ export interface AnalyzeInput {
 	headers?: Record<string, string>
 	/** Raw message size in bytes, when known — feeds the message-size check. */
 	size_bytes?: number
+	/**
+	 * What the input is: a whole `"message"` (the default), or bare `"html"` — a
+	 * file, an editor buffer — which has nowhere to carry a plain-text part, so
+	 * its absence proves nothing and that check stays quiet.
+	 */
+	source?: "message" | "html"
 }
 
 /** What {@link analyze} hands back. */
