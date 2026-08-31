@@ -358,6 +358,13 @@ td.chanco { width: 78px }
 #pane .report li.info .r-mark { color: #808080 }
 #pane .report .r-clients { color: #808080; margin-left: 14px }
 #pane .report .r-size { color: #808080; margin-top: 9px }
+#pane .report .r-shead { font-weight: bold; border-top: 1px solid #c0c0c0; margin-top: 12px; padding-top: 10px }
+#pane .report .r-snote { color: #808080; margin-top: 5px }
+#pane .report .r-sgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 7px }
+#pane .report .r-shot { margin: 0; border: 1px solid #808080; background: #fff; padding: 3px }
+#pane .report .r-shot img { display: block; width: 100%; height: 110px; object-fit: cover; object-position: top }
+#pane .report .r-shot .r-hold { height: 110px; display: flex; align-items: center; justify-content: center; color: #808080; background: #efefef; font-size: 11px }
+#pane .report .r-shot figcaption { padding: 3px 2px 1px; font-size: 10px; color: #404040; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 #blank { display: flex; height: 100%; align-items: center; justify-content: center; color: #808080; text-align: center; line-height: 1.7 }
 #readerfoot { display: flex; align-items: center; gap: 10px; padding: 0 10px 10px; background: #c0c0c0 }
 #readerfoot #r-count { flex: 1; text-align: center; font-weight: bold; color: #17265c }
@@ -980,6 +987,7 @@ var current = null
 var selected = null
 var tab = "html"
 var reports = {}
+var shots_timer = null
 var seen = 0
 var loaded = false
 var read = {}
@@ -1328,7 +1336,10 @@ function render_reader() {
  */
 function render_report(pane) {
 	var id = current.id
-	if (reports[id]) return void (pane.innerHTML = report_html(reports[id]))
+	if (reports[id]) {
+		pane.innerHTML = report_html(reports[id]) + '<div class="report" id="rshots"></div>'
+		return void paint_shots(id)
+	}
 	pane.innerHTML = '<div id="blank">Checking\\u2026</div>'
 	fetch(api + "/messages/" + id + "/report").then(function (r) {
 		// Only a real report enters the cache — a 404 body cached here would replay
@@ -1338,7 +1349,10 @@ function render_report(pane) {
 	}).then(function (report) {
 		if (!report || !report.size) throw new Error("not a report")
 		reports[id] = report
-		if (current && current.id === id && tab === "report") pane.innerHTML = report_html(report)
+		if (current && current.id === id && tab === "report") {
+			pane.innerHTML = report_html(report) + '<div class="report" id="rshots"></div>'
+			paint_shots(id)
+		}
 	}).catch(function () {
 		if (current && current.id === id && tab === "report") {
 			pane.innerHTML = '<div id="blank">The report did not load. Close the reader and try again.</div>'
@@ -1364,6 +1378,72 @@ function report_html(report) {
 		'<div class="r-size">HTML: ' + kb + " KB" + (report.size.gmail_clip ? " \\u2014 Gmail will clip this" : "") +
 		" \\u00b7 " + report.links.length + " link" + (report.links.length === 1 ? "" : "s") +
 		" \\u00b7 " + report.images.length + " image" + (report.images.length === 1 ? "" : "s") + "</div></div>"
+}
+
+/*
+ * Real-client screenshots for the open capture, through the hosted testing API. The
+ * server keeps the token and proxies everything; this only asks, draws, and — while
+ * the farm is still developing a capture — asks again in a little while.
+ */
+function paint_shots(id) {
+	clearTimeout(shots_timer)
+	var box = document.getElementById("rshots")
+	if (!box || !current || current.id !== id || tab !== "report") return
+	fetch(api + "/messages/" + id + "/screenshots").then(function (r) {
+		if (!r.ok) throw new Error("screenshots answered " + r.status)
+		return r.json()
+	}).then(function (data) {
+		if (!current || current.id !== id || tab !== "report") return
+		var el = document.getElementById("rshots")
+		if (!el) return
+		el.innerHTML = shots_html(id, data)
+		var go = document.getElementById("rshotgo")
+		if (go) go.onclick = function () { order_shots(id, go) }
+		var developing = (data.previews || []).some(function (p) { return p.status === "pending" })
+		if (data.run_id && (developing || !(data.previews || []).length)) {
+			shots_timer = setTimeout(function () { paint_shots(id) }, 5000)
+		}
+	}).catch(function () {})
+}
+
+function order_shots(id, go) {
+	go.disabled = true
+	go.textContent = "Ordering\\u2026"
+	fetch(api + "/messages/" + id + "/screenshots", { method: "POST" }).then(function (r) {
+		if (!r.ok) return r.json().then(function (body) {
+			throw new Error(body && body.error ? body.error : "order answered " + r.status)
+		})
+	}).then(function () {
+		paint_shots(id)
+	}).catch(function (error) {
+		var el = document.getElementById("rshots")
+		if (el) el.innerHTML = '<div class="r-shead">Real clients</div><div class="r-snote">' +
+			esc(String((error && error.message) || error)) + "</div>"
+	})
+}
+
+function shots_html(id, data) {
+	var head = '<div class="r-shead">Real clients</div>'
+	if (!data.run_id && !data.enabled) {
+		return head + '<div class="r-snote">Set POSTBOI_TOKEN (your hosted API token) to photograph this ' +
+			"email in real clients \\u2014 Outlook, Gmail, Apple Mail \\u2014 right from here.</div>"
+	}
+	if (!data.run_id) {
+		return head + '<div class="r-snote"><button id="rshotgo">\\uD83D\\uDCF7 Photograph in real clients</button>' +
+			" \\u2014 uses your monthly preview allowance, one preview per client.</div>"
+	}
+	var cells = (data.previews || []).map(function (p) {
+		if (p.status === "ready") {
+			var src = api + "/messages/" + id + "/screenshots/" + p.id
+			return '<figure class="r-shot"><a href="' + src + '" target="_blank" rel="noreferrer">' +
+				'<img loading="lazy" src="' + src + '" alt="' + esc(p.client_name) + '"></a>' +
+				"<figcaption>" + esc(p.client_name) + "</figcaption></figure>"
+		}
+		var hold = p.status === "pending" ? "developing\\u2026" : "no capture"
+		return '<figure class="r-shot"><div class="r-hold">' + hold + "</div>" +
+			"<figcaption>" + esc(p.client_name) + "</figcaption></figure>"
+	}).join("")
+	return head + '<div class="r-sgrid">' + (cells || '<div class="r-snote">Submitting to the rendering farm\\u2026</div>') + "</div>"
 }
 
 function load() {

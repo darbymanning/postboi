@@ -149,6 +149,13 @@ Above them: `from`, `to`, `cc`, `bcc` and `reply_to` exactly as the provider wou
 received them — after defaults are applied and addresses parsed. If `reply_to` isn't what
 you expected, this is where you find out.
 
+The Report tab can also photograph the capture in **real clients** — Outlook on Windows,
+Gmail, Apple Mail — when a hosted [Postboi](https://postboi.app) account is connected: set
+`POSTBOI_TOKEN` (your API token) and a **Photograph in real clients** button appears. One
+click runs the capture through the hosted [testing pipeline](/email-testing) and the
+screenshots develop right there in the tab. Every client on a run is one rendered preview
+from the account's monthly allowance, so the button never fires on its own.
+
 Messages live in memory for the life of the dev server. Restarting it empties the inbox.
 **Prev** and **Next** at the bottom of the reader step through the mailbox without going
 back to the list.
