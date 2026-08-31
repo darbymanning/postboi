@@ -659,3 +659,93 @@ describe("channel captures", () => {
 		await inbox.stop()
 	})
 })
+
+describe("inbox screenshots (hosted testing API)", () => {
+	let inbox: Awaited<ReturnType<typeof start_inbox>>
+	const real_fetch = globalThis.fetch
+
+	beforeEach(async () => {
+		inbox = await start_inbox()
+	})
+
+	afterEach(async () => {
+		await inbox.stop()
+		vi.unstubAllEnvs()
+		vi.unstubAllGlobals()
+	})
+
+	/** Route hosted-API calls to a stub; everything else (the inbox itself) stays real. */
+	function stub_hosted(handler: (url: string, init?: RequestInit) => Response) {
+		const seen: Array<{ url: string; init?: RequestInit }> = []
+		vi.stubGlobal("fetch", ((input: string | URL | Request, init?: RequestInit) => {
+			const url = String(input)
+			if (!url.startsWith("https://hosted.test")) return real_fetch(input as string, init)
+			seen.push({ url, init })
+			return Promise.resolve(handler(url, init))
+		}) as typeof globalThis.fetch)
+		return seen
+	}
+
+	it("reports the token's absence rather than erroring", async () => {
+		const stored = inbox.store.add(message)
+		const answer = await real_fetch(
+			`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/messages/${stored.id}/screenshots`
+		)
+		expect(answer.status).toBe(200)
+		expect(await answer.json()).toEqual({ enabled: false, run_id: null, previews: [] })
+
+		const order = await real_fetch(
+			`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/messages/${stored.id}/screenshots`,
+			{ method: "POST" }
+		)
+		expect(order.status).toBe(400)
+	})
+
+	it("orders a run, pastes the capture in, and proxies status and images", async () => {
+		vi.stubEnv("POSTBOI_TOKEN", "tok-1")
+		vi.stubEnv("POSTBOI_API_URL", "https://hosted.test")
+		const seen = stub_hosted((url) => {
+			if (url.endsWith("/v1/testing")) {
+				return new Response(JSON.stringify({ id: "test_abc" }), { status: 201 })
+			}
+			if (url.endsWith("/v1/testing/test_abc/source")) {
+				return new Response(JSON.stringify({ ok: true }), { status: 200 })
+			}
+			if (url.endsWith("/v1/testing/test_abc/previews")) {
+				return new Response(
+					JSON.stringify({
+						data: [
+							{ id: "prev_1", client_name: "Outlook (Windows)", status: "ready" },
+							{ id: "prev_2", client_name: "Gmail (web)", status: "pending" },
+						],
+					}),
+					{ status: 200 }
+				)
+			}
+			if (url.endsWith("/v1/testing/test_abc/previews/prev_1")) {
+				return new Response(new Uint8Array([137, 80]), {
+					headers: { "content-type": "image/png" },
+				})
+			}
+			return new Response("nope", { status: 404 })
+		})
+		const stored = inbox.store.add(message)
+		const base = `http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/messages/${stored.id}/screenshots`
+
+		const order = await real_fetch(base, { method: "POST" })
+		expect(order.status).toBe(201)
+		expect(await order.json()).toEqual({ run_id: "test_abc" })
+		// The token travelled as a bearer, and the capture's HTML went in whole.
+		expect((seen[0].init?.headers as Record<string, string>).authorization).toBe("Bearer tok-1")
+		expect(JSON.parse(String(seen[1].init?.body)).html).toBe("<p>Hello</p>")
+
+		const listed = await real_fetch(base)
+		const status = (await listed.json()) as { previews: Array<{ id: string; status: string }> }
+		expect(status.previews.map((preview) => preview.status)).toEqual(["ready", "pending"])
+
+		const image = await real_fetch(`${base}/prev_1`)
+		expect(image.status).toBe(200)
+		expect(image.headers.get("content-type")).toBe("image/png")
+		expect(new Uint8Array(await image.arrayBuffer())).toEqual(new Uint8Array([137, 80]))
+	})
+})

@@ -94,7 +94,8 @@ export async function inspect_command(args: Array<string>): Promise<void> {
 	}
 
 	const report = analyze({ html, subject, source: "html" })
-	const link_checks = with_links && report.links.length ? await check_links(report.links) : undefined
+	const link_checks =
+		with_links && report.links.length ? await check_links(report.links) : undefined
 	const broken_links = link_checks?.filter((link) => !link.ok).length ?? 0
 
 	if (as_json) {
