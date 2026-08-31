@@ -1330,7 +1330,13 @@ function render_report(pane) {
 	var id = current.id
 	if (reports[id]) return void (pane.innerHTML = report_html(reports[id]))
 	pane.innerHTML = '<div id="blank">Checking\\u2026</div>'
-	fetch(api + "/messages/" + id + "/report").then(function (r) { return r.json() }).then(function (report) {
+	fetch(api + "/messages/" + id + "/report").then(function (r) {
+		// Only a real report enters the cache — a 404 body cached here would replay
+		// as a synchronous throw on every later visit to the tab.
+		if (!r.ok) throw new Error("report answered " + r.status)
+		return r.json()
+	}).then(function (report) {
+		if (!report || !report.size) throw new Error("not a report")
 		reports[id] = report
 		if (current && current.id === id && tab === "report") pane.innerHTML = report_html(report)
 	}).catch(function () {
