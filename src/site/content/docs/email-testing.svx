@@ -153,26 +153,37 @@ transport-dependent panels stay empty, because nothing travelled.
 
 ### From code
 
-`hosted_test()` drives those same runs from a script or a test suite. It needs an
-API token — set `POSTBOI_TOKEN` (create one under **Account → API tokens**) or pass
-`token`. Two ways in:
-
-**Paste path** — hand over the HTML, get the report back on the same call. This is
-the tight loop for iterating on a template: same analysis, same screenshots, one
-await.
+Name a test instead of addressing a person, and `mail()` sends it to the proving
+house instead:
 
 ```ts
-import { hosted_test } from 'postboi/inspect'
+import { mail } from 'postboi'
 
-const test = await hosted_test({ html, subject: 'Welcome v3' })
+const test = await mail({ test: 'welcome', subject: 'Welcome v3', body: html })
 
 test.report?.status // "pass" | "info" | "warning" | "error"
 test.url // the run's dashboard page — screenshots develop there
 ```
 
-**Send path** — mint the address, send to it with your real sending code, then wait.
-This exercises the whole journey, so SPF, DKIM, DMARC and the SpamAssassin score are
-judged over the exact bytes that arrived:
+The name is the entry. Edit the HTML, call again with the same name, and it's a new
+attempt on the same dashboard entry — the edit-and-re-run loop, from code:
+
+```ts
+await mail({ test: 'welcome', body: v1 }) // starts the entry
+await mail({ test: 'welcome', body: v2 }) // attempt №2 on it, clients carried over
+```
+
+The types keep the two kinds of send apart: `to` next to `test` is a compile error
+(a test has readers, not recipients), and `clients` — screenshot client ids from
+`GET /v1/testing/clients` — only exists on a test send. Omit `clients` and a
+continued entry keeps its previous pick; a fresh one gets the curated set. It needs
+`POSTBOI_TOKEN` set (create a token under **Account → API tokens**), whatever
+provider your real mail uses.
+
+**Testing the transport too.** `mail({ test })` proves the email itself — rendering,
+compatibility, screenshots — without anything travelling. When you want SPF, DKIM,
+DMARC and a SpamAssassin score judged over real bytes, `hosted_test` from
+`postboi/inspect` mints the run's address for your actual sending path:
 
 ```ts
 import { hosted_test } from 'postboi/inspect'
@@ -184,19 +195,19 @@ await mail({ to: test.address, subject: 'Welcome', body: html })
 const done = await test.wait() // polls until the email lands
 done.authentication?.spf // "pass"
 done.spam?.score // 0.1
-done.report?.findings // same findings as analyze(), over the real bytes
 ```
 
-`wait()` polls every five seconds and gives up after two minutes (both tunable);
-`clients` picks the screenshot clients by id (`GET /v1/testing/clients` lists them,
-or choose in the dashboard once and omit it). Every run counts against the account's
-daily cap and every screenshot client draws from the monthly rendering allowance, so
-a suite that runs on every commit wants this behind a flag — keep `analyze()` in the
-hot path and save `hosted_test()` for release checks:
+(`hosted_test` is also the lower-level client under `mail({ test })` — paste with
+`html`, tune `wait()`'s polling, point `api` somewhere else.)
+
+Every run counts against the account's daily cap and every screenshot client draws
+from the monthly rendering allowance, so a suite that runs on every commit wants
+this behind a flag — keep the free, local `analyze()` in the hot path and save the
+hosted run for release checks:
 
 ```ts
 if (process.env.HOSTED_TEST) {
-	const test = await hosted_test({ html: mail.last?.html, subject: mail.last?.subject })
+	const test = await mail({ test: 'welcome', body: mock.last?.html ?? '' })
 	expect(test.report?.status).not.toBe('error')
 }
 ```
