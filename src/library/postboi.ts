@@ -7,6 +7,9 @@ export * from "./index.js"
 // The zero-config `mail()`/`cancel()` and provider dispatch are general (not Postboi-specific)
 // but belong on the package root, so re-export them here.
 export { mail, cancel } from "./mail.js"
+// What `mail({ test: … })` answers with — type-only, so the hosted-testing client
+// module stays a lazily-imported leaf like the providers below.
+export type { HostedTest } from "./inspect/hosted.js"
 // The zero-config `sms()` — same shape as `mail()`, on the SMS channel.
 export { sms } from "./sms/send.js"
 // The chat channel's per-platform functions. There's deliberately no generic `chat()`

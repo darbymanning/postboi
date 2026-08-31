@@ -1,4 +1,4 @@
-import { read_env } from "../env.js"
+import { ensure_env_loaded, read_env } from "../env.js"
 import type { Report } from "./types.js"
 
 /**
@@ -37,6 +37,13 @@ export interface HostedTestOptions {
 	subject?: string
 	/** The run's name in the dashboard list. Defaults to `subject`. */
 	label?: string
+	/**
+	 * A named test entry to continue. Runs sharing a `series` name stack as
+	 * attempts of one email in the dashboard — the edit-and-re-run loop — and a
+	 * continued entry keeps its screenshot clients unless `clients` says otherwise.
+	 * Doubles as the label; the first run under a name starts the entry.
+	 */
+	series?: string
 	/** Screenshot client ids (GET /v1/testing/clients) — omit for the curated set. */
 	clients?: Array<string>
 	/** API token. Defaults to the `POSTBOI_TOKEN` environment variable. */
@@ -87,6 +94,8 @@ interface RunAnswer {
 }
 
 export async function hosted_test(options: HostedTestOptions = {}): Promise<HostedTest> {
+	// Makes `.env` values and Worker bindings visible before the token is read.
+	await ensure_env_loaded()
 	const token = options.token ?? read_env("POSTBOI_TOKEN")
 	if (!token) {
 		throw new Error(
@@ -109,7 +118,8 @@ export async function hosted_test(options: HostedTestOptions = {}): Promise<Host
 	const created = await call<{ id: string; address: string }>("/v1/testing", {
 		method: "POST",
 		body: JSON.stringify({
-			label: options.label ?? options.subject,
+			label: options.series ? undefined : (options.label ?? options.subject),
+			series: options.series,
 			clients: options.clients,
 		}),
 	})
