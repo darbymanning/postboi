@@ -151,13 +151,73 @@ export type ListRecipientInput = Email | NewListRecipient
 export type MembershipStatus = "subscribed" | "pending" | "unsubscribed"
 
 /** A contact — one per address per account. `email` is the handle; `data` holds the
- * contact's global `{key}` broadcast variables, shared across every list it's on. */
+ * contact's global `{key}` broadcast variables, shared across every list it's on;
+ * `tags` are its current labels, and the `last_*` stamps are kept current by its
+ * timeline (see `events`). */
 export interface Contact {
 	email: string
 	name?: string
 	data?: Record<string, string>
+	/** E.164. */
+	phone?: string
+	/** Your own id for this person, unique per account. */
+	external_id?: string
+	/** IANA zone, e.g. "Europe/London". */
+	timezone?: string
+	tags?: Array<string>
+	last_event_at?: string
+	last_opened_at?: string
+	last_clicked_at?: string
+	last_replied_at?: string
 	created_at: string
 	updated_at: string
+}
+
+/** One entry on a contact's timeline. */
+export interface ContactEvent {
+	id: string
+	/** The event name — `email.opened`, `billing.purchase`, `feature_used`, … */
+	event: string
+	properties?: Record<string, unknown>
+	at: string
+	/** Who recorded it: `api` is you; the rest are Postboi. */
+	source: "api" | "integration" | "email" | "sms" | "whatsapp" | "list" | "system"
+	/** The message (msg_ or in_) the event is about, when it is about one. */
+	message_id?: string
+}
+
+/** Who an event is about: an address (created if unknown) or your own id (must exist). */
+export type EventTarget = string | { email?: string; external_id?: string }
+
+/** Options `events.track` takes beyond the name and properties. */
+export interface TrackOptions {
+	/** When it happened — a `Date` or ISO string. Defaults to now; never the future. */
+	at?: Date | string
+	/** Unique per account; a retry with the same key returns the original event. */
+	idempotency_key?: string
+}
+
+/** One event for `events.record` — a target plus what `events.track` takes. */
+export interface EventRecord extends TrackOptions {
+	to: EventTarget
+	event: string
+	properties?: Record<string, unknown>
+}
+
+/** A documented event: the property names a merge tag or a segment can rely on. */
+export interface EventSchema {
+	name: string
+	description: string
+	/** Property name → a one-line description including its type. */
+	properties: Record<string, string>
+	recorded_by: "postboi" | "you"
+}
+
+/** When `event` is recorded, `remove_tags` come off the contact and `add_tags` go on. */
+export interface SyncRule {
+	event: string
+	add_tags: Array<string>
+	remove_tags: Array<string>
 }
 
 /** A contact's presence on one list, with its per-list status. */
@@ -175,6 +235,12 @@ export type ContactDetails = Contact & { memberships: Array<Membership> }
 export interface ContactInput {
 	name?: string
 	data?: Record<string, string>
+	/** E.164 (spaces and dashes are stripped). */
+	phone?: string
+	/** Your own id for this person, unique per account. */
+	external_id?: string
+	/** IANA zone. */
+	timezone?: string
 }
 
 /** One suppressed address on the account. */
@@ -328,6 +394,19 @@ export interface NotificationDetails {
  * await mailer.recipients.add("Newsletter", "ada@example.com")
  * ```
  */
+/** One `EventRecord` as POST /v1/events takes it. */
+function event_body(record: EventRecord): Record<string, unknown> {
+	const target = typeof record.to === "string" ? { email: record.to } : record.to
+	return {
+		email: target.email,
+		external_id: target.external_id,
+		event: record.event,
+		properties: record.properties,
+		at: record.at instanceof Date ? record.at.toISOString() : record.at,
+		idempotency_key: record.idempotency_key,
+	}
+}
+
 export default class Postboi extends ProviderBase<SendResponse> {
 	protected readonly provider = "postboi"
 	// The API defaults `from` to the account's sending address, so none is required here.
@@ -577,16 +656,23 @@ export default class Postboi extends ProviderBase<SendResponse> {
 		 * ```
 		 */
 		add: (email: string, contact: ContactInput = {}): Promise<Contact> =>
-			this.#api("/contacts", { body: { email, name: contact.name, data: contact.data } }),
+			this.#api("/contacts", { body: { email, ...contact } }),
 
 		/** One contact with its list memberships. */
 		get: (email: string): Promise<ContactDetails> =>
 			this.#api(`/contacts/${encodeURIComponent(email)}`, { method: "GET" }),
 
-		/** Update a contact's global name and/or `data`. Pass `null` to clear a field. */
+		/** Update a contact's name, `data`, phone, external id and/or timezone. Pass `null`
+		 * to clear a field; omit it to keep it. */
 		update: (
 			email: string,
-			changes: { name?: string | null; data?: Record<string, string> | null }
+			changes: {
+				name?: string | null
+				data?: Record<string, string> | null
+				phone?: string | null
+				external_id?: string | null
+				timezone?: string | null
+			}
 		): Promise<Contact> =>
 			this.#api(`/contacts/${encodeURIComponent(email)}`, { method: "PATCH", body: changes }),
 
@@ -596,11 +682,11 @@ export default class Postboi extends ProviderBase<SendResponse> {
 
 		/**
 		 * The whole audience, newest first — following pagination for you. Narrow with
-		 * `list` (a name or id), a membership `status`, and/or a case-insensitive
+		 * `list` (a name or id), a membership `status`, a `tag`, and/or a case-insensitive
 		 * `search` over email and name.
 		 */
 		all: async (
-			options: { list?: string; status?: MembershipStatus; search?: string } = {}
+			options: { list?: string; status?: MembershipStatus; search?: string; tag?: string } = {}
 		): Promise<Array<Contact>> => {
 			const out: Array<Contact> = []
 			let cursor: string | undefined
@@ -609,6 +695,7 @@ export default class Postboi extends ProviderBase<SendResponse> {
 				if (options.list) params.set("list", options.list)
 				if (options.status) params.set("status", options.status)
 				if (options.search) params.set("search", options.search)
+				if (options.tag) params.set("tag", options.tag)
 				if (cursor) params.set("cursor", cursor)
 				const query = params.toString()
 				const page = await this.#api<{ contacts: Array<Contact>; cursor: string | null }>(
@@ -628,6 +715,114 @@ export default class Postboi extends ProviderBase<SendResponse> {
 				{ method: "GET" }
 			)
 			return data.lists
+		},
+
+		/**
+		 * Put tags on a contact — its current state, as labels (case-insensitive; the
+		 * first spelling is kept). Returns the contact's tags afterwards.
+		 *
+		 * @example
+		 * ```ts
+		 * await mail.contacts.tag("ada@example.com", "customer", "beta")
+		 * ```
+		 */
+		tag: async (email: string, ...tags: Array<string>): Promise<Array<string>> => {
+			const data = await this.#api<{ tags: Array<string> }>(
+				`/contacts/${encodeURIComponent(email)}/tags`,
+				{ body: { tags } }
+			)
+			return data.tags
+		},
+
+		/** Take one tag off a contact. Returns the contact's tags afterwards. */
+		untag: async (email: string, tag: string): Promise<Array<string>> => {
+			const data = await this.#api<{ tags: Array<string> }>(
+				`/contacts/${encodeURIComponent(email)}/tags/${encodeURIComponent(tag)}`,
+				{ method: "DELETE" }
+			)
+			return data.tags
+		},
+
+		/**
+		 * A contact's timeline, newest first — opens, clicks, replies, list changes and
+		 * your own events in one list, following pagination for you. Narrow to one
+		 * `event` name.
+		 */
+		events: async (
+			email: string,
+			options: { event?: string } = {}
+		): Promise<Array<ContactEvent>> => {
+			const out: Array<ContactEvent> = []
+			let cursor: string | undefined
+			do {
+				const params = new URLSearchParams()
+				if (options.event) params.set("event", options.event)
+				if (cursor) params.set("cursor", cursor)
+				const query = params.toString()
+				const page = await this.#api<{ events: Array<ContactEvent>; cursor: string | null }>(
+					`/contacts/${encodeURIComponent(email)}/events${query ? `?${query}` : ""}`,
+					{ method: "GET" }
+				)
+				out.push(...page.events)
+				cursor = page.cursor ?? undefined
+			} while (cursor)
+			return out
+		},
+	}
+
+	/**
+	 * Events — what happened to a contact, from your app's point of view: a signup, a
+	 * purchase, a feature used. They land on the same timeline Postboi writes opens,
+	 * clicks and replies to, and sync rules turn them into tags on the way through.
+	 * Names are snake_case, optionally namespaced once (`billing.purchase`); the
+	 * `contact.*` / `email.*` / `sms.*` / `whatsapp.*` prefixes are Postboi's own.
+	 */
+	readonly events = {
+		/**
+		 * Record one event. `to` is an address (the contact is created if unknown) or
+		 * `{ external_id }` for a contact your own database knows by id.
+		 *
+		 * @example
+		 * ```ts
+		 * await mail.events.track("ada@example.com", "billing.purchase", { amount: 4900, plan: "pro" })
+		 * await mail.events.track({ external_id: "user_42" }, "feature_used", { feature: "export" })
+		 * ```
+		 */
+		track: (
+			to: EventTarget,
+			event: string,
+			properties?: Record<string, unknown>,
+			options: TrackOptions = {}
+		): Promise<ContactEvent> =>
+			this.#api("/events", { body: event_body({ to, event, properties, ...options }) }),
+
+		/** Record up to 100 events in one call — validated together, recorded in order. */
+		record: async (events: Array<EventRecord>): Promise<Array<ContactEvent>> => {
+			const data = await this.#api<{ events: Array<ContactEvent> }>("/events", {
+				body: { events: events.map(event_body) },
+			})
+			return data.events
+		},
+
+		/** The documented events and their properties, plus every name this account has recorded. */
+		schemas: (): Promise<{
+			events: Array<EventSchema>
+			seen: Array<{ name: string; count: number; last_at: string }>
+		}> => this.#api("/events/schemas", { method: "GET" }),
+
+		/** The account's event → tags rules. */
+		rules: async (): Promise<Array<SyncRule>> => {
+			const data = await this.#api<{ rules: Array<SyncRule> }>("/sync-rules", { method: "GET" })
+			return data.rules
+		},
+
+		/** Replace the account's event → tags rules — send back every rule you want to keep. */
+		set_rules: async (rules: Array<SyncRule>): Promise<Array<SyncRule>> => {
+			const data = await this.#api<{ rules: Array<SyncRule> }>("/sync-rules", {
+				method: "PUT",
+				body: { rules },
+			})
+			return data.rules
 		},
 	}
 

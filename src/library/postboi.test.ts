@@ -555,6 +555,96 @@ describe("the Postboi provider — account API", () => {
 		expect(error.code).toBe("not_found")
 		expect(error.status).toBe(404)
 	})
+
+	describe("lifecycle API", () => {
+		beforeEach(() => fetch.mockResolvedValue(respond({ json: { id: "ev_1", event: "x", at: "" } })))
+
+		it("events.track posts one event; an address creates, an external id names", async () => {
+			await provider().events.track("Ada@test.com", "billing.purchase", { amount: 4900 })
+			expect(sent_url()).toBe("https://postboi.app/v1/events")
+			expect(sent_init().method).toBe("POST")
+			expect(sent_json()).toEqual({
+				email: "Ada@test.com",
+				event: "billing.purchase",
+				properties: { amount: 4900 },
+			})
+
+			await provider().events.track({ external_id: "user_42" }, "feature_used", undefined, {
+				at: new Date("2026-08-01T00:00:00Z"),
+				idempotency_key: "k1",
+			})
+			expect(sent_json()).toEqual({
+				external_id: "user_42",
+				event: "feature_used",
+				at: "2026-08-01T00:00:00.000Z",
+				idempotency_key: "k1",
+			})
+		})
+
+		it("events.record sends the batch and unwraps it", async () => {
+			fetch.mockResolvedValue(respond({ json: { events: [{ id: "ev_1" }, { id: "ev_2" }] } }))
+			const out = await provider().events.record([
+				{ to: "a@test.com", event: "auth.signed_up" },
+				{ to: { external_id: "u2" }, event: "auth.signed_in", properties: { provider: "github" } },
+			])
+			expect(sent_json()).toEqual({
+				events: [
+					{ email: "a@test.com", event: "auth.signed_up" },
+					{ external_id: "u2", event: "auth.signed_in", properties: { provider: "github" } },
+				],
+			})
+			expect(out).toEqual([{ id: "ev_1" }, { id: "ev_2" }])
+		})
+
+		it("contacts.tag / untag hit the tag routes and return the tags", async () => {
+			fetch.mockResolvedValue(respond({ json: { email: "ada@test.com", tags: ["beta", "VIP"] } }))
+			expect(await provider().contacts.tag("ada@test.com", "VIP", "beta")).toEqual(["beta", "VIP"])
+			expect(sent_url()).toBe("https://postboi.app/v1/contacts/ada%40test.com/tags")
+			expect(sent_json()).toEqual({ tags: ["VIP", "beta"] })
+
+			await provider().contacts.untag("ada@test.com", "a b")
+			expect(sent_url()).toBe("https://postboi.app/v1/contacts/ada%40test.com/tags/a%20b")
+			expect(sent_init().method).toBe("DELETE")
+		})
+
+		it("contacts.events follows the cursor and filters by event", async () => {
+			fetch
+				.mockResolvedValueOnce(respond({ json: { events: [{ id: "ev_2" }], cursor: "c1" } }))
+				.mockResolvedValueOnce(respond({ json: { events: [{ id: "ev_1" }], cursor: null } }))
+			const events = await provider().contacts.events("ada@test.com", { event: "email.opened" })
+			expect(events.map((event) => event.id)).toEqual(["ev_2", "ev_1"])
+			expect(fetch.mock.calls[0][0]).toBe(
+				"https://postboi.app/v1/contacts/ada%40test.com/events?event=email.opened"
+			)
+			expect(fetch.mock.calls[1][0]).toBe(
+				"https://postboi.app/v1/contacts/ada%40test.com/events?event=email.opened&cursor=c1"
+			)
+		})
+
+		it("events.rules / set_rules and schemas unwrap their envelopes", async () => {
+			fetch.mockResolvedValue(respond({ json: { rules: [{ event: "billing.purchase" }] } }))
+			expect(await provider().events.rules()).toEqual([{ event: "billing.purchase" }])
+			expect(sent_url()).toBe("https://postboi.app/v1/sync-rules")
+			await provider().events.set_rules([])
+			expect(sent_init().method).toBe("PUT")
+			expect(sent_json()).toEqual({ rules: [] })
+			fetch.mockResolvedValue(respond({ json: { events: [], seen: [] } }))
+			expect(await provider().events.schemas()).toEqual({ events: [], seen: [] })
+			expect(sent_url()).toBe("https://postboi.app/v1/events/schemas")
+		})
+
+		it("contacts.add carries the profile fields; contacts.all a tag", async () => {
+			await provider().contacts.add("ada@test.com", { phone: "+447700900123", external_id: "u1" })
+			expect(sent_json()).toEqual({
+				email: "ada@test.com",
+				phone: "+447700900123",
+				external_id: "u1",
+			})
+			fetch.mockResolvedValue(respond({ json: { contacts: [], cursor: null } }))
+			await provider().contacts.all({ tag: "VIP" })
+			expect(sent_url()).toBe("https://postboi.app/v1/contacts?tag=VIP")
+		})
+	})
 })
 
 describe("top-level mail() — provider-agnostic dispatch", () => {

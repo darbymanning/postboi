@@ -228,38 +228,113 @@ interface ContactWire {
 	email: string
 	name?: string
 	data?: Record<string, string>
+	phone?: string
+	external_id?: string
+	timezone?: string
+	tags?: Array<string>
+	last_opened_at?: string
 	created_at: string
 	updated_at: string
+}
+
+interface EventWire {
+	id: string
+	event: string
+	properties?: Record<string, unknown>
+	at: string
+	source: string
+	message_id?: string
+}
+
+/** A JSON object flag (`--data`, `--props`), or a usage error naming the flag. */
+function json_object_flag(
+	flag: string,
+	value: string | undefined
+): Record<string, unknown> | undefined {
+	if (!value) return undefined
+	try {
+		const parsed: unknown = JSON.parse(value)
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error()
+		return parsed as Record<string, unknown>
+	} catch {
+		throw new ApiCommandError(`--${flag} must be a JSON object, e.g. '{"plan":"pro"}'`)
+	}
+}
+
+/** One timeline row: when, what, and the properties worth a glance. */
+function event_row(event: EventWire): Array<string> {
+	const skip = new Set(["message_id"])
+	const props = Object.entries(event.properties ?? {})
+		.filter(([key]) => !skip.has(key))
+		.map(([key, value]) => `${key}=${typeof value === "string" ? value : JSON.stringify(value)}`)
+		.join(" ")
+	return [day(event.at), event.event, dim(props)]
 }
 
 async function contacts(args: Array<string>): Promise<void> {
 	const [action, ...rest_args] = args
 
 	if (action === "add") {
-		const { flags, rest } = take_flags(rest_args, ["name", "data"])
+		const { flags, rest } = take_flags(rest_args, [
+			"name",
+			"data",
+			"phone",
+			"external-id",
+			"timezone",
+		])
 		const email = rest[0]
 		if (!email) {
 			throw new ApiCommandError(
-				"Usage: postboi contacts add <email> [--name <name>] [--data <json>]"
+				"Usage: postboi contacts add <email> [--name <name>] [--data <json>] [--phone <e164>] [--external-id <id>] [--timezone <iana>]"
 			)
 		}
-		let data: Record<string, string> | undefined
-		if (flags.data) {
-			try {
-				const parsed: unknown = JSON.parse(flags.data)
-				if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error()
-				data = Object.fromEntries(
-					Object.entries(parsed).map(([key, value]) => [key, String(value)])
-				)
-			} catch {
-				throw new ApiCommandError('--data must be a JSON object, e.g. \'{"plan":"pro"}\'')
-			}
-		}
+		const parsed = json_object_flag("data", flags.data)
+		const data = parsed
+			? Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value)]))
+			: undefined
 		const contact = await api<ContactWire>("/v1/contacts", {
 			method: "POST",
-			body: { email, name: flags.name, data },
+			body: {
+				email,
+				name: flags.name,
+				data,
+				phone: flags.phone,
+				external_id: flags["external-id"],
+				timezone: flags.timezone,
+			},
 		})
 		return console.log(`${green("✓")} saved ${bold(contact.email)}`)
+	}
+
+	// Tags: `contacts tag <email> <tag…>` puts them on, `untag` takes one off.
+	if (action === "tag" || action === "untag") {
+		const [email, ...tags] = rest_args
+		if (!email || tags.length === 0) {
+			throw new ApiCommandError(
+				`Usage: postboi contacts ${action} <email> <tag>${action === "tag" ? "…" : ""}`
+			)
+		}
+		const path = `/v1/contacts/${encodeURIComponent(email)}/tags`
+		const { tags: now } =
+			action === "tag"
+				? await api<{ tags: Array<string> }>(path, { method: "POST", body: { tags } })
+				: await api<{ tags: Array<string> }>(`${path}/${encodeURIComponent(tags[0])}`, {
+						method: "DELETE",
+					})
+		return console.log(
+			`${green("✓")} ${bold(email)} ${dim("tags:")} ${now.length > 0 ? now.join(", ") : dim("none")}`
+		)
+	}
+
+	// The account's tags, with how many contacts carry each.
+	if (action === "tags") {
+		const { tags } = await api<{ tags: Array<{ tag: string; contacts: number }> }>("/v1/tags")
+		if (tags.length === 0)
+			return console.log(dim("No tags yet — postboi contacts tag <email> <tag>"))
+		return table(
+			["TAG", "CONTACTS"],
+			tags.map((entry) => [entry.tag, String(entry.contacts)])
+		)
 	}
 
 	if (action === "remove") {
@@ -280,6 +355,17 @@ async function contacts(args: Array<string>): Promise<void> {
 		if (contact.data && Object.keys(contact.data).length > 0) {
 			console.log(`  ${dim("data:")} ${JSON.stringify(contact.data)}`)
 		}
+		const profile = [
+			contact.phone && `phone ${contact.phone}`,
+			contact.external_id && `id ${contact.external_id}`,
+			contact.timezone && contact.timezone,
+		].filter(Boolean)
+		if (profile.length > 0) console.log(`  ${dim(profile.join(" · "))}`)
+		if (contact.tags && contact.tags.length > 0) {
+			console.log(`  ${dim("tags:")} ${contact.tags.join(", ")}`)
+		}
+		if (contact.last_opened_at)
+			console.log(`  ${dim("last opened:")} ${day(contact.last_opened_at)}`)
 		if (contact.memberships.length === 0) return console.log(dim("  On no lists."))
 		console.log()
 		return table(
@@ -298,6 +384,84 @@ async function contacts(args: Array<string>): Promise<void> {
 	table(
 		["EMAIL", "NAME", "CREATED"],
 		rows.map((c) => [c.email, c.name ?? "", day(c.created_at)])
+	)
+}
+
+// ── Events ─────────────────────────────────────────────────────────────────
+
+async function events(args: Array<string>): Promise<void> {
+	const [action, ...rest_args] = args
+
+	// `events track <email|ext:id> <name> [--props <json>] [--at <iso>] [--key <k>]`
+	if (action === "track") {
+		const { flags, rest } = take_flags(rest_args, ["props", "at", "key"])
+		const [target, name] = rest
+		if (!target || !name) {
+			throw new ApiCommandError(
+				"Usage: postboi events track <email|ext:<external_id>> <event> [--props <json>] [--at <iso>] [--key <idempotency-key>]"
+			)
+		}
+		const who = target.startsWith("ext:") ? { external_id: target.slice(4) } : { email: target }
+		const event = await api<EventWire>("/v1/events", {
+			method: "POST",
+			body: {
+				...who,
+				event: name,
+				properties: json_object_flag("props", flags.props),
+				at: flags.at,
+				idempotency_key: flags.key,
+			},
+		})
+		return console.log(`${green("✓")} ${bold(event.event)} ${dim(`on ${target} · ${event.id}`)}`)
+	}
+
+	// `events schemas` — the documented names and what this account has recorded.
+	if (action === "schemas") {
+		const { events: schemas, seen } = await api<{
+			events: Array<{ name: string; recorded_by: string; properties: Record<string, string> }>
+			seen: Array<{ name: string; count: number; last_at: string }>
+		}>("/v1/events/schemas")
+		table(
+			["EVENT", "BY", "PROPERTIES"],
+			schemas.map((schema) => [
+				schema.name,
+				schema.recorded_by,
+				dim(Object.keys(schema.properties).join(", ")),
+			])
+		)
+		if (seen.length > 0) {
+			console.log()
+			table(
+				["SEEN", "COUNT", "LAST"],
+				seen.map((entry) => [entry.name, String(entry.count), day(entry.last_at)])
+			)
+		}
+		return
+	}
+
+	// `events rules` — the event → tags rules.
+	if (action === "rules") {
+		const { rules } = await api<{
+			rules: Array<{ event: string; add_tags: Array<string>; remove_tags: Array<string> }>
+		}>("/v1/sync-rules")
+		if (rules.length === 0) return console.log(dim("No sync rules."))
+		return table(
+			["EVENT", "ADDS", "REMOVES"],
+			rules.map((rule) => [rule.event, rule.add_tags.join(", "), dim(rule.remove_tags.join(", "))])
+		)
+	}
+
+	// A bare `events <email>` is the contact's timeline, newest first.
+	if (action) {
+		const { events: rows } = await api<{ events: Array<EventWire> }>(
+			`/v1/contacts/${encodeURIComponent(action)}/events`
+		)
+		if (rows.length === 0) return console.log(dim(`Nothing on ${action}'s timeline yet.`))
+		return table(["WHEN", "EVENT", "DETAILS"], rows.map(event_row))
+	}
+
+	throw new ApiCommandError(
+		"Usage: postboi events <email> · track <email|ext:id> <event> [--props <json>] · schemas · rules"
 	)
 }
 
@@ -574,6 +738,7 @@ const COMMANDS: Record<string, (args: Array<string>) => Promise<void>> = {
 	lists,
 	recipients,
 	contacts,
+	events,
 	domains,
 	webhooks,
 	members,

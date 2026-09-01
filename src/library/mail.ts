@@ -284,6 +284,7 @@ type PostboiNamespace =
 	| "lists"
 	| "recipients"
 	| "contacts"
+	| "events"
 	| "notifications"
 	| "suppressions"
 
@@ -319,6 +320,7 @@ function lazy_namespace<K extends PostboiNamespace>(name: K): Postboi[K] {
  * await mail({ test: "welcome", subject: "Hi", body: "<p>Hello</p>" }) // hosted test run
  * await mail.recipients.add("Newsletter", "ada@example.com")
  * await mail.lists.create("Newsletter", { confirmation: true })
+ * await mail.events.track("ada@example.com", "billing.purchase", { amount: 4900 })
  * ```
  */
 export const mail: typeof send_mail & Pick<Postboi, PostboiNamespace> = Object.assign(send_mail, {
@@ -326,6 +328,7 @@ export const mail: typeof send_mail & Pick<Postboi, PostboiNamespace> = Object.a
 	lists: lazy_namespace("lists"),
 	recipients: lazy_namespace("recipients"),
 	contacts: lazy_namespace("contacts"),
+	events: lazy_namespace("events"),
 	notifications: lazy_namespace("notifications"),
 	suppressions: lazy_namespace("suppressions"),
 })

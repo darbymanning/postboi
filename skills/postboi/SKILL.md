@@ -277,6 +277,9 @@ bunx postboi domains check example.com             # re-check until verified (re
 bunx postboi lists add Newsletter
 bunx postboi recipients Newsletter add a@b.co c@d.co   # upserts contact + membership
 bunx postboi contacts add ada@example.com --data '{"plan":"pro"}'  # one contact, global data, shared across lists
+bunx postboi events track ada@example.com billing.purchase --props '{"amount":4900,"plan":"pro"}'  # onto the timeline; sync rules tag `customer`
+bunx postboi events ada@example.com                # the timeline: sends, opens, replies, list changes, your events
+bunx postboi contacts tag ada@example.com beta     # tags are state; events are history
 bunx postboi webhooks add https://example.com/api/events
 bunx postboi sync                                  # writes the webhook secret to POSTBOI_WEBHOOK_SECRET
 bunx postboi members invite colleague@example.com
@@ -284,6 +287,8 @@ bunx postboi suppressions add bounced@example.com
 bunx postboi messages                              # recent sends with delivery status
 bunx postboi webhooks deliveries <id>              # per-endpoint delivery log for debugging
 ```
+
+**Lifecycle (events and tags).** Every contact has a timeline; Postboi writes opens, clicks, bounces, replies and list changes to it, and the app adds its own with `mail.events.track(email | { external_id }, name, properties?)` — a signup, a purchase, a feature used. Use the documented names (`auth.signed_up`, `billing.trial_started`, `billing.purchase` with `amount` + `currency`, `billing.payment_failed`, `billing.churned`, `commerce.order_placed`; `mail.events.schemas()` lists them all) and snake_case custom names otherwise; the `email.*` / `contact.*` / `sms.*` / `whatsapp.*` prefixes are refused because Postboi records those. Wire `track` where the fact is already known — the auth signup handler, the Stripe webhook — and pass `{ idempotency_key }` from any handler that may retry. Tags (`mail.contacts.tag`) are current state; sync rules turn events into tags automatically, and every account starts with the SaaS preset (purchase → `customer`, churn → `churned`), so an app that reports billing events gets a segmentable audience for free. Full reference: https://docs.postboi.app/raw/provider#events--tags-the-timeline.
 
 Anything richer than the CLI exposes, use the REST API — interactive reference at https://api.postboi.app (OpenAPI at `/openapi.json`). Auth is `Authorization: Bearer $POSTBOI_TOKEN`; errors are always `{ "message", "code" }`.
 

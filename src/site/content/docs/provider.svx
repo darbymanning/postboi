@@ -422,6 +422,57 @@ bounce or complaint is suppressed separately (see Suppressions).
 > suppressions, not a status); and `mail.contacts.*` is a new namespace. `mail.recipients.*`
 > keeps the same signatures — it's contact-backed now.
 
+A contact also carries a `phone` (E.164), an `external_id` (your own database's id for
+them, unique per account) and a `timezone` (IANA) — pass any of them to `contacts.add` or
+`contacts.update`. They're what the lifecycle features read; nothing sends to a phone by
+itself.
+
+## Events & tags (the timeline)
+
+Every contact has a **timeline**: the sends it received, and everything that happened to
+it — opens, clicks, bounces, replies, list changes — written by Postboi as they occur. Your
+app adds its own events to the same timeline:
+
+```ts
+await mail.events.track("ada@example.com", "auth.signed_up", { plan: "trial" })
+await mail.events.track("ada@example.com", "billing.purchase", { amount: 4900, currency: "GBP", plan: "pro" })
+await mail.events.track({ external_id: "user_42" }, "feature_used", { feature: "export" })
+await mail.contacts.events("ada@example.com") // the whole timeline, newest first
+```
+
+A contact named by email is created if it isn't known yet; one named by `external_id`
+must already exist. Names are `snake_case`, optionally namespaced once — use the
+documented `auth.*`, `billing.*` and `commerce.*` names where they fit (a
+`billing.purchase` with an `amount` counts as revenue) and anything you like otherwise.
+The `contact.*`, `email.*`, `sms.*` and `whatsapp.*` prefixes are Postboi's own. Pass
+`{ idempotency_key }` when a retry might send the same event twice, and `{ at }` when it
+happened earlier than now. `mail.events.record([...])` takes up to 100 at once, and
+`mail.events.schemas()` lists every documented event with its property names, plus every
+name your account has recorded.
+
+**Tags** are a contact's current state, as labels; events are its history. Put them on
+by hand, or let **sync rules** do it — when an event is recorded, its rule's `remove_tags`
+come off and `add_tags` go on:
+
+```ts
+await mail.contacts.tag("ada@example.com", "customer", "beta") // case-insensitive; the first spelling is kept
+await mail.contacts.untag("ada@example.com", "beta")
+await mail.contacts.all({ tag: "customer" })
+
+await mail.events.rules() // every account starts with the SaaS preset…
+await mail.events.set_rules([
+	{ event: "billing.purchase", add_tags: ["customer"], remove_tags: ["trial", "lead"] },
+	{ event: "billing.churned", add_tags: ["churned"], remove_tags: ["customer"] },
+]) // …and this replaces the whole set
+```
+
+The preset makes a `billing.trial_started` contact `trial`, a `billing.purchase` one
+`customer` (clearing `trial`, `lead`, `past-due`, `cancelled` and `churned`), a
+`billing.payment_failed` one `past-due`, and a `billing.churned` one `churned`.
+
+Free accounts keep 90 days of timeline and paid accounts 13 months; the `last_opened_at`,
+`last_clicked_at`, `last_replied_at` and `last_event_at` stamps on the contact outlive it.
+
 ## Confirmation (double opt-in)
 
 Lists can require **confirmation**: new recipients start `pending` and receive an
