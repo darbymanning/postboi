@@ -1,6 +1,8 @@
 import type { RequestHandler } from "./$types"
 import { siteConfig } from "$site"
 
+export const prerender = true
+
 // /raw/ pages stay crawlable for AI agents; Google is kept out via X-Robots-Tag in _headers.
 const directives = ["User-agent: *", "Allow: /"]
 

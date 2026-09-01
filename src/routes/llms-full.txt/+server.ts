@@ -1,7 +1,12 @@
 import type { RequestHandler } from "./$types"
 import { siteConfig } from "$site"
 import { contentSections } from "$site/config/navigation"
-import { getContentSectionManifest, getContentSectionRawSource } from "$site/content/sections"
+import { getContentSectionManifest } from "$site/content/sections"
+import { getContentSectionRawSource } from "$site/content/sources"
+
+// Prerendered: every page's Markdown concatenated is a build-time artefact, not something
+// worth assembling per request inside a Worker that would have to carry the whole corpus.
+export const prerender = true
 
 export const GET: RequestHandler = async () => {
 	const seen = new Set<string>()

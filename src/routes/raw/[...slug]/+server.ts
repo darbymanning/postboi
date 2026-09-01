@@ -1,10 +1,7 @@
 import { error } from "@sveltejs/kit"
 import type { RequestHandler } from "./$types"
-import {
-	getContentSectionRawSource,
-	getContentSectionManifest,
-	hasContentSectionRawSource,
-} from "$site/content/sections"
+import { getContentSectionManifest } from "$site/content/sections"
+import { getContentSectionRawSource, hasContentSectionRawSource } from "$site/content/sources"
 import { contentSections } from "$site/config/navigation"
 
 const normalize = (value: string) => value.replace(/^\/+|\/+$/g, "")

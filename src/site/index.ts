@@ -23,6 +23,9 @@ export {
 	type PackageManagerOption,
 } from "./config/content-ui"
 
+// Nav helpers only. The barrel is imported by the root layout, and the layout ships to the
+// Worker — so `content/sources` (every archived version's Markdown) is deliberately not
+// re-exported here. Import it from `$site/content/sources` in routes that prerender.
 export {
 	getContentSectionAdjacentItems,
 	getContentSectionByPathname,
@@ -30,10 +33,7 @@ export {
 	getContentSectionHref,
 	getContentSectionItemBySlug,
 	getContentSectionManifest,
-	getContentSectionMetadata,
-	getContentSectionModule,
 	getContentSectionRawHref,
-	getContentSectionRawSource,
 	getContentSectionSlug,
 	type ContentMetadata,
 	type ContentModule,
