@@ -18,6 +18,12 @@ export type PostboiOptions = CommonProviderOptions & {
 	token?: string
 	/** Override the API base URL. Defaults to `POSTBOI_API_URL` or `https://postboi.app`. */
 	base_url?: string
+	/**
+	 * Postboi Cloud relay: ask the API to send through the named provider using the
+	 * credentials synced to the account (e.g. `"resend"`), instead of Postboi's own
+	 * sending infrastructure. Requires the account to hold that provider's credentials.
+	 */
+	send_via?: string
 }
 
 interface EmailName {
@@ -56,7 +62,18 @@ export interface SendParams {
 	captcha_ip?: string
 	/** True when the send originated from a form submission — the only sends captcha gates. */
 	form?: boolean
+	/** Relay this send through the named provider using the account's synced credentials. */
+	send_via?: string
+	/**
+	 * Replay guard, unique per account. The single-send path sends this as the
+	 * `Idempotency-Key` header instead; in a batch there is no header that could mean
+	 * anything, because one key names one message — so it rides the body, per item.
+	 */
+	idempotency_key?: string
 }
+
+/** The API's ceiling on an idempotency key, header or body. */
+const MAX_IDEMPOTENCY_KEY = 256
 
 type SendResponse = { id: string; sandbox?: boolean; claim_url?: string }
 
@@ -320,12 +337,14 @@ export default class Postboi extends ProviderBase<SendResponse> {
 	protected override readonly captcha_mode = "managed" as const
 	#token: string | undefined
 	#host: string
+	#send_via: string | undefined
 
-	constructor({ token, base_url, ...options }: PostboiOptions = {}) {
+	constructor({ token, base_url, send_via, ...options }: PostboiOptions = {}) {
 		// Defaults can come from the environment (POSTBOI_FROM, …); anything passed
 		// explicitly via `default` wins.
 		super({ ...options, default: { ...env_defaults(), ...options.default } })
 		this.#token = token ?? read_env("POSTBOI_TOKEN")
+		this.#send_via = send_via
 		const host = base_url ?? read_env("POSTBOI_API_URL") ?? "https://postboi.app"
 		this.#host = host.replace(/\/$/, "")
 	}
@@ -693,8 +712,30 @@ export default class Postboi extends ProviderBase<SendResponse> {
 			this.#api(`/suppressions?email=${encodeURIComponent(email)}`, { method: "DELETE" }),
 	}
 
-	async #params(message: PreparedMessage): Promise<SendParams> {
+	/**
+	 * One recipient's key inside a batch. The caller gives the batch a single
+	 * `idempotency_key`; each message needs its own, because a key names exactly one
+	 * message — the API rejects a batch whose items share one. The suffix is the
+	 * recipient's position in the *original* `to` array, so retrying the same batch
+	 * derives the same keys even if a `before.send` hook dropped a different recipient
+	 * the second time round.
+	 */
+	#batch_key(base: string | undefined, index: number): string | undefined {
+		if (!base) return undefined
+		const key = `${base}:${index}`
+		if (key.length > MAX_IDEMPOTENCY_KEY) {
+			throw new PostboiError({
+				provider: this.provider,
+				code: "invalid_request",
+				message: `idempotency_key is too long for a batch: each recipient's key is "<key>:<index>", and ${MAX_IDEMPOTENCY_KEY} characters is the limit. Shorten it by ${key.length - MAX_IDEMPOTENCY_KEY} characters.`,
+			})
+		}
+		return key
+	}
+
+	async #params(message: PreparedMessage, idempotency_key?: string): Promise<SendParams> {
 		return {
+			idempotency_key,
 			from: message.from ? this.email_name(this.parse_email_address(message.from)) : undefined,
 			to: this.email_name_list(message.to),
 			cc: message.cc ? this.email_name_list(message.cc) : undefined,
@@ -717,6 +758,7 @@ export default class Postboi extends ProviderBase<SendResponse> {
 			captcha_token: message.captcha?.token,
 			captcha_ip: message.captcha?.remoteip,
 			form: message.captcha ? true : undefined,
+			send_via: this.#send_via,
 		}
 	}
 
@@ -747,7 +789,13 @@ export default class Postboi extends ProviderBase<SendResponse> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
-			body: JSON.stringify(await Promise.all(recipients.map((r) => this.#params(r.message)))),
+			body: JSON.stringify(
+				await Promise.all(
+					recipients.map((r) =>
+						this.#params(r.message, this.#batch_key(r.message.idempotency_key, r.index))
+					)
+				)
+			),
 		}
 	}
 

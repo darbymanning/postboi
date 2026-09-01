@@ -2,9 +2,15 @@ import { error, redirect } from "@sveltejs/kit"
 import type { PageLoad } from "./$types"
 import {
 	getAllContentEntries,
-	getContentSectionModule,
+	getContentSectionUiConfig,
 	resolveSection,
 } from "$site/content/sections"
+import {
+	getContentSectionMetadata,
+	getContentSectionModule,
+	getContentSectionTocHeadings,
+} from "$site/content/sources"
+import { resolveTocSelector } from "$site/config/content-ui"
 
 export const prerender = true
 
@@ -21,7 +27,11 @@ export const entries = () => [
 	...Object.keys(MOVED).map((slug) => ({ slug })),
 ]
 
-export const load: PageLoad = async ({ params }) => {
+// Title, description and headings load here rather than in the layout: they belong to one
+// page, and this node is dropped from the Worker once the page is prerendered, which keeps
+// every archived version's Markdown out of the deployed script. The layout reads them off
+// `page.data`.
+export const load: PageLoad = async ({ params, url }) => {
 	const moved = MOVED[params.slug]
 	if (moved) redirect(308, moved)
 
@@ -32,8 +42,12 @@ export const load: PageLoad = async ({ params }) => {
 		error(404, "Page not found")
 	}
 
+	const tocSelector = resolveTocSelector(getContentSectionUiConfig(sectionId).toc, slug)
+
 	return {
 		component: mod.default,
 		slug,
+		metadata: await getContentSectionMetadata(sectionId, url.pathname),
+		tocHeadings: await getContentSectionTocHeadings(sectionId, slug, tocSelector),
 	}
 }

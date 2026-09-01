@@ -21,6 +21,7 @@
  * On SvelteKit, use the ready-made handler from `postboi/kit` instead.
  */
 import { PostboiError } from "../index.js"
+import type { Channel } from "../errors.js"
 import type { ProviderKey } from "../registry.js"
 import { load_config } from "../config.js"
 import { ensure_env_loaded, read_env } from "../env.js"
@@ -30,7 +31,20 @@ import type { EmailClient } from "./ua.js"
 
 export { parse_user_agent, type EmailClient } from "./ua.js"
 export { WebhookVerificationError, type WebhookVerificationCode } from "./errors.js"
-export { mock_event, mock_request } from "./mock.js"
+export { mock_event, mock_request, mock_poll } from "./mock.js"
+export {
+	poll,
+	poll_adapter_for,
+	POLL_MODULES,
+	POLL_FIELDS,
+	type PollAdapter,
+	type PollContext,
+	type PollResult,
+	type PollModule,
+	type PollOptions,
+} from "./poll.js"
+export { parse_dsn } from "./dsn.js"
+import { POLL_MODULES } from "./poll.js"
 
 /** Normalized delivery-event types, common across every provider. */
 export type WebhookEventType =
@@ -71,6 +85,18 @@ export interface WebhookEvent {
 	message_id?: string
 	/** The recipient this event is about — on `received`, the sender who wrote to you. */
 	email?: string
+	/**
+	 * Which channel this event is about. Absent means email — every provider that
+	 * predates multi-channel delivery events leaves it unset, and email is what they
+	 * were all about.
+	 */
+	channel?: Channel
+	/**
+	 * The number this event is about, for `sms` and `whatsapp` events — in E.164, and
+	 * without the `whatsapp:` prefix Twilio addresses carry. Deliberately not `email`:
+	 * a handler that reads `event.email` should never be handed a phone number.
+	 */
+	phone?: string
 	/** When the event happened. */
 	timestamp?: Date
 	/** The message subject, when the provider includes it. */
@@ -134,6 +160,13 @@ export interface AdapterModule {
 		type: WebhookEventType
 		secret: string
 		url: string
+		/**
+		 * Which channel the sample is about, for providers whose payloads cover more
+		 * than email (the Postboi provider's `sms.*` / `whatsapp.*`). Without it the
+		 * shared normalized types map back to more than one wire type, and the sample
+		 * would be whichever the table happened to list first.
+		 */
+		channel?: Channel
 	}) => Promise<{ body: string; headers?: Record<string, string>; url?: string; secret?: string }>
 }
 
@@ -186,7 +219,7 @@ export interface ReceiveOptions {
 }
 
 /** Resolve the provider key the same way the zero-config `mail()` does. */
-async function resolve_key(): Promise<string> {
+export async function resolve_key(): Promise<string> {
 	const config = await load_config()
 	await ensure_env_loaded()
 	const key =
@@ -211,7 +244,10 @@ export async function adapter_for(key: string): Promise<WebhookAdapter> {
 		throw new PostboiError({
 			provider: key,
 			code: "webhooks_not_supported",
-			message: `Provider "${key}" has no webhook support — it does not emit delivery events postboi can receive.`,
+			message:
+				key in POLL_MODULES
+					? `Provider "${key}" doesn't push webhooks — it reports delivery by polling. Use poll() from postboi/webhooks instead.`
+					: `Provider "${key}" has no webhook support — it does not emit delivery events postboi can receive.`,
 		})
 	}
 	return (await load()).default

@@ -285,6 +285,44 @@ describe("receive — postboi", () => {
 		expect(events[0].type).toBe("opened")
 	})
 
+	it("carries an SMS event on the shared vocabulary, with the number in phone", async () => {
+		const { request, secret } = await mock_request({
+			provider: "postboi",
+			type: "delivered",
+			channel: "sms",
+		})
+		const [event] = await receive(request, { provider: "postboi", secret })
+		expect(event).toMatchObject({
+			type: "delivered",
+			channel: "sms",
+			phone: "+15557770006",
+		})
+		// A handler reading `email` must never be handed a phone number.
+		expect(event.email).toBeUndefined()
+	})
+
+	it("reads WhatsApp's read receipt as the open it is", async () => {
+		const { request, secret } = await mock_request({
+			provider: "postboi",
+			type: "opened",
+			channel: "whatsapp",
+		})
+		// The wire type is channel-scoped: without that, "opened" would map back to
+		// whichever of email.opened / whatsapp.read the table happened to list first.
+		expect(JSON.parse(await request.clone().text()).type).toBe("whatsapp.read")
+
+		const [event] = await receive(request, { provider: "postboi", secret })
+		expect(event).toMatchObject({ type: "opened", channel: "whatsapp", phone: "+15557770006" })
+	})
+
+	it("leaves channel unset on email, so absent keeps meaning email", async () => {
+		const { request, secret } = await mock_request({ provider: "postboi", type: "delivered" })
+		const [event] = await receive(request, { provider: "postboi", secret })
+		expect(event.channel).toBeUndefined()
+		expect(event.phone).toBeUndefined()
+		expect(event.email).toBe("recipient@example.com")
+	})
+
 	it("rejects when none of the listed secrets match", async () => {
 		const { request } = await mock_request({ provider: "postboi", type: "opened" })
 		const list = `${generate_svix_secret()} ${generate_svix_secret()}`

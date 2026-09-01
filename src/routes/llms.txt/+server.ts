@@ -4,10 +4,14 @@ import { contentSections } from "$site/config/navigation"
 import {
 	getContentSectionHref,
 	getContentSectionManifest,
-	getContentSectionMetadata,
 	getContentSectionRawHref,
 	type ContentSectionId,
 } from "$site/content/sections"
+import { getContentSectionMetadata } from "$site/content/sources"
+
+// Prerendered: it is a derivation of committed content against a fixed canonical origin,
+// so building it per request only means shipping every page's Markdown to the Worker.
+export const prerender = true
 
 type ContentEntry = {
 	sectionId: ContentSectionId

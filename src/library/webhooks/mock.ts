@@ -7,7 +7,9 @@
  *   can exercise the whole path — signature verification included — end to end.
  */
 import { PostboiError } from "../index.js"
+import type { Channel } from "../errors.js"
 import { MODULES, type WebhookEvent, type WebhookEventType } from "./index.js"
+import { POLL_MODULES, type PollResult } from "./poll.js"
 import { parse_user_agent } from "./ua.js"
 import { generate_svix_secret, generate_token } from "./crypto.js"
 
@@ -77,6 +79,11 @@ export async function mock_request(
 		secret?: string
 		/** The endpoint URL the request targets. */
 		url?: string
+		/**
+		 * Which channel the payload is about, for providers that carry more than email
+		 * (the Postboi provider). Defaults to email.
+		 */
+		channel?: Channel
 	} = {}
 ): Promise<{ request: Request; secret: string }> {
 	const provider = options.provider ?? "postboi"
@@ -94,7 +101,7 @@ export async function mock_request(
 	const secret =
 		options.secret ?? (SVIX_PROVIDERS.has(provider) ? generate_svix_secret() : generate_token())
 	const url = options.url ?? "https://example.com/webhooks"
-	const sample = await mod.mock({ type, secret, url })
+	const sample = await mod.mock({ type, secret, url, channel: options.channel })
 
 	return {
 		request: new Request(sample.url ?? url, {
@@ -105,4 +112,43 @@ export async function mock_request(
 		// Asymmetric schemes generate their own keypair and hand back the public key.
 		secret: sample.secret ?? secret,
 	}
+}
+
+/**
+ * A realistic {@link PollResult} for a polling provider — the analog of `mock_request`
+ * for providers that report delivery by `poll()` instead of pushing webhooks. Each
+ * fixture is run through the adapter's own normalization, so it can't drift from the
+ * real mapping.
+ *
+ * @example
+ * ```ts
+ * const { events } = await mock_poll({ provider: "smtp", type: "bounced" })
+ * expect(events[0].bounce?.category).toBe("hard")
+ * ```
+ */
+export async function mock_poll(
+	options: {
+		/** Which provider's poll result to fake. Defaults to "smtp". */
+		provider?: string
+		/** The event type the result describes. Defaults to "delivered". */
+		type?: WebhookEventType
+		/**
+		 * Which channel the result is about, for providers that report on more than one
+		 * (Twilio). Defaults to the provider's own — email everywhere but Twilio, where
+		 * it is SMS.
+		 */
+		channel?: Channel
+	} = {}
+): Promise<PollResult> {
+	const provider = options.provider ?? "smtp"
+	const load = POLL_MODULES[provider]
+	const mod = load ? await load() : undefined
+	if (!mod?.mock) {
+		throw new PostboiError({
+			provider,
+			code: "polling_not_supported",
+			message: `No mock poll builder for provider "${provider}".`,
+		})
+	}
+	return mod.mock({ type: options.type ?? "delivered", channel: options.channel })
 }
