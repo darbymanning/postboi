@@ -377,6 +377,17 @@ export function inbox_middleware(
 	const hosted_token = () => read_env("POSTBOI_TOKEN")
 	const hosted_api = () =>
 		(read_env("POSTBOI_API_URL") ?? "https://postboi.app").replace(/\/+$/, "")
+	/*
+	 * The two ways out of an exhausted allowance, both on the host the run was ordered
+	 * from — a self-hosted or staging account is never sent to postboi.app to pay.
+	 * Packs live on the testing page beside the balance they refill; changing plan is a
+	 * different decision on its own page. Sent as a pair so the UI never has to do path
+	 * surgery on a URL it didn't build.
+	 */
+	const billing_url = () => ({
+		packs: `${hosted_api()}/dashboard/testing`,
+		plan: `${hosted_api()}/dashboard/settings/billing`,
+	})
 	const escape_html = (value: string) =>
 		value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 
@@ -548,6 +559,7 @@ export function inbox_middleware(
 					enabled: Boolean(hosted_token()),
 					run_id: null,
 					previews: [],
+					billing: billing_url(),
 				})
 			}
 			return void (async () => {
@@ -561,6 +573,7 @@ export function inbox_middleware(
 				send_json(response, 200, {
 					enabled: true,
 					run_id,
+					billing: billing_url(),
 					previews: body.data.map((preview) => ({
 						id: preview.id,
 						client_name: preview.client_name,

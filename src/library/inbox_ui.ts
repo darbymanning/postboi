@@ -345,6 +345,38 @@ td.chanco { width: 78px }
 #pane pre { margin: 0; padding: 10px; font: 12px ui-monospace, "Courier New", monospace; white-space: pre-wrap; word-wrap: break-word }
 #pane .files { padding: 10px }
 #pane .files a { display: block; margin-bottom: 5px; color: #0000ee }
+/* The system message box: an icon, a sentence, a row of keys. Sized to its text the way
+   a real one is, and never resizable — there is nothing in it to make bigger. */
+#alertwin { width: 400px; height: auto }
+#alertwin .dlgbody { background: #d4d0c8; padding: 14px 14px 10px }
+#alertwin .dlgrow { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px }
+#alertwin .dlgicon {
+	flex: none; width: 32px; height: 32px; border-radius: 50%;
+	background: #f5c518; color: #000; font: bold 22px/32px Georgia, serif;
+	text-align: center; border: 1px solid #a07d00;
+}
+#alertwin #alert-text { font-size: 11px; line-height: 1.45; padding-top: 3px }
+#alertwin .dlgbtns { display: flex; justify-content: flex-end; gap: 6px }
+#alertwin .dlgbtns button { min-width: 88px }
+
+/* The capture viewer. The image sits inset on the workspace grey a picture viewer of the
+   era would have used, and the whole capture is shown — these are tall scrolling renders,
+   so the stage scrolls rather than shrinking the thing you opened it to read. */
+#shotbody { display: flex; flex-direction: column; height: 100%; background: #d4d0c8 }
+#shotbody .shot-stage {
+	flex: 1; overflow: auto; margin: 3px; padding: 6px;
+	background: #808080; border: 1px solid #808080;
+	border-top-color: #404040; border-left-color: #404040;
+	border-right-color: #fff; border-bottom-color: #fff;
+}
+#shotbody .shot-stage img { display: block; margin: 0 auto; background: #fff; max-width: 100% }
+#shotbody .shot-foot {
+	flex: none; display: flex; align-items: center; justify-content: space-between;
+	gap: 6px; padding: 4px 6px 6px; font-size: 11px;
+}
+#shotbody .shot-nav { min-width: 74px }
+#shotbody .shot-nav[disabled] { color: #808080 }
+
 /* The Report tab: postboi/inspect's findings, set like a system dialog would set them. */
 #pane .report { padding: 10px 12px; font: 12px "MS Sans Serif", Tahoma, sans-serif }
 #pane .report .r-status { font-weight: bold; margin-bottom: 8px }
@@ -1399,6 +1431,37 @@ function paint_shots(id) {
 		el.innerHTML = shots_html(id, data)
 		var go = document.getElementById("rshotgo")
 		if (go) go.onclick = function () { order_shots(id, go) }
+		Array.prototype.forEach.call(el.querySelectorAll(".r-open"), function (cell) {
+			cell.onclick = function () { open_shot(id, cell.dataset.shot, data.previews) }
+		})
+		// A capture that was still developing when the viewer opened is ready now: keep
+		// its Prev/Next honest without stealing focus from whatever you're reading.
+		var shotwin = find("shotwin")
+		if (shot_msg === id && shotwin && shotwin.open) {
+			var showing = shot_list[shot_at]
+			shot_list = (data.previews || []).filter(function (p) { return p.status === "ready" })
+			shot_at = Math.max(0, shot_list.map(function (p) { return p.id })
+				.indexOf(showing && showing.id))
+			render_shot()
+		}
+		// The farm refused: the reason is the vendor's own ("Out of renders \\u2014 6 clients
+		// skipped"), and a bare "no capture" tells the reader nothing they can act on.
+		var refused = (data.previews || []).filter(function (p) { return p.error })[0]
+		if (refused) {
+			// Raised once per run: the pane repolls every five seconds, and a dialog that
+			// came back on each pass would be one you cannot dismiss. The holder brings it
+			// back by hand.
+			if (!alerted[data.run_id]) {
+				alerted[data.run_id] = true
+				show_alert("Postboi - Screenshots", refused.error, data.billing)
+			}
+			var why = document.getElementById("rwhy")
+			if (why) {
+				why.onclick = function () {
+					show_alert("Postboi - Screenshots", refused.error, data.billing)
+				}
+			}
+		}
 		var developing = (data.previews || []).some(function (p) { return p.status === "pending" })
 		if (data.run_id && (developing || !(data.previews || []).length)) {
 			shots_timer = setTimeout(function () { paint_shots(id) }, 5000)
@@ -1435,15 +1498,99 @@ function shots_html(id, data) {
 	var cells = (data.previews || []).map(function (p) {
 		if (p.status === "ready") {
 			var src = api + "/messages/" + id + "/screenshots/" + p.id
-			return '<figure class="r-shot"><a href="' + src + '" target="_blank" rel="noreferrer">' +
-				'<img loading="lazy" src="' + src + '" alt="' + esc(p.client_name) + '"></a>' +
+			// Opens in the viewer window rather than a new browser tab: a capture is a thing
+			// on this desktop like every other, and a raw PNG on a blank tab loses which
+			// client it came from.
+			return '<figure class="r-shot"><button type="button" class="r-open" data-shot="' + esc(p.id) + '">' +
+				'<img loading="lazy" src="' + src + '" alt="' + esc(p.client_name) + '"></button>' +
 				"<figcaption>" + esc(p.client_name) + "</figcaption></figure>"
 		}
-		var hold = p.status === "pending" ? "developing\\u2026" : "no capture"
-		return '<figure class="r-shot"><div class="r-hold">' + hold + "</div>" +
-			"<figcaption>" + esc(p.client_name) + "</figcaption></figure>"
+		var hold = p.status === "pending" ? "developing\\u2026" : p.error || "no capture"
+		// A refusal is the one holder worth clicking: it is the whole reason the grid is
+		// empty, and the way out of it is a page on the account, not anything here.
+		if (p.error) {
+			return '<figure class="r-shot"><button type="button" class="r-hold r-why" id="rwhy">' +
+				esc(hold) + "</button><figcaption>" + esc(p.client_name) + "</figcaption></figure>"
+		}
+		return '<figure class="r-shot"><div class="r-hold">' +
+			esc(hold) + "</div><figcaption>" + esc(p.client_name) + "</figcaption></figure>"
 	}).join("")
-	return head + '<div class="r-sgrid">' + (cells || '<div class="r-snote">Submitting to the rendering farm\\u2026</div>') + "</div>"
+	var grid = '<div class="r-sgrid">' +
+		(cells || '<div class="r-snote">Submitting to the rendering farm\\u2026</div>') + "</div>"
+	// Nothing rendered and nothing coming: offer the order key again, so credits bought
+	// in the tab you just came back from have something to be spent on.
+	var nothing = (data.previews || []).length > 0 &&
+		!(data.previews || []).some(function (p) {
+			return p.status === "ready" || p.status === "pending"
+		})
+	if (nothing) {
+		grid += '<div class="r-snote"><button id="rshotgo">\\uD83D\\uDCF7 Try again</button>' +
+			" \\u2014 after topping up, this re-photographs the email." + "</div>"
+	}
+	return head + grid
+}
+
+/*
+ * The system message box. Its billing link is where the account it was ordered from tops
+ * up — never a hardcoded postboi.app, because the run may have come from staging or
+ * from a self-hosted instance.
+ */
+var alert_billing = null
+/* Raised once per run: the shots pane repolls every five seconds, and a dialog that came
+ * back on each pass would be one you cannot dismiss. */
+var alerted = {}
+
+function show_alert(title, text, billing) {
+	alert_billing = billing || null
+	$("alert-title").textContent = title
+	$("alert-text").textContent = text
+	// Only offer a way to pay when we know where to send them.
+	$("alert-upgrade").style.display = alert_billing && alert_billing.plan ? "" : "none"
+	$("alert-topup").style.display = alert_billing && alert_billing.packs ? "" : "none"
+	var win = find("alertwin")
+	if (win) win.title = title
+	open_window("alertwin")
+}
+
+/*
+ * The capture viewer: which run's shots are open and which one is showing. Held here
+ * rather than read off the DOM so Prev/Next survive the report pane repainting under
+ * them — it repolls while captures are still developing.
+ */
+var shot_list = []
+var shot_at = 0
+var shot_msg = null
+
+function open_shot(id, preview_id, previews) {
+	shot_msg = id
+	shot_list = (previews || []).filter(function (p) { return p.status === "ready" })
+	shot_at = Math.max(0, shot_list.map(function (p) { return p.id }).indexOf(preview_id))
+	render_shot()
+	open_window("shotwin")
+}
+
+function render_shot() {
+	var p = shot_list[shot_at]
+	if (!p) return
+	var win = find("shotwin")
+	var title = p.client_name + " - Preview"
+	$("shot-title").textContent = title
+	if (win) win.title = title
+	$("shot-img").src = api + "/messages/" + shot_msg + "/screenshots/" + p.id
+	$("shot-img").alt = "Rendering in " + p.client_name
+	$("shot-count").textContent = shot_list.length > 1
+		? shot_at + 1 + " of " + shot_list.length
+		: p.client_name
+	// One capture is not a set to step through.
+	$("shot-prev").disabled = shot_list.length < 2
+	$("shot-next").disabled = shot_list.length < 2
+	paint()
+}
+
+function step_shot(by) {
+	if (shot_list.length < 2) return
+	shot_at = (shot_at + by + shot_list.length) % shot_list.length
+	render_shot()
 }
 
 function load() {
@@ -3466,6 +3613,18 @@ function close_window(win) {
 		render_messenger()
 		return
 	}
+	if (win.id === "alertwin") {
+		win.el.classList.add("closed")
+		paint()
+		return
+	}
+	if (win.id === "shotwin") {
+		win.el.classList.add("closed")
+		shot_list = []
+		shot_msg = null
+		paint()
+		return
+	}
 	if (win.id === "wawin") {
 		wa_convo = null
 		render_list()
@@ -4121,6 +4280,44 @@ register("pushwin", "Notifications", {
 	w: pu.w,
 	h: pu.h,
 })
+// A capture is a tall scrolling render, so the viewer is portrait and roomy.
+var sh = { w: Math.min(520, box.w - 60), h: Math.min(620, box.h - 30) }
+register("shotwin", "Preview", {
+	x: Math.max(0, Math.round((box.w - sh.w) / 2) + 30),
+	y: Math.max(0, Math.round((box.h - sh.h) / 2) - 10),
+	w: sh.w,
+	h: sh.h,
+})
+$("shot-prev").addEventListener("click", function () { step_shot(-1) })
+$("shot-next").addEventListener("click", function () { step_shot(1) })
+
+// A message box sits where XP put one: centred, above everything, not resizable.
+var al = { w: Math.min(400, box.w - 40), h: 150 }
+register("alertwin", "Postboi", {
+	x: Math.max(0, Math.round((box.w - al.w) / 2)),
+	y: Math.max(0, Math.round((box.h - al.h) / 2) - 40),
+	w: al.w,
+	h: al.h,
+})
+// A real tab, not a window on this desktop: the desktop is a joke, paying is not. The
+// packs sit on the testing page beside the balance they refill; changing plan is a
+// different decision and lives on its own page.
+function open_out(which) {
+	var url = alert_billing && alert_billing[which]
+	if (url) window.open(url, "_blank", "noreferrer")
+}
+$("alert-upgrade").addEventListener("click", function () { open_out("plan") })
+$("alert-topup").addEventListener("click", function () { open_out("packs") })
+$("alert-ok").addEventListener("click", function () { close_window(find("alertwin")) })
+
+/*
+ * Coming back from the billing tab, ask again. A top-up lands on the account through a
+ * Stripe webhook, so nothing here is told about it — but returning focus is the one
+ * moment we know something might have changed, and it costs a single request.
+ */
+window.addEventListener("focus", function () {
+	if (current && tab === "report") paint_shots(current.id)
+
 var pm = { w: Math.min(660, box.w - 40), h: Math.min(444, box.h - 30) }
 register("poom", "POOM.EXE", {
 	x: Math.max(0, Math.round((box.w - pm.w) / 2) - 20),
@@ -4495,6 +4692,47 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 		<div id="pushbody" class="selectable"></div>
 		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 	</div>
+
+	<!-- The system message box. XP threw one of these whenever something needed a
+	     decision, and an exhausted render allowance is exactly that: the reason is
+	     the vendor's, and the way out is a page on the account it was ordered from. -->
+	<div id="alertwin" class="child window closed dlg">
+		<div class="title-bar">
+			<div class="title-bar-text"><span id="alert-title">Postboi</span></div>
+			<div class="title-bar-controls">
+				<button aria-label="Close" data-act="close"></button>
+			</div>
+		</div>
+		<div class="dlgbody">
+			<div class="dlgrow"><div class="dlgicon">!</div><div id="alert-text"></div></div>
+			<div class="dlgbtns">
+				<button id="alert-upgrade">Upgrade Plan</button>
+				<button id="alert-topup">Buy More Renders</button>
+				<button id="alert-ok">OK</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- A capture off the rendering farm opens as its own window, the way every other
+	     thing on this desktop does. Starts closed: a screenshot opens it. -->
+	<div id="shotwin" class="child window closed">
+		<div class="title-bar">
+			<div class="title-bar-text">&#128247; <span id="shot-title">Preview</span></div>
+			<div class="title-bar-controls">
+				<button aria-label="Minimize" data-act="min"></button>
+				<button aria-label="Maximize" data-act="max"></button>
+				<button aria-label="Close" data-act="close"></button>
+			</div>
+		</div>
+		<div id="shotbody" class="shotbody">
+			<div class="shot-stage"><img id="shot-img" alt=""></div>
+			<div class="shot-foot">
+				<button id="shot-prev" class="shot-nav">&#9664; Prev</button>
+				<span id="shot-count"></span>
+				<button id="shot-next" class="shot-nav">Next &#9654;</button>
+			</div>
+		</div>
+		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 
 	<!-- Starts closed: it is an icon on the desktop, not something the inbox opens for you. -->
 	<div id="poom" class="child window closed">
