@@ -305,6 +305,8 @@ describe("provider inference reads intent, not ambience", () => {
 			"CLOUDFLARE_ACCOUNT_ID",
 			"CLOUDFLARE_API_TOKEN",
 			"CLOUDFLARE_QUEUE_ID",
+			// Any box that has ever touched Azure Communication Services.
+			"COMMUNICATION_SERVICES_CONNECTION_STRING",
 			// What every CI notification action sets.
 			"DISCORD_WEBHOOK_URL",
 			// Mailjet's own SDK default pair.

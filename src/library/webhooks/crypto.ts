@@ -77,7 +77,13 @@ export async function svix_verify(options: {
 		return "stale_timestamp"
 	}
 
-	const key = base64_decode(options.secret.replace(/^whsec_/, ""))
+	let key: Uint8Array
+	try {
+		key = base64_decode(options.secret.replace(/^whsec_/, ""))
+	} catch {
+		// Not a whsec_ secret at all — it can't have signed anything.
+		return "invalid_signature"
+	}
 	const signed = `${options.id}.${options.timestamp}.${options.body}`
 	const expected = base64_encode(await hmac_sha256(key, signed))
 

@@ -11,7 +11,7 @@
  * Frameworks that wrap the request deeper (Hono keeps it at `c.req.raw`) unwrap in
  * place: `app.post("/webhooks", (c) => webhook(handler)(c.req.raw))`.
  */
-import { receive, WebhookVerificationError } from "./index.js"
+import { receive, resolve_adapter, WebhookVerificationError } from "./index.js"
 import type { ReceiveOptions, WebhookEvent } from "./index.js"
 import { is_error } from "../errors.js"
 
@@ -50,6 +50,8 @@ function build(
 ): (carrier: RequestCarrier) => Promise<Response> {
 	return async (carrier) => {
 		const request = carrier instanceof Request ? carrier : carrier.request
+		// `receive` reads the body; a copy is kept for adapters that answer handshakes.
+		const peek = request.clone()
 
 		let events: Array<WebhookEvent>
 		try {
@@ -60,6 +62,19 @@ function build(
 			}
 			const message = is_error(error) ? error.message : String(error)
 			return json({ error: message }, 400)
+		}
+
+		// A verified request that is a handshake rather than an event (SocketLabs echoes a
+		// validation key) is answered the way the provider expects.
+		if (events.length === 0) {
+			const adapter = await resolve_adapter(options?.provider).catch(() => undefined)
+			if (adapter?.respond) {
+				const reply = adapter.respond(await peek.text(), {
+					headers: request.headers,
+					url: new URL(request.url),
+				})
+				if (reply) return reply
+			}
 		}
 
 		try {
