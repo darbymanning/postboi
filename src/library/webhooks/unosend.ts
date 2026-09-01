@@ -1,7 +1,7 @@
 import type { WebhookAdapter, WebhookEventType, AdapterModule } from "./index.js"
 import { WebhookVerificationError } from "./errors.js"
 import { parse_json, engagement, to_date } from "./shared.js"
-import { hmac_sha256, hex_encode, timing_safe_equal } from "./crypto.js"
+import { hmac_sha256, hex_encode, timing_safe_equal, base64_decode } from "./crypto.js"
 
 /** Unosend webhook payload — https://docs.unosend.co/guides/webhooks */
 interface UnosendPayload {
@@ -42,6 +42,27 @@ function tag_names(tags: NonNullable<UnosendPayload["data"]>["tags"]): Array<str
 }
 
 /**
+ * The HMAC keys a `whsec_…` secret could mean. Unosend's docs sign with "the secret"
+ * and don't say whether the prefix is part of the key or whether the rest is base64
+ * (the Svix convention the prefix is borrowed from), so all three readings are tried —
+ * each is derived from the configured secret, so accepting any of them gives away
+ * nothing.
+ */
+function key_candidates(secret: string): Array<Uint8Array | string> {
+	const candidates: Array<Uint8Array | string> = [secret]
+	if (secret.startsWith("whsec_")) {
+		const stripped = secret.slice("whsec_".length)
+		candidates.push(stripped)
+		try {
+			candidates.push(base64_decode(stripped))
+		} catch {
+			// not base64 — the string readings still stand
+		}
+	}
+	return candidates
+}
+
+/**
  * Unosend webhook adapter. Verification is HMAC-SHA256 (hex) of the raw body with the
  * endpoint's `whsec_…` signing secret, carried as `X-Unosend-Signature: sha256=…`.
  */
@@ -58,8 +79,10 @@ const adapter: WebhookAdapter = {
 			})
 		}
 		const signature = ctx.headers.get("x-unosend-signature")?.replace(/^sha256=/, "")
-		const expected = hex_encode(await hmac_sha256(ctx.secret, ctx.body))
-		if (!signature || !timing_safe_equal(signature, expected)) {
+		const expected = await Promise.all(
+			key_candidates(ctx.secret).map(async (key) => hex_encode(await hmac_sha256(key, ctx.body)))
+		)
+		if (!signature || !expected.some((candidate) => timing_safe_equal(signature, candidate))) {
 			throw new WebhookVerificationError({
 				provider: "unosend",
 				message: "unosend webhook signature did not match",

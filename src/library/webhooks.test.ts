@@ -460,6 +460,35 @@ describe("receive — unosend", () => {
 		expect(event.bounce).toEqual({ category: "soft", detail: "Mailbox full" })
 	})
 
+	it("verifies whichever reading of the whsec_ secret the vendor signs with", async () => {
+		const { default: adapter } = await import("./webhooks/unosend.js")
+		const { hmac_sha256, hex_encode, base64_encode } = await import("./webhooks/crypto.js")
+		const body = JSON.stringify({ type: "email.delivered", data: { email_id: "e" } })
+		const raw = new Uint8Array(24).fill(7)
+		const secret = `whsec_${base64_encode(raw)}`
+		const keys: Array<Uint8Array | string> = [secret, secret.slice(6), raw]
+		for (const key of keys) {
+			const signature = hex_encode(await hmac_sha256(key, body))
+			await expect(
+				adapter.verify({
+					body,
+					headers: new Headers({ "x-unosend-signature": `sha256=${signature}` }),
+					url: new URL("https://example.com/webhooks"),
+					secret,
+				})
+			).resolves.toBeUndefined()
+		}
+		const wrong = hex_encode(await hmac_sha256("something-else", body))
+		await expect(
+			adapter.verify({
+				body,
+				headers: new Headers({ "x-unosend-signature": `sha256=${wrong}` }),
+				url: new URL("https://example.com/webhooks"),
+				secret,
+			})
+		).rejects.toBeInstanceOf(WebhookVerificationError)
+	})
+
 	it("accepts the signature with or without its sha256= prefix", async () => {
 		const { request, secret } = await mock_request({ provider: "unosend", type: "opened" })
 		const body = await request.text()
