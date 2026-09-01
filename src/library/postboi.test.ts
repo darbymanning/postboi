@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import Postboi, { escape_html, mail, is_error, PostboiError } from "$library/postboi.js"
+import Postboi, {
+	escape_html,
+	mail,
+	is_error,
+	PostboiError,
+	SkipSendError,
+} from "$library/postboi.js"
 
 const fetch = vi.fn()
 global.fetch = fetch
@@ -192,6 +198,84 @@ describe("the Postboi provider (zero-config)", () => {
 			idempotency_key: "order-42",
 		})
 		expect(sent_init().headers).toMatchObject({ "Idempotency-Key": "order-42" })
+	})
+
+	it("gives each batch recipient its own idempotency key, derived from the batch's", async () => {
+		fetch.mockResolvedValue(respond({ json: { ids: ["m1", "m2"] } }))
+
+		await new Postboi({ token: "t" }).send({
+			to: ["a@test.com", "b@test.com"],
+			subject: "Hi",
+			body: "x",
+			data: { "a@test.com": {}, "b@test.com": {} },
+			idempotency_key: "order-42",
+		})
+
+		// One key names one message, so the batch's key can't be sent as-is on every
+		// item — the API rejects a batch whose items share a key.
+		const body = sent_json()
+		expect(body.map((item: { idempotency_key?: string }) => item.idempotency_key)).toEqual([
+			"order-42:0",
+			"order-42:1",
+		])
+		// And no whole-batch header, which would have to name a hundred messages at once.
+		expect(sent_init().headers).not.toHaveProperty("Idempotency-Key")
+	})
+
+	it("derives the same keys on a retry, even if a recipient drops out", async () => {
+		fetch.mockResolvedValue(respond({ json: { ids: ["m1", "m2"] } }))
+
+		await new Postboi({
+			token: "t",
+			hooks: {
+				// A hook skips the middle recipient — on a retry it might skip a different
+				// one, and the survivors' keys must not shift onto each other's messages.
+				before: {
+					send: (ctx) => {
+						if (String(ctx.message.to).includes("b@test.com")) throw new SkipSendError("skip")
+					},
+				},
+			},
+		}).send({
+			to: ["a@test.com", "b@test.com", "c@test.com"],
+			subject: "Hi",
+			body: "x",
+			data: { "a@test.com": {}, "b@test.com": {}, "c@test.com": {} },
+			idempotency_key: "order-42",
+		})
+
+		const body = sent_json()
+		expect(body.map((item: { idempotency_key?: string }) => item.idempotency_key)).toEqual([
+			"order-42:0",
+			"order-42:2",
+		])
+	})
+
+	it("refuses a base key too long to carry a suffix, rather than sending a truncated one", async () => {
+		fetch.mockResolvedValue(respond({ json: { ids: ["m1", "m2"] } }))
+
+		const results = await new Postboi({ token: "t" }).send({
+			to: ["a@test.com", "b@test.com"],
+			subject: "Hi",
+			body: "x",
+			data: { "a@test.com": {}, "b@test.com": {} },
+			idempotency_key: "x".repeat(256),
+		})
+
+		expect(results.every((r) => !r.ok)).toBe(true)
+		expect(String((results[0] as { error: Error }).error.message)).toContain("too long for a batch")
+		expect(fetch).not.toHaveBeenCalled()
+	})
+
+	it("sends no key at all when the batch was given none", async () => {
+		fetch.mockResolvedValue(respond({ json: { ids: ["m1"] } }))
+		await new Postboi({ token: "t" }).send({
+			to: ["a@test.com"],
+			subject: "Hi",
+			body: "x",
+			data: { "a@test.com": {} },
+		})
+		expect(sent_json()[0].idempotency_key).toBeUndefined()
 	})
 
 	it("sends personalized data batches as one POST /v1/send/batch", async () => {

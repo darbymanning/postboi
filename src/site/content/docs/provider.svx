@@ -335,9 +335,21 @@ await mail.send({
 })
 ```
 
-Single sends accept an [`idempotency_key`](/errors#retries): retrying a send with the
-same key returns the original message id instead of delivering a duplicate. Pair it
-with `retries` for safe automatic retry.
+Sends accept an [`idempotency_key`](/errors#retries): retrying a send with the same key
+returns the original message id instead of delivering a duplicate. Pair it with
+`retries` for safe automatic retry.
+
+A batch takes **one** key and gives each recipient its own, suffixed with that
+recipient's position — `order-42` becomes `order-42:0`, `order-42:1` and so on. One key
+names one message, so a batch whose items shared a key would be a batch claiming to be
+a single message; the suffix is what keeps a retry replaying item by item, returning the
+ids the first attempt got and sending only what never went. The position is the one in
+your original `to` array, so a `before.send` hook skipping a different recipient the
+second time round doesn't shift the keys onto other people's messages.
+
+Keys are capped at 256 characters *including* the suffix — a base key too long to carry
+one is refused before anything is sent, rather than silently truncated into a key that
+could collide with another.
 
 ## Lists & broadcasts
 

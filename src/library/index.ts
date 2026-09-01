@@ -351,6 +351,13 @@ export type BatchRecipient = {
 	data: RecipientVars
 	/** The rendered message for this recipient — placeholders already substituted. */
 	message: PreparedMessage
+	/**
+	 * This recipient's position in the caller's original `to` array — not its position
+	 * in the array handed to `build_batch_request`, which omits recipients a `before.send`
+	 * hook dropped. It is therefore stable across a retry of the same batch, which is what
+	 * makes it safe to derive a per-recipient idempotency key from.
+	 */
+	index: number
 }
 
 /**
@@ -686,7 +693,10 @@ export abstract class EmailProvider<TResponse = unknown> extends Transport<
 				let message = await this.prepare_send(expanded[index])
 				const replaced = await this.before_send(message)
 				if (replaced) message = replaced
-				slots.push({ index, live: { to: message.to, data: vars_for(addresses[index]), message } })
+				slots.push({
+					index,
+					live: { to: message.to, data: vars_for(addresses[index]), message, index },
+				})
 			} catch (error) {
 				slots.push({ index, result: { ok: false, index, error: this.normalize_error(error) } })
 			}
