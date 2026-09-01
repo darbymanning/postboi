@@ -4,6 +4,9 @@
  * SMTP, Microsoft 365 and Cloudflare Email Service emit no delivery-event webhooks, but
  * each has somewhere the events can be fetched from: a POP3 bounce mailbox, the Graph
  * message-trace API, a Cloudflare Queue fed by an Email Sending event subscription.
+ * Twilio is here for a different reason — its status callbacks are set per message, at
+ * send time, so polling the Message resource is what makes SMS and WhatsApp delivery
+ * receipts work with nothing configured and no public endpoint.
  * `poll()` fetches what's new since the last call and returns the same normalized
  * {@link WebhookEvent}s `receive()` produces, plus an opaque cursor to hand back next time.
  *
@@ -19,6 +22,7 @@
  * environment variables ({@link POLL_FIELDS} names them per provider).
  */
 import { PostboiError } from "../index.js"
+import type { Channel } from "../errors.js"
 import type { ProviderField, ProviderKey } from "../registry.js"
 import { ensure_env_loaded, read_env } from "../env.js"
 import { resolve_key, type WebhookEvent, type WebhookEventType } from "./index.js"
@@ -56,8 +60,13 @@ export interface PollAdapter {
 /** A loaded poll module: the adapter plus its mock builder (for tests). */
 export interface PollModule {
 	default: PollAdapter
-	/** Build a realistic {@link PollResult} for `mock_poll` — the polling analog of a mock request. */
-	mock?: (options: { type: WebhookEventType }) => Promise<PollResult>
+	/**
+	 * Build a realistic {@link PollResult} for `mock_poll` — the polling analog of a mock
+	 * request. `channel` picks between the channels a multi-channel provider reports on
+	 * (Twilio's SMS and WhatsApp share one Message resource); adapters that only ever
+	 * report on email ignore it.
+	 */
+	mock?: (options: { type: WebhookEventType; channel?: Channel }) => Promise<PollResult>
 }
 
 /**
@@ -69,6 +78,7 @@ export const POLL_MODULES: Record<string, () => Promise<PollModule>> = {
 	cloudflare: () => import("./poll_cloudflare.js"),
 	microsoft365: () => import("./poll_microsoft365.js"),
 	smtp: () => import("./poll_smtp.js"),
+	twilio: () => import("./poll_twilio.js"),
 }
 
 /**
@@ -77,10 +87,10 @@ export const POLL_MODULES: Record<string, () => Promise<PollModule>> = {
  * required. The machine-readable half of the capability surface: callers can decide
  * whether polling is configured without loading any adapter chunk.
  *
- * Cloudflare and Microsoft 365 reuse the registry's send credentials, so one synced
- * credential drives both send and poll. SMTP's bounce mailbox is a different endpoint
- * than the relay, so it carries its own `POP3_*` names (mirrored in the registry's
- * `smtp` fields so `postboi sync` moves them).
+ * Cloudflare, Microsoft 365 and Twilio reuse the registry's send credentials, so one
+ * synced credential drives both send and poll. SMTP's bounce mailbox is a different
+ * endpoint than the relay, so it carries its own `POP3_*` names (mirrored in the
+ * registry's `smtp` fields so `postboi sync` moves them).
  */
 export const POLL_FIELDS: Record<string, ReadonlyArray<ProviderField>> = {
 	cloudflare: [
@@ -104,6 +114,12 @@ export const POLL_FIELDS: Record<string, ReadonlyArray<ProviderField>> = {
 		{ env: "MS365_TENANT_ID", arg: "tenant_id", label: "Tenant ID" },
 		{ env: "MS365_CLIENT_ID", arg: "client_id", label: "Client ID" },
 		{ env: "MS365_CLIENT_SECRET", arg: "client_secret", label: "Client secret", secret: true },
+	],
+	// The SMS/WhatsApp pair: one Message resource covers both, so one row polls both.
+	// The optional messaging-service sid plays no part in reading statuses back.
+	twilio: [
+		{ env: "TWILIO_ACCOUNT_SID", arg: "account_sid", label: "Account SID", secret: true },
+		{ env: "TWILIO_AUTH_TOKEN", arg: "auth_token", label: "Auth token", secret: true },
 	],
 	smtp: [
 		{ env: "POP3_HOST", arg: "host", label: "Bounce mailbox host (POP3)", ambient: true },

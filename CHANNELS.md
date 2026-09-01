@@ -902,6 +902,48 @@ templates and in-window service messages are free today, but **that ends 1 Octob
 
 ---
 
+## Delivery receipts beyond email
+
+`poll()` arrived for the email providers that push no webhooks (SMTP, Microsoft 365,
+Cloudflare). SMS and WhatsApp need it for a different reason, and **Twilio ships now**:
+`poll({ provider: "twilio" })` returns the same normalized events as every other adapter,
+one row covering both channels.
+
+**Why polling rather than webhooks.** Twilio's status callbacks exist, but the URL is set
+**per message, at send time** — so receiving them means every send having somewhere to
+call back to, and a public endpoint to point at. Polling the Message resource needs
+neither, which is what makes delivery receipts work the same way for a script on a laptop
+as for a deployed app.
+
+**What the events carry.** `channel` says `"sms"` or `"whatsapp"` (absent still means
+email — no existing adapter starts claiming a channel), and the number lands in `phone`,
+never in `email`. The shared vocabulary does the rest: an SMS that reached the handset is
+`delivered`, an undeliverable one is `failed` with the carrier's code in `bounce.detail`
+(there is no bounce _classification_ for a text message — no mailbox to be permanently or
+temporarily unavailable), and WhatsApp's read receipt is `opened`, because it is the same
+fact as an email open.
+
+**The window is trailing, not incremental.** Twilio filters its list by `DateSent`, but
+what changes over a message's life is its _status_ — a message sent last night and
+delivered this morning still has last night's `DateSent`. So every poll asks for the last
+24 hours and the cursor remembers the status each sid was last seen with; a row is emitted
+only when that changes. The `seen` map is bounded (~500), so a transition on a message
+that has been quiet for that long is re-emitted once.
+
+### Not shipping, and why
+
+- **The SMS Works** — the provider this document picks for UK SMS. Its delivery reports are
+  readable per message (`GET /message/{id}`) and per batch, but there is **no documented
+  date-window query** on `POST /messages` to poll a whole account with. Its webhooks are
+  the intended path, and the `?token=…` shape already used elsewhere in `webhooks/` fits
+  them. Revisit if a date-range filter turns up in their API reference.
+- **Amazon SNS SMS** — delivery status goes to **CloudWatch Logs**, not an API that lists
+  message states. Polling it would mean a CloudWatch Logs Insights query per window: a
+  different shape of adapter, and a different set of IAM permissions to ask for.
+- **Meta WhatsApp Cloud API** — pushes proper webhooks, so it belongs with `receive()`
+  rather than `poll()`. Its verification is Meta's own `X-Hub-Signature-256`; adding it is
+  an adapter in `webhooks/`, not a poller.
+
 ## Where this could go — the audience layer
 
 The Postboi provider already ships the primitives an engagement platform is built on:

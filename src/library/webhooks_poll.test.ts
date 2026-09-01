@@ -102,8 +102,15 @@ describe("poll — provider handling", () => {
 		}
 	})
 
-	it("covers exactly the email providers without webhook adapters", () => {
-		expect(Object.keys(POLL_MODULES).sort()).toEqual(["cloudflare", "microsoft365", "smtp"])
+	it("covers the providers with no webhook adapter, and never overlaps one", () => {
+		// The email three have no delivery webhooks at all; Twilio's are per message and
+		// set at send time, which is the same problem from the caller's side.
+		expect(Object.keys(POLL_MODULES).sort()).toEqual([
+			"cloudflare",
+			"microsoft365",
+			"smtp",
+			"twilio",
+		])
 		for (const key of Object.keys(POLL_MODULES)) expect(MODULES[key]).toBeUndefined()
 	})
 
@@ -448,17 +455,192 @@ describe("poll — cloudflare (Queues pull)", () => {
 	})
 })
 
+describe("poll — twilio (SMS and WhatsApp)", () => {
+	// Options are always explicit: the polluted-env CI run fills TWILIO_*, and a test
+	// that quietly picked up a real account SID would be testing the environment.
+	const TW_OPTIONS = { account_sid: "AC-test", auth_token: "tok-test" }
+
+	const json = (body: unknown, status = 200) =>
+		new Response(JSON.stringify(body), { status }) as never
+
+	function message(overrides: Record<string, unknown> = {}) {
+		return {
+			sid: "SM1",
+			status: "delivered",
+			to: "+15557770006",
+			from: "+15551110001",
+			direction: "outbound-api",
+			date_sent: "2026-09-01T10:00:00Z",
+			...overrides,
+		}
+	}
+
+	it("asks for a trailing window of the Message resource, with basic auth", async () => {
+		const fetch_mock = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValueOnce(json({ messages: [message()] }))
+		await poll({ provider: "twilio", options: TW_OPTIONS, limit: 25 })
+
+		const url = new URL(String(fetch_mock.mock.calls[0][0]))
+		expect(url.origin + url.pathname).toBe(
+			"https://api.twilio.com/2010-04-01/Accounts/AC-test/Messages.json"
+		)
+		expect(url.searchParams.get("PageSize")).toBe("25")
+		// Date-granular, and yesterday-or-earlier: a message sent last night and
+		// delivered this morning still carries last night's DateSent.
+		const since = url.searchParams.get("DateSent>=") ?? ""
+		expect(since).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+		expect(new Date(since).getTime()).toBeLessThanOrEqual(Date.now())
+
+		const headers = (fetch_mock.mock.calls[0][1] as RequestInit).headers as Record<string, string>
+		expect(headers.Authorization).toBe(`Basic ${btoa("AC-test:tok-test")}`)
+	})
+
+	it("tags the channel from the address and never fills email", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({
+				messages: [
+					message({ sid: "SM-sms" }),
+					message({ sid: "SM-wa", to: "whatsapp:+15557770006", from: "whatsapp:+15551110001" }),
+				],
+			})
+		)
+		const result = await poll({ provider: "twilio", options: TW_OPTIONS })
+		expect(result.events).toMatchObject([
+			{ message_id: "SM-sms", channel: "sms", phone: "+15557770006", type: "delivered" },
+			{ message_id: "SM-wa", channel: "whatsapp", phone: "+15557770006", type: "delivered" },
+		])
+		for (const event of result.events) expect(event.email).toBeUndefined()
+	})
+
+	it("maps the statuses worth an event and stays quiet about the rest", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({
+				messages: [
+					message({ sid: "a", status: "sent" }),
+					message({ sid: "b", status: "delivered" }),
+					message({ sid: "c", status: "undelivered", error_code: 30006 }),
+					message({ sid: "d", status: "failed", error_message: "Unknown error" }),
+					message({ sid: "e", status: "read", to: "whatsapp:+15557770006" }),
+					// In flight: the provider thinking, not something that happened.
+					message({ sid: "f", status: "queued" }),
+					message({ sid: "g", status: "sending" }),
+					message({ sid: "h", status: "accepted" }),
+					// Somebody writing to us, not a receipt for a send.
+					message({ sid: "i", status: "received", direction: "inbound" }),
+				],
+			})
+		)
+		const result = await poll({ provider: "twilio", options: TW_OPTIONS })
+		expect(result.events.map((event) => [event.message_id, event.type])).toEqual([
+			["a", "sent"],
+			["b", "delivered"],
+			["c", "failed"],
+			["d", "failed"],
+			["e", "opened"],
+		])
+		// The carrier's own words, in the field consumers already read.
+		expect(result.events[2].bounce).toEqual({ category: "unknown", detail: "30006" })
+		expect(result.events[3].bounce?.detail).toBe("Unknown error")
+	})
+
+	it("re-emits on a status change, not on a sid it has seen", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({ messages: [message({ sid: "SM9", status: "sent" })] })
+		)
+		const first = await poll({ provider: "twilio", options: TW_OPTIONS })
+		expect(first.events.map((event) => event.type)).toEqual(["sent"])
+
+		// The same row, listed again unchanged: nothing happened.
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({ messages: [message({ sid: "SM9", status: "sent" })] })
+		)
+		const again = await poll({ provider: "twilio", options: TW_OPTIONS, cursor: first.cursor })
+		expect(again.events).toEqual([])
+
+		// The same row, now delivered: that is the transition the poller exists for.
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({ messages: [message({ sid: "SM9", status: "delivered" })] })
+		)
+		const moved = await poll({ provider: "twilio", options: TW_OPTIONS, cursor: again.cursor })
+		expect(moved.events.map((event) => event.type)).toEqual(["delivered"])
+	})
+
+	it("remembers in-flight statuses too, so a queued row doesn't re-emit at every poll", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({ messages: [message({ sid: "SM8", status: "queued" })] })
+		)
+		const first = await poll({ provider: "twilio", options: TW_OPTIONS })
+		expect(first.events).toEqual([])
+		expect(JSON.parse(first.cursor ?? "{}").seen).toEqual({ SM8: "queued" })
+
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({ messages: [message({ sid: "SM8", status: "delivered" })] })
+		)
+		const second = await poll({ provider: "twilio", options: TW_OPTIONS, cursor: first.cursor })
+		expect(second.events.map((event) => event.type)).toEqual(["delivered"])
+	})
+
+	it("reports a backlog when the page came back full", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({ messages: [message({ sid: "x" }), message({ sid: "y" })] })
+		)
+		const full = await poll({ provider: "twilio", options: TW_OPTIONS, limit: 2 })
+		expect(full.more).toBe(true)
+
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(json({ messages: [message({ sid: "z" })] }))
+		const partial = await poll({ provider: "twilio", options: TW_OPTIONS, limit: 2 })
+		expect(partial.more).toBe(false)
+	})
+
+	it("rejects a cursor that doesn't parse, so the caller can drop it", async () => {
+		const error = await poll({
+			provider: "twilio",
+			options: TW_OPTIONS,
+			cursor: "not json",
+		}).catch((e) => e)
+		expect(error).toMatchObject({ code: "invalid_cursor", provider: "twilio" })
+	})
+
+	it("surfaces Twilio's own error rather than an empty page", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({ code: 20003, message: "Authenticate" }, 401)
+		)
+		const error = await poll({ provider: "twilio", options: TW_OPTIONS }).catch((e) => e)
+		expect(error).toMatchObject({ provider: "twilio", status: 401, code: 20003 })
+		expect(error.message).toBe("Authenticate")
+	})
+})
+
 describe("mock_poll", () => {
 	it("builds realistic results for every polling provider", async () => {
 		for (const provider of Object.keys(POLL_MODULES)) {
-			const bounced = await mock_poll({ provider, type: "bounced" })
-			expect(bounced.events[0]).toMatchObject({ type: "bounced", provider })
-			expect(bounced.events[0].bounce?.category).toBeTruthy()
-			expect(bounced.cursor).toBeTruthy()
+			// A text message has no bounce classification — there is no mailbox to be
+			// permanently or temporarily unavailable — so the failure type differs by
+			// channel. Everything else about the fixture is the same shape.
+			const failure = provider === "twilio" ? "failed" : "bounced"
+			const failed = await mock_poll({ provider, type: failure })
+			expect(failed.events[0]).toMatchObject({ type: failure, provider })
+			expect(failed.events[0].bounce?.category).toBeTruthy()
+			expect(failed.cursor).toBeTruthy()
 
 			const delivered = await mock_poll({ provider, type: "delivered" })
 			expect(delivered.events[0]).toMatchObject({ type: "delivered", provider })
 		}
+	})
+
+	it("builds both of Twilio's channels, and puts the number where numbers go", async () => {
+		const sms = await mock_poll({ provider: "twilio", type: "delivered" })
+		expect(sms.events[0]).toMatchObject({ channel: "sms", phone: "+15557770006" })
+		expect(sms.events[0].email).toBeUndefined()
+
+		const whatsapp = await mock_poll({ provider: "twilio", type: "opened", channel: "whatsapp" })
+		// WhatsApp's read receipt is the same fact as an email open.
+		expect(whatsapp.events[0]).toMatchObject({
+			type: "opened",
+			channel: "whatsapp",
+			phone: "+15557770006",
+		})
 	})
 
 	it("throws polling_not_supported for providers without a poll mock", async () => {
