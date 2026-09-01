@@ -263,6 +263,13 @@ export const PROVIDERS = [
 				secret: true,
 			},
 			{ env: "LETTERMINT_ROUTE", arg: "route", label: "Route slug (optional)", default: "" },
+			{
+				env: "LETTERMINT_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook signing secret (optional)",
+				secret: true,
+				default: "",
+			},
 		],
 	},
 	{
@@ -467,7 +474,16 @@ export const PROVIDERS = [
 		import: "postboi/unosend",
 		class: "Unosend",
 		url: "https://app.unosend.co",
-		fields: [{ env: "UNOSEND_API_KEY", arg: "api_key", label: "API key (un_…)", secret: true }],
+		fields: [
+			{ env: "UNOSEND_API_KEY", arg: "api_key", label: "API key (un_…)", secret: true },
+			{
+				env: "UNOSEND_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook signing secret (whsec_…, optional)",
+				secret: true,
+				default: "",
+			},
+		],
 	},
 	{
 		key: "zepto",

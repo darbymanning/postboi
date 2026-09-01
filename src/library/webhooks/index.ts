@@ -61,7 +61,7 @@ export type WebhookEventType =
 	 * Mail arriving at your sending address — the one event that isn't about a
 	 * send. `email` is the person who wrote to you, not a recipient, and
 	 * `message_id` is the send being replied to when the provider can tell.
-	 * Postboi only; providers without inbound never emit it.
+	 * The Postboi provider and Lettermint; providers without inbound never emit it.
 	 */
 	| "received"
 
@@ -187,6 +187,8 @@ export const MODULES: Record<string, () => Promise<AdapterModule>> = {
 	mailjet: () => import("./mailjet.js"),
 	mailtrap: () => import("./mailtrap.js"),
 	mailpace: () => import("./mailpace.js"),
+	lettermint: () => import("./lettermint.js"),
+	unosend: () => import("./unosend.js"),
 	zepto: () => import("./zepto.js"),
 	elasticemail: () => import("./elasticemail.js"),
 	plunk: () => import("./plunk.js"),
