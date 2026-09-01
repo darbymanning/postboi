@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
 import MockSms from "./mock.js"
 import Twilio from "./twilio.js"
 import SmsWorks from "./smsworks.js"
+import PureSms from "./puresms.js"
 import { PostboiError, type Channel } from "../errors.js"
 import { reset_config, configure } from "../config.js"
 
@@ -225,5 +226,76 @@ describe("smsworks", () => {
 			channel: "sms",
 			code: "AUTH",
 		})
+	})
+})
+
+describe("puresms", () => {
+	it("sends a single message to /sms/send with the key in X-Api-Key", async () => {
+		const fetch = vi.fn().mockResolvedValue(respond({ json: { id: "12345", countryCode: "GB" } }))
+		vi.stubGlobal("fetch", fetch)
+		const text = new PureSms({ api_key: "key", default: { from: "POSTBOI", country: "GB" } })
+		const result = await text.send({ to: "07788223344", message: "hi", tags: ["otp"] })
+
+		expect(result).toEqual({ id: "12345", count: undefined, errors: undefined })
+		const [url, init] = fetch.mock.calls[0]
+		expect(url).toBe("https://connect-api.divergent.cloud/sms/send")
+		expect(init.headers["X-Api-Key"]).toBe("key")
+		// Their API takes E.164 as-is, plus included.
+		expect(JSON.parse(init.body as string)).toEqual({
+			sender: "POSTBOI",
+			recipient: "+447788223344",
+			content: "hi",
+			clientReference: "otp",
+		})
+	})
+
+	it("uses the bulk endpoint for several recipients, scheduled from the top level", async () => {
+		const fetch = vi.fn().mockResolvedValue(respond({ json: { batchId: "b1", messageCount: 2 } }))
+		vi.stubGlobal("fetch", fetch)
+		const text = new PureSms({ api_key: "k", default: { from: "POSTBOI", country: "GB" } })
+		const when = new Date("2030-01-01T10:00:00Z")
+		const result = await text.send({
+			to: ["07788223344", "07700900123"],
+			message: "hi",
+			scheduled_at: when,
+		})
+
+		const [url, init] = fetch.mock.calls[0]
+		expect(url).toBe("https://connect-api.divergent.cloud/sms/send/bulk")
+		const body = JSON.parse(init.body as string)
+		expect(body.sendAtUtc).toBe(when.toISOString())
+		expect(body.messages).toHaveLength(2)
+		expect(body.messages[1]).toMatchObject({ recipient: "+447700900123" })
+		expect(result).toMatchObject({ id: "b1", count: 2 })
+	})
+
+	it("recognises a problem-details error body", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				respond({
+					ok: false,
+					status: 401,
+					json: { title: "Unauthorized", status: 401, detail: "Invalid API key" },
+				})
+			)
+		)
+		const text = new PureSms({ api_key: "k", default: { from: "P" } })
+		await expect(text.send({ to: "+447788223344", message: "hi" })).rejects.toMatchObject({
+			provider: "puresms",
+			channel: "sms",
+			code: 401,
+			message: expect.stringContaining("Invalid API key"),
+		})
+	})
+
+	it("cancels a pending scheduled message", async () => {
+		const fetch = vi.fn().mockResolvedValue(respond({ json: {} }))
+		vi.stubGlobal("fetch", fetch)
+		const text = new PureSms({ api_key: "k" })
+		await expect(text.cancel("12345")).resolves.toEqual({ id: "12345" })
+		const [url, init] = fetch.mock.calls[0]
+		expect(url).toBe("https://connect-api.divergent.cloud/sms/send/12345")
+		expect(init.method).toBe("DELETE")
 	})
 })

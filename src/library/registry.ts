@@ -569,6 +569,18 @@ export const SMS_PROVIDERS = [
 		fields: [{ env: "SMSWORKS_API_KEY", arg: "api_key", label: "API key (JWT)", secret: true }],
 	},
 	{
+		key: "puresms",
+		name: "PureSMS",
+		import: "postboi/puresms",
+		class: "PureSms",
+		url: "https://puresms.uk/developers",
+		regions: ["GB"],
+		note: "UK-native flat-rate pay-as-you-go, hosted in the EU, with signed delivery webhooks",
+		price: "2.8p",
+		verified: "2026-09-01",
+		fields: [{ env: "PURESMS_API_KEY", arg: "api_key", label: "API key", secret: true }],
+	},
+	{
 		key: "twilio",
 		name: "Twilio",
 		import: "postboi/twilio",

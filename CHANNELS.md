@@ -546,7 +546,7 @@ Every new channel touches more than a provider file. This is the actual cost:
 
 - `sms/phone.ts` — E.164 normalisation and GSM segment counting, not a libphonenumber port
 - `sms/provider.ts` — `SmsProvider extends Transport`, same three hooks as email
-- The SMS Works, Twilio and AWS SNS, plus an SMS mock
+- The SMS Works, Twilio and AWS SNS, plus an SMS mock; PureSMS followed once the shape was proven
 - `sms()` with env resolution, and `postboi init --sms` asking destination first
 - Docs at `/sms`, in a new **Channels** nav section
 - 45 tests across normalisation, providers, the resolver and dev interception

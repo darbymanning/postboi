@@ -149,6 +149,10 @@
 			"types": "./dist/sms/smsworks.d.ts",
 			"default": "./dist/sms/smsworks.js"
 		},
+		"./puresms": {
+			"types": "./dist/sms/puresms.d.ts",
+			"default": "./dist/sms/puresms.js"
+		},
 		"./sns": {
 			"types": "./dist/sms/sns.d.ts",
 			"default": "./dist/sms/sns.js"
