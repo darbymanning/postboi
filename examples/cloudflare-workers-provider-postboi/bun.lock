@@ -5,7 +5,7 @@
     "": {
       "name": "postboi-example-cloudflare-workers-provider-postboi",
       "dependencies": {
-        "postboi": "^0.42.0",
+        "postboi": "^0.43.0",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20250101.0",
@@ -211,7 +211,7 @@
 
     "pathe": ["pathe@2.0.3", "", {}, "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w=="],
 
-    "postboi": ["postboi@0.42.0", "", { "dependencies": { "@fontsource-variable/archivo": "5.3.0", "@fontsource-variable/golos-text": "5.3.0" }, "peerDependencies": { "@maizzle/framework": "^6.0.0", "@sveltejs/kit": "^2.0.0", "react": ">=18", "svelte": "^5.7.0", "vue": ">=3.3" }, "optionalPeers": ["@maizzle/framework", "@sveltejs/kit", "react", "vue"], "bin": { "postboi": "dist/cli.js" } }, "sha512-y0OR29ZFGlWap8r9TsIJkIshthfffkg9x5YYPKh4Mp54fSGnv4bnjp/3HsoNBYfnmj+H+V3o31sg+26oHC0Xmw=="],
+    "postboi": ["postboi@0.43.0", "", { "dependencies": { "@fontsource-variable/archivo": "5.3.0", "@fontsource-variable/golos-text": "5.3.0" }, "peerDependencies": { "@maizzle/framework": "^6.0.0", "@sveltejs/kit": "^2.0.0", "react": ">=18", "svelte": "^5.7.0", "vue": ">=3.3" }, "optionalPeers": ["@maizzle/framework", "@sveltejs/kit", "react", "vue"], "bin": { "postboi": "dist/cli.js" } }, "sha512-TjyvJ/T/Qpp+zcfJy7CcqS3rrRJ3SGzFkCfBhxDxcpBFqMbyaKfwduQc0rlxv8TdKZb8+8BElSRy2hn4nyHl7g=="],
 
     "semver": ["semver@7.8.5", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="],
 
