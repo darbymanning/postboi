@@ -180,13 +180,32 @@ describe("inbox middleware", () => {
 		// The failed cell says why too, so dismissing the dialog doesn't lose the reason —
 		// and it's a button, so the dialog can be brought back after it's dismissed.
 		expect(html).toContain('p.error || "no capture"')
-		expect(html).toContain('class="r-hold r-why" id="rwhy"')
+		// Wired by class, never an id minted inside the previews loop — a run with
+		// two refusals (a failed capture beside the allowance marker) would mint
+		// duplicate ids and leave the second button dead.
+		expect(html).toContain('class="r-hold r-why" data-err=')
+		expect(html).not.toContain('id="rwhy"')
 		// A run that rendered nothing offers its order key again, so credits bought in the
 		// tab you just came back from have something to be spent on.
 		expect(html).toContain("Try again")
 		// ...and returning focus re-asks, because a top-up lands by webhook and nothing
 		// here is told about it.
 		expect(html).toContain('window.addEventListener("focus"')
+	})
+
+	it("serves a script that parses and markup whose windows all close", () => {
+		const html = inbox_ui()
+		// The page is one inline script; a single truncated block kills the whole
+		// desktop, and substring assertions can't see it. Actually parse it — this
+		// exact gap shipped an unclosed listener that made the entire UI inert.
+		const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1] ?? ""
+		expect(script.length).toBeGreaterThan(1000)
+		expect(() => new Function(script)).not.toThrow()
+		// Every <div> closes: an unclosed window swallows its later siblings into a
+		// display:none parent (this shipped too — POOM and the Pokia vanished).
+		const opens = (html.match(/<div[\s>]/g) ?? []).length
+		const closes = (html.match(/<\/div>/g) ?? []).length
+		expect(opens).toBe(closes)
 	})
 
 	it("behaves like a Windows list, and a Windows app", async () => {

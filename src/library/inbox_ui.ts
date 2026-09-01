@@ -1446,7 +1446,11 @@ function paint_shots(id) {
 		}
 		// The farm refused: the reason is the vendor's own ("Out of renders \\u2014 6 clients
 		// skipped"), and a bare "no capture" tells the reader nothing they can act on.
-		var refused = (data.previews || []).filter(function (p) { return p.error })[0]
+		var errored = (data.previews || []).filter(function (p) { return p.error })
+		// The allowance marker is the refusal the billing keys answer — prefer it
+		// over an ordinary failed capture when both are present.
+		var refused = errored.filter(function (p) { return p.client_name === "Screenshots" })[0] ||
+			errored[0]
 		if (refused) {
 			// Raised once per run: the pane repolls every five seconds, and a dialog that
 			// came back on each pass would be one you cannot dismiss. The holder brings it
@@ -1455,18 +1459,20 @@ function paint_shots(id) {
 				alerted[data.run_id] = true
 				show_alert("Postboi - Screenshots", refused.error, data.billing)
 			}
-			var why = document.getElementById("rwhy")
-			if (why) {
+			Array.prototype.forEach.call(el.querySelectorAll(".r-why"), function (why) {
 				why.onclick = function () {
-					show_alert("Postboi - Screenshots", refused.error, data.billing)
+					// Each refusal speaks for itself — two failed rows carry two reasons.
+					show_alert("Postboi - Screenshots", why.dataset.err || refused.error, data.billing)
 				}
-			}
+			})
 		}
 		var developing = (data.previews || []).some(function (p) { return p.status === "pending" })
 		if (data.run_id && (developing || !(data.previews || []).length)) {
 			shots_timer = setTimeout(function () { paint_shots(id) }, 5000)
 		}
-	}).catch(function () {})
+	}).catch(function () {
+		shots_timer = setTimeout(function () { paint_shots(id) }, 5000)
+	})
 }
 
 function order_shots(id, go) {
@@ -1509,8 +1515,9 @@ function shots_html(id, data) {
 		// A refusal is the one holder worth clicking: it is the whole reason the grid is
 		// empty, and the way out of it is a page on the account, not anything here.
 		if (p.error) {
-			return '<figure class="r-shot"><button type="button" class="r-hold r-why" id="rwhy">' +
-				esc(hold) + "</button><figcaption>" + esc(p.client_name) + "</figcaption></figure>"
+			return '<figure class="r-shot"><button type="button" class="r-hold r-why" data-err="' +
+				esc(p.error) + '">' + esc(hold) + "</button><figcaption>" +
+				esc(p.client_name) + "</figcaption></figure>"
 		}
 		return '<figure class="r-shot"><div class="r-hold">' +
 			esc(hold) + "</div><figcaption>" + esc(p.client_name) + "</figcaption></figure>"
@@ -4317,6 +4324,7 @@ $("alert-ok").addEventListener("click", function () { close_window(find("alertwi
  */
 window.addEventListener("focus", function () {
 	if (current && tab === "report") paint_shots(current.id)
+})
 
 var pm = { w: Math.min(660, box.w - 40), h: Math.min(444, box.h - 30) }
 register("poom", "POOM.EXE", {
@@ -4733,6 +4741,7 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			</div>
 		</div>
 		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	</div>
 
 	<!-- Starts closed: it is an icon on the desktop, not something the inbox opens for you. -->
 	<div id="poom" class="child window closed">

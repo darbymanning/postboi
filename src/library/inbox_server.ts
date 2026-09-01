@@ -554,7 +554,7 @@ export function inbox_middleware(
 			const message = store.get(shots_match[1])
 			if (!message) return void send_json(response, 404, { error: "no such message" })
 			const run_id = screenshot_runs.get(message.id)
-			if (!run_id) {
+			if (!run_id || !hosted_token()) {
 				return void send_json(response, 200, {
 					enabled: Boolean(hosted_token()),
 					run_id: null,
