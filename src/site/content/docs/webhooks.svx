@@ -118,7 +118,7 @@ interface WebhookEvent {
 [reply subdomain](/provider#receiving-on-your-own-domain). It reads the other way
 round from the rest —
 `email` is the person who wrote to you, and `message_id` is the send they were replying
-to, when we can tell:
+to, when we can tell. Lettermint's inbound routes arrive the same way:
 
 ```typescript
 export const POST = webhook(async (event) => {
@@ -172,6 +172,8 @@ Providers fall into three camps:
 | Mailtrap | Signed (HMAC of body) | `MAILTRAP_WEBHOOK_SECRET` |
 | Mandrill | Signed (HMAC of URL + params) | `MANDRILL_WEBHOOK_SECRET`; behind a proxy also set `MANDRILL_WEBHOOK_URL` to the exact configured URL |
 | MailPace | Signed (Ed25519) | `MAILPACE_WEBHOOK_SECRET`, the public verification key |
+| Lettermint | Signed (HMAC timestamp+body, 5-minute replay window) | `LETTERMINT_WEBHOOK_SECRET`, the webhook's signing secret |
+| Unosend | Signed (HMAC of body) | `UNOSEND_WEBHOOK_SECRET`, the `whsec_…` signing secret |
 | Postmark, Brevo, SparkPost, Mailjet, ZeptoMail, Elastic Email, Plunk | Shared secret | `<PROVIDER>_WEBHOOK_SECRET`, a token you make up; put the same value in the webhook URL as `?token=…` (or the provider's auth-header option) |
 | Amazon SES, Scaleway | Shared secret over SNS | `SES_WEBHOOK_SECRET` / `SCALEWAY_WEBHOOK_SECRET` as `?token=…` on the subscription URL; SNS subscription handshakes confirm automatically |
 

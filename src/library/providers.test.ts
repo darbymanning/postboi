@@ -13,6 +13,8 @@ import Mandrill from "$library/mandrill.js"
 import Plunk from "$library/plunk.js"
 import Mailtrap from "$library/mailtrap.js"
 import MailPace from "$library/mailpace.js"
+import Lettermint from "$library/lettermint.js"
+import Unosend from "$library/unosend.js"
 import Scaleway from "$library/scaleway.js"
 import SES from "$library/ses.js"
 import Microsoft365 from "$library/microsoft365.js"
@@ -578,6 +580,113 @@ describe("MailPace", () => {
 		fetch.mockResolvedValue(respond({ ok: false, status: 401, json: { error: "unauthorized" } }))
 		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
 		expect(error.message).toBe("unauthorized")
+	})
+})
+
+describe("Lettermint", () => {
+	const mail = () => new Lettermint({ api_key: "lm_token", default: { from: "from@test.com" } })
+
+	it("maps a send to the Lettermint API", async () => {
+		fetch.mockResolvedValue(respond({ json: { message_id: "msg-1", status: "queued" } }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			reply_to: "reply@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			idempotency_key: "idem-1",
+			headers: { "X-Campaign": "spring" },
+			tags: ["welcome"],
+			attachments: attachment(),
+		})
+
+		expect(sent_url()).toBe("https://api.lettermint.co/v1/send")
+		expect(sent_init().headers).toMatchObject({
+			"x-lettermint-token": "lm_token",
+			"Idempotency-Key": "idem-1",
+		})
+		const body = sent_json()
+		expect(body.from).toBe("from@test.com")
+		expect(body.to).toEqual(["To <to@test.com>"])
+		expect(body.cc).toEqual(["cc@test.com"])
+		expect(body.reply_to).toEqual(["reply@test.com"])
+		expect(body.html).toBe("<p>x</p>")
+		expect(body.headers).toEqual({ "X-Campaign": "spring" })
+		expect(body.tags).toEqual([{ name: "welcome", value: "welcome" }])
+		expect(body.route).toBeUndefined()
+		expect(body.settings).toBeUndefined()
+		expect(body.attachments).toEqual([
+			{ filename: "doc.pdf", content: b64("filedata"), content_type: "application/pdf" },
+		])
+		expect(result).toEqual({ message_id: "msg-1", status: "queued" })
+	})
+
+	it("sends through a named route with tracking settings", async () => {
+		fetch.mockResolvedValue(respond({ json: { message_id: "msg-2", status: "queued" } }))
+		await new Lettermint({
+			api_key: "lm_token",
+			route: "transactional",
+			default: { from: "from@test.com" },
+		}).send({
+			to: "to@test.com",
+			body: "x",
+			tracking: { opens: false },
+		})
+		const body = sent_json()
+		expect(body.route).toBe("transactional")
+		expect(body.settings).toEqual({ track_opens: false })
+	})
+
+	it("detects errors", async () => {
+		fetch.mockResolvedValue(respond({ ok: false, status: 422, json: { error: "ValidationError" } }))
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("lettermint")
+		expect(error.message).toContain("ValidationError")
+	})
+})
+
+describe("Unosend", () => {
+	const mail = () => new Unosend({ api_key: "un_key", default: { from: "from@test.com" } })
+
+	it("maps a send to the Unosend API and unwraps the data envelope", async () => {
+		fetch.mockResolvedValue(
+			respond({ json: { success: true, data: { id: "uno-1", status: "queued" } } })
+		)
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			bcc: "bcc@test.com",
+			reply_to: ["reply@test.com", "extra@test.com"],
+			subject: "Hi",
+			body: "<p>x</p>",
+			headers: { "X-Campaign": "spring" },
+			tags: ["welcome"],
+			attachments: attachment(),
+		})
+
+		expect(sent_url()).toBe("https://api.unosend.co/emails")
+		expect(sent_init().headers).toMatchObject({ Authorization: "Bearer un_key" })
+		const body = sent_json()
+		expect(body.from).toBe("from@test.com")
+		expect(body.to).toEqual(["To <to@test.com>"])
+		expect(body.bcc).toEqual(["bcc@test.com"])
+		expect(body.reply_to).toBe("reply@test.com")
+		expect(body.html).toBe("<p>x</p>")
+		expect(body.headers).toEqual({ "X-Campaign": "spring" })
+		expect(body.tags).toEqual([{ name: "welcome", value: "welcome" }])
+		expect(body.attachments).toEqual([
+			{ filename: "doc.pdf", content: b64("filedata"), content_type: "application/pdf" },
+		])
+		expect(result).toEqual({ id: "uno-1", status: "queued" })
+	})
+
+	it("detects errors", async () => {
+		fetch.mockResolvedValue(
+			respond({ ok: false, status: 422, json: { error: { message: "Invalid to", code: 422 } } })
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("unosend")
+		expect(error.message).toContain("Invalid to")
 	})
 })
 

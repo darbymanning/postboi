@@ -49,6 +49,8 @@ Scheduling is done by the provider, so it only works where the provider offers i
 | Brevo         | Passed through as `scheduledAt`.                                     |
 | Mailgun       | Sent as `o:deliverytime`.                                           |
 | SendGrid      | Sent as `send_at`.                                                  |
+| Lettermint    | Passed through as `scheduled_at`.                                    |
+| Unosend       | Sent as `scheduled_for`.                                            |
 
 Every other provider **ignores** `scheduled_at` and sends immediately, so don't lean on it
 with a provider that doesn't support it.

@@ -250,6 +250,29 @@ export const PROVIDERS = [
 		],
 	},
 	{
+		key: "lettermint",
+		name: "Lettermint",
+		import: "postboi/lettermint",
+		class: "Lettermint",
+		url: "https://app.lettermint.co",
+		fields: [
+			{
+				env: "LETTERMINT_SENDING_TOKEN",
+				arg: "api_key",
+				label: "Sending token (lm_…)",
+				secret: true,
+			},
+			{ env: "LETTERMINT_ROUTE", arg: "route", label: "Route slug (optional)", default: "" },
+			{
+				env: "LETTERMINT_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook signing secret (optional)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
 		key: "mailpace",
 		name: "MailPace",
 		import: "postboi/mailpace",
@@ -440,6 +463,23 @@ export const PROVIDERS = [
 				env: "ELASTICEMAIL_WEBHOOK_SECRET",
 				arg: "webhook_secret",
 				label: "Webhook token (optional; also add ?token=… to the notification URL)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
+		key: "unosend",
+		name: "Unosend",
+		import: "postboi/unosend",
+		class: "Unosend",
+		url: "https://app.unosend.co",
+		fields: [
+			{ env: "UNOSEND_API_KEY", arg: "api_key", label: "API key (un_…)", secret: true },
+			{
+				env: "UNOSEND_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook signing secret (whsec_…, optional)",
 				secret: true,
 				default: "",
 			},

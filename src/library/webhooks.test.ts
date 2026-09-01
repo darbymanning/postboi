@@ -359,6 +359,151 @@ describe("receive — provider handling", () => {
 	})
 })
 
+describe("receive — lettermint", () => {
+	it("rejects a stale signature timestamp (replay protection)", async () => {
+		const { request, secret } = await mock_request({ provider: "lettermint", type: "delivered" })
+		const body = await request.text()
+		const stale = String(Math.floor(Date.now() / 1000) - 3600)
+		const key = new TextEncoder().encode(secret)
+		const imported = await crypto.subtle.importKey(
+			"raw",
+			key,
+			{ name: "HMAC", hash: "SHA-256" },
+			false,
+			["sign"]
+		)
+		const digest = new Uint8Array(
+			await crypto.subtle.sign("HMAC", imported, new TextEncoder().encode(`${stale}.${body}`))
+		)
+		const hex = [...digest].map((b) => b.toString(16).padStart(2, "0")).join("")
+		const replay = new Request("https://example.com/webhooks", {
+			method: "POST",
+			headers: { "x-lettermint-signature": `t=${stale},v1=${hex}` },
+			body,
+		})
+		const error = await receive(replay, { provider: "lettermint", secret }).catch((e) => e)
+		expect(error).toBeInstanceOf(WebhookVerificationError)
+		expect(error.code).toBe("stale_timestamp")
+	})
+
+	it("rejects when the delivery header disagrees with the signed timestamp", async () => {
+		const { request, secret } = await mock_request({ provider: "lettermint", type: "delivered" })
+		const headers = new Headers(request.headers)
+		headers.set("x-lettermint-delivery", "1")
+		const forged = new Request(request.url, { method: "POST", headers, body: await request.text() })
+		const error = await receive(forged, { provider: "lettermint", secret }).catch((e) => e)
+		expect(error).toBeInstanceOf(WebhookVerificationError)
+		expect(error.code).toBe("invalid_signature")
+	})
+
+	it("classifies bounces and folds the reserved tag entry into one tag", async () => {
+		const { request, secret } = await mock_request({ provider: "lettermint", type: "bounced" })
+		const [event] = await receive(request, { provider: "lettermint", secret })
+		expect(event.bounce).toEqual({ category: "hard", detail: "mailbox unavailable" })
+		expect(event.tags).toEqual(["welcome"])
+
+		const soft = JSON.stringify({
+			event: "message.soft_bounced",
+			timestamp: new Date().toISOString(),
+			data: { message_id: "m", recipient: "r@example.com", response: { content: "try later" } },
+		})
+		const suppressed = JSON.stringify({
+			event: "message.suppressed",
+			timestamp: new Date().toISOString(),
+			data: { message_id: "m", recipient: "r@example.com", reason: "hard_bounce" },
+		})
+		const { default: adapter } = await import("./webhooks/lettermint.js")
+		const ctx = { headers: new Headers(), url: new URL("https://example.com/webhooks") }
+		expect((await adapter.normalize(soft, ctx))[0].bounce).toEqual({
+			category: "soft",
+			detail: "try later",
+		})
+		expect((await adapter.normalize(suppressed, ctx))[0].bounce).toEqual({
+			category: "suppressed",
+			detail: "hard_bounce",
+		})
+	})
+
+	it("turns inbound mail into received, with the sender as the address", async () => {
+		const { request, secret } = await mock_request({ provider: "lettermint", type: "received" })
+		const [event] = await receive(request, { provider: "lettermint", secret })
+		expect(event.type).toBe("received")
+		expect(event.email).toBe("someone@example.com")
+		expect(event.body?.text).toContain("works for me")
+	})
+
+	it("ignores non-delivery events (created, suppression.*, webhook.test)", async () => {
+		const { default: adapter } = await import("./webhooks/lettermint.js")
+		const ctx = { headers: new Headers(), url: new URL("https://example.com/webhooks") }
+		for (const event of ["message.created", "suppression.added", "webhook.test"]) {
+			expect(await adapter.normalize(JSON.stringify({ event, data: {} }), ctx)).toEqual([])
+		}
+	})
+})
+
+describe("receive — unosend", () => {
+	it("classifies bounces and reads the first recipient of an array", async () => {
+		const { default: adapter } = await import("./webhooks/unosend.js")
+		const ctx = { headers: new Headers(), url: new URL("https://example.com/webhooks") }
+		const soft = JSON.stringify({
+			type: "email.bounced",
+			created_at: new Date().toISOString(),
+			data: {
+				email_id: "eml_1",
+				to: ["first@example.com", "second@example.com"],
+				bounce_type: "soft",
+				bounce_reason: "Mailbox full",
+			},
+		})
+		const [event] = await adapter.normalize(soft, ctx)
+		expect(event.email).toBe("first@example.com")
+		expect(event.bounce).toEqual({ category: "soft", detail: "Mailbox full" })
+	})
+
+	it("verifies whichever reading of the whsec_ secret the vendor signs with", async () => {
+		const { default: adapter } = await import("./webhooks/unosend.js")
+		const { hmac_sha256, hex_encode, base64_encode } = await import("./webhooks/crypto.js")
+		const body = JSON.stringify({ type: "email.delivered", data: { email_id: "e" } })
+		const raw = new Uint8Array(24).fill(7)
+		const secret = `whsec_${base64_encode(raw)}`
+		const keys: Array<Uint8Array | string> = [secret, secret.slice(6), raw]
+		for (const key of keys) {
+			const signature = hex_encode(await hmac_sha256(key, body))
+			await expect(
+				adapter.verify({
+					body,
+					headers: new Headers({ "x-unosend-signature": `sha256=${signature}` }),
+					url: new URL("https://example.com/webhooks"),
+					secret,
+				})
+			).resolves.toBeUndefined()
+		}
+		const wrong = hex_encode(await hmac_sha256("something-else", body))
+		await expect(
+			adapter.verify({
+				body,
+				headers: new Headers({ "x-unosend-signature": `sha256=${wrong}` }),
+				url: new URL("https://example.com/webhooks"),
+				secret,
+			})
+		).rejects.toBeInstanceOf(WebhookVerificationError)
+	})
+
+	it("accepts the signature with or without its sha256= prefix", async () => {
+		const { request, secret } = await mock_request({ provider: "unosend", type: "opened" })
+		const body = await request.text()
+		const bare = request.headers.get("x-unosend-signature")!.replace(/^sha256=/, "")
+		const unprefixed = new Request(request.url, {
+			method: "POST",
+			headers: { "x-unosend-signature": bare },
+			body,
+		})
+		const [event] = await receive(unprefixed, { provider: "unosend", secret })
+		expect(event.client?.name).toBeTruthy()
+		expect(event.ip).toBe("192.0.2.1")
+	})
+})
+
 describe("mock_event", () => {
 	it("builds a normalized event with sensible defaults and overrides", () => {
 		const event = mock_event("clicked", { email: "user@example.com" })
@@ -385,6 +530,8 @@ describe("receive — every provider round-trips through mock_request", () => {
 		["sparkpost", ["delivered", "opened", "clicked", "bounced"]],
 		["mailjet", ["delivered", "opened", "clicked", "bounced"]],
 		["mailtrap", ["delivered", "opened", "clicked", "bounced"]],
+		["lettermint", ["delivered", "opened", "clicked", "bounced"]],
+		["unosend", ["delivered", "opened", "clicked", "bounced"]],
 		["zepto", ["delivered", "opened", "clicked", "bounced"]],
 		["elasticemail", ["delivered", "opened", "clicked", "bounced"]],
 		// Plunk's documented payload is minimal — no click URL surfaced.
@@ -429,7 +576,15 @@ describe("receive — every provider round-trips through mock_request", () => {
 	})
 
 	it("signed providers reject a wrong secret", async () => {
-		for (const provider of ["sendgrid", "mailgun", "mailersend", "mandrill", "mailtrap"]) {
+		for (const provider of [
+			"sendgrid",
+			"mailgun",
+			"mailersend",
+			"mandrill",
+			"mailtrap",
+			"lettermint",
+			"unosend",
+		]) {
 			const { request } = await mock_request({ provider, type: "delivered" })
 			const error = await receive(request, {
 				provider: provider as never,

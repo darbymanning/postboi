@@ -38,6 +38,8 @@ anything you leave out. The resulting open/click events arrive via
 | Mailjet | `TrackOpens` / `TrackClicks` |
 | Elastic Email | `Options.TrackOpens` / `Options.TrackClicks` |
 | ZeptoMail | `track_opens` / `track_clicks` |
+| Lettermint | `settings.track_opens` / `settings.track_clicks` |
+| Unosend | `tracking.open` / `tracking.click` |
 
 Providers whose tracking is configured at the **domain level** (Resend) or account level
 ignore the per-send flags. Configure tracking in their dashboard instead. Every other
