@@ -141,13 +141,15 @@ swallowed, and inbound HTML is sanitised before it's stored.
 
 ## Receiving on your own domain
 
-A verified domain can receive as well as send, on a dedicated subdomain. Turn it on
-from **Domains** (or `POST /v1/domains/{id}/inbound`) and publish the two records it
-prints — a TXT and an MX, both on `reply.yourdomain.com`. Once they're live, mail to
+Your domain receives as well as sends, on a dedicated subdomain — and for a new
+domain it's part of standard setup: the two records it needs (a TXT and an MX, both
+on `reply.yourdomain.com`) are in the same list as the sending ones, covered by the
+same one-click registrar apply where yours supports it. Once they're live, mail to
 **any** address on that subdomain — `support@reply.yourdomain.com`,
 `ada+ticket-42@reply.yourdomain.com` — lands in Received, fires `email.received`, and
 can be answered from the dashboard, where the reply goes out from the address the mail
-was written to.
+was written to. The switch on the domain turns receiving off (and back on for domains
+added before this was the default, or via `POST /v1/domains/{id}/inbound`).
 
 The MX lives on the subdomain on purpose. Pointing your domain's own MX at us would
 take over your real mailboxes, so that is never asked for — `you@yourdomain.com`
