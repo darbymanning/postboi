@@ -281,6 +281,7 @@ bunx postboi webhooks add https://example.com/api/events
 bunx postboi sync                                  # writes the webhook secret to POSTBOI_WEBHOOK_SECRET
 bunx postboi members invite colleague@example.com
 bunx postboi suppressions add bounced@example.com
+bunx postboi suppressions add +447788223344         # a number is suppressed per channel: SMS here, --channel whatsapp for the other
 bunx postboi messages                              # recent sends with delivery status
 bunx postboi webhooks deliveries <id>              # per-endpoint delivery log for debugging
 ```

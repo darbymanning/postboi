@@ -414,6 +414,12 @@ describe("the Postboi provider — account API", () => {
 		expect(sent_init().method).toBe("POST")
 		expect(sent_json()).toEqual({ email: "ada@test.com", name: "Ada", data: { plan: "pro" } })
 
+		// The delivery profile: a phone rides along on add and update, and null clears it.
+		await provider().contacts.add("ada@test.com", { phone: "+447788223344" })
+		expect(sent_json()).toEqual({ email: "ada@test.com", phone: "+447788223344" })
+		await provider().contacts.update("ada@test.com", { phone: null })
+		expect(sent_json()).toEqual({ phone: null })
+
 		await provider().contacts.get("a+b@test.com")
 		expect(sent_url()).toBe("https://postboi.app/v1/contacts/a%2Bb%40test.com")
 		expect(sent_init().method).toBe("GET")
@@ -432,6 +438,32 @@ describe("the Postboi provider — account API", () => {
 		const lists = await provider().contacts.lists("ada@test.com")
 		expect(sent_url()).toBe("https://postboi.app/v1/contacts/ada%40test.com/lists")
 		expect(lists).toEqual([{ status: "subscribed" }])
+	})
+
+	it("suppressions: an email is a string, a number is per channel", async () => {
+		fetch.mockResolvedValue(respond({ json: { suppressions: [] } }))
+		await provider().suppressions.all()
+		expect(sent_url()).toBe("https://postboi.app/v1/suppressions")
+		await provider().suppressions.all({ channel: "sms" })
+		expect(sent_url()).toBe("https://postboi.app/v1/suppressions?channel=sms")
+
+		fetch.mockResolvedValue(respond({ json: { suppressed: true } }))
+		await provider().suppressions.add("noisy@test.com")
+		expect(sent_init().method).toBe("POST")
+		expect(sent_json()).toEqual({ email: "noisy@test.com" })
+		await provider().suppressions.add({ phone: "+447788223344" })
+		expect(sent_json()).toEqual({ phone: "+447788223344", channel: "sms" })
+		await provider().suppressions.add({ phone: "+447788223344", channel: "whatsapp" })
+		expect(sent_json()).toEqual({ phone: "+447788223344", channel: "whatsapp" })
+
+		fetch.mockResolvedValue(respond({ json: { deleted: true } }))
+		await provider().suppressions.remove("noisy@test.com")
+		expect(sent_url()).toBe("https://postboi.app/v1/suppressions?email=noisy%40test.com")
+		expect(sent_init().method).toBe("DELETE")
+		await provider().suppressions.remove({ phone: "+447788223344", channel: "whatsapp" })
+		expect(sent_url()).toBe(
+			"https://postboi.app/v1/suppressions?phone=%2B447788223344&channel=whatsapp"
+		)
 	})
 
 	it("contacts.all follows the cursor and unwraps contacts", async () => {

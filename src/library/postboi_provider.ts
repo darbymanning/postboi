@@ -150,11 +150,17 @@ export type ListRecipientInput = Email | NewListRecipient
  * this. */
 export type MembershipStatus = "subscribed" | "pending" | "unsubscribed"
 
-/** A contact — one per address per account. `email` is the handle; `data` holds the
- * contact's global `{key}` broadcast variables, shared across every list it's on. */
+/**
+ * A contact — one per address per account. `email` is the handle; `data` holds the
+ * contact's global `{key}` broadcast variables, shared across every list it's on.
+ * `phone` is the contact's mobile number in E.164, the one SMS and WhatsApp reach —
+ * the first of the delivery profile that multi-channel sending is built on.
+ */
 export interface Contact {
 	email: string
 	name?: string
+	/** E.164 (`+447788223344`), or absent when the contact has no number on file. */
+	phone?: string
 	data?: Record<string, string>
 	created_at: string
 	updated_at: string
@@ -174,16 +180,34 @@ export type ContactDetails = Contact & { memberships: Array<Membership> }
 /** Fields `contacts.add`/`contacts.update` accept. Absent fields keep stored values. */
 export interface ContactInput {
 	name?: string
+	/** The contact's mobile number, in E.164 (`+447788223344`). */
+	phone?: string
 	data?: Record<string, string>
 }
 
-/** One suppressed address on the account. */
-export interface Suppression {
-	email: string
+/**
+ * The channels a suppression can be on. Email has its own entry; a phone number is
+ * suppressed per channel, because "stop texting me" and "stop WhatsApping me" are
+ * two different things a person can say, and the law treats them separately.
+ */
+export type SuppressionChannel = "email" | "sms" | "whatsapp"
+
+/**
+ * One suppressed address on the account. Narrow on `channel` before reading the
+ * address: an email suppression carries `email`, a text one carries `phone` — never
+ * both, and never a number in a field called `email`.
+ */
+export type Suppression = {
 	reason: "bounce" | "complaint" | "unsubscribe" | "manual"
 	detail?: string
 	created_at: string
-}
+} & ({ channel: "email"; email: string } | { channel: "sms" | "whatsapp"; phone: string })
+
+/**
+ * What `suppressions.add`/`remove` take: an email address as a bare string, or a phone
+ * number — `channel` defaults to `sms` for a number, and `whatsapp` is the other option.
+ */
+export type SuppressionTarget = string | { phone: string; channel?: "sms" | "whatsapp" }
 
 /** The message broadcast to every recipient on a list. */
 export interface BroadcastOptions {
@@ -577,16 +601,22 @@ export default class Postboi extends ProviderBase<SendResponse> {
 		 * ```
 		 */
 		add: (email: string, contact: ContactInput = {}): Promise<Contact> =>
-			this.#api("/contacts", { body: { email, name: contact.name, data: contact.data } }),
+			this.#api("/contacts", {
+				body: { email, name: contact.name, phone: contact.phone, data: contact.data },
+			}),
 
 		/** One contact with its list memberships. */
 		get: (email: string): Promise<ContactDetails> =>
 			this.#api(`/contacts/${encodeURIComponent(email)}`, { method: "GET" }),
 
-		/** Update a contact's global name and/or `data`. Pass `null` to clear a field. */
+		/** Update a contact's global name, phone and/or `data`. Pass `null` to clear a field. */
 		update: (
 			email: string,
-			changes: { name?: string | null; data?: Record<string, string> | null }
+			changes: {
+				name?: string | null
+				phone?: string | null
+				data?: Record<string, string> | null
+			}
 		): Promise<Contact> =>
 			this.#api(`/contacts/${encodeURIComponent(email)}`, { method: "PATCH", body: changes }),
 
@@ -693,23 +723,55 @@ export default class Postboi extends ProviderBase<SendResponse> {
 			}),
 	}
 
-	/** The account's suppression list — addresses every send is dropped for. */
+	/**
+	 * The account's suppression list — addresses every send is dropped for. Email
+	 * addresses land here from hard bounces, complaints and the unsubscribe link; phone
+	 * numbers from a texted STOP (surfaced by `poll()` on Twilio) or by hand. Each
+	 * number is suppressed per channel: `{ phone }` means SMS, `{ phone, channel:
+	 * "whatsapp" }` the other.
+	 */
 	readonly suppressions = {
-		/** Every suppressed address on the account. */
-		all: async (): Promise<Array<Suppression>> => {
-			const data = await this.#api<{ suppressions: Array<Suppression> }>("/suppressions", {
+		/** Every suppressed address on the account, optionally on one channel. */
+		all: async (options: { channel?: SuppressionChannel } = {}): Promise<Array<Suppression>> => {
+			const query = options.channel ? `?channel=${encodeURIComponent(options.channel)}` : ""
+			const data = await this.#api<{ suppressions: Array<Suppression> }>(`/suppressions${query}`, {
 				method: "GET",
 			})
 			return data.suppressions
 		},
 
-		/** Suppress an address by hand, so future sends to it are dropped. */
-		add: (email: string): Promise<{ email: string; suppressed: boolean }> =>
-			this.#api("/suppressions", { body: { email } }),
+		/**
+		 * Suppress an address by hand, so future sends to it are dropped.
+		 *
+		 * @example
+		 * ```ts
+		 * await mail.suppressions.add("noisy@example.com")
+		 * await mail.suppressions.add({ phone: "+447788223344" }) // SMS
+		 * await mail.suppressions.add({ phone: "+447788223344", channel: "whatsapp" })
+		 * ```
+		 */
+		add: (
+			target: SuppressionTarget
+		): Promise<
+			{ suppressed: boolean } & ({ email: string } | { phone: string; channel: string })
+		> =>
+			this.#api("/suppressions", {
+				body:
+					typeof target === "string"
+						? { email: target }
+						: { phone: target.phone, channel: target.channel ?? "sms" },
+			}),
 
 		/** Remove an address from the suppression list, so sending to it resumes. */
-		remove: (email: string): Promise<{ email: string; deleted: boolean }> =>
-			this.#api(`/suppressions?email=${encodeURIComponent(email)}`, { method: "DELETE" }),
+		remove: (
+			target: SuppressionTarget
+		): Promise<{ deleted: boolean } & ({ email: string } | { phone: string; channel: string })> =>
+			this.#api(
+				typeof target === "string"
+					? `/suppressions?email=${encodeURIComponent(target)}`
+					: `/suppressions?phone=${encodeURIComponent(target.phone)}&channel=${encodeURIComponent(target.channel ?? "sms")}`,
+				{ method: "DELETE" }
+			),
 	}
 
 	/**
