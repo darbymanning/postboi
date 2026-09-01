@@ -1,4 +1,5 @@
 import type { WebhookAdapter, WebhookEventType, BounceDetail, AdapterModule } from "./index.js"
+import type { Channel } from "../errors.js"
 import { parse_json, engagement, to_date, svix_adapter_verify } from "./shared.js"
 import { hmac_sha256, base64_encode, base64_decode } from "./crypto.js"
 
@@ -29,6 +30,12 @@ interface PostboiPayload {
 	}
 }
 
+/**
+ * Wire type → normalized type. The prefix says which channel, and the suffix says what
+ * happened — so one shared vocabulary covers all three: an SMS that reached the handset
+ * is `delivered` exactly like an email that reached the inbox, and WhatsApp's read
+ * receipt is the same fact as an email open.
+ */
 const TYPES: Record<string, WebhookEventType> = {
 	"email.sent": "sent",
 	"email.delivered": "delivered",
@@ -38,6 +45,23 @@ const TYPES: Record<string, WebhookEventType> = {
 	"email.clicked": "clicked",
 	"email.failed": "failed",
 	"email.received": "received",
+	"sms.sent": "sent",
+	"sms.delivered": "delivered",
+	"sms.failed": "failed",
+	"whatsapp.sent": "sent",
+	"whatsapp.delivered": "delivered",
+	"whatsapp.read": "opened",
+	"whatsapp.failed": "failed",
+}
+
+/**
+ * The channel a wire type belongs to, from its own prefix — no second table to keep in
+ * step. Undefined for `email.*`, which leaves `channel` unset: absent means email, and
+ * a payload from a Postboi that predates channels shouldn't start claiming one.
+ */
+function channel_of(wire_type: string): Channel | undefined {
+	const prefix = wire_type.slice(0, wire_type.indexOf("."))
+	return prefix === "sms" || prefix === "whatsapp" ? prefix : undefined
 }
 
 const BOUNCE_CATEGORIES = new Set(["hard", "soft", "suppressed"])
@@ -64,14 +88,18 @@ const adapter: WebhookAdapter = {
 		if (!type) return []
 
 		const data = payload.data ?? {}
+		const channel = channel_of(payload.type)
 		return [
 			{
 				type,
 				provider: "postboi",
+				channel,
+				// On a text-message event `to` is a number, so it goes where numbers go.
+				phone: channel ? data.to : undefined,
 				// An inbound reply is about the person who wrote it, and the id worth
 				// carrying is the send they answered — not the inbound message's own.
 				message_id: type === "received" ? data.in_reply_to : data.message_id,
-				email: type === "received" ? data.from : data.to,
+				email: channel ? undefined : type === "received" ? data.from : data.to,
 				timestamp: to_date(data.timestamp ?? payload.created_at),
 				subject: data.subject,
 				tags: data.tags,
@@ -91,13 +119,18 @@ const adapter: WebhookAdapter = {
 export default adapter
 
 /** Build a realistic signed Postboi sample request — used by `mock_request` and tests. */
-export const mock: AdapterModule["mock"] = async ({ type, secret }) => {
-	const postboi_type = Object.entries(TYPES).find(([, t]) => t === type)?.[0] ?? "email.delivered"
+export const mock: AdapterModule["mock"] = async ({ type, secret, channel }) => {
+	// Two wire types now share most normalized types, so the reverse lookup is scoped
+	// by channel; without one, email is what a sample is about.
+	const prefix = channel === "sms" || channel === "whatsapp" ? channel : "email"
+	const postboi_type =
+		Object.entries(TYPES).find(([wire, t]) => t === type && wire.startsWith(`${prefix}.`))?.[0] ??
+		`${prefix}.delivered`
 	const now = new Date().toISOString()
 	const data: NonNullable<PostboiPayload["data"]> = {
 		message_id: "mock-message-id",
 		from: "mock@example.com",
-		to: "recipient@example.com",
+		to: prefix === "email" ? "recipient@example.com" : "+15557770006",
 		subject: "Mock subject",
 		timestamp: now,
 	}

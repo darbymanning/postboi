@@ -21,6 +21,7 @@
  * On SvelteKit, use the ready-made handler from `postboi/kit` instead.
  */
 import { PostboiError } from "../index.js"
+import type { Channel } from "../errors.js"
 import type { ProviderKey } from "../registry.js"
 import { load_config } from "../config.js"
 import { ensure_env_loaded, read_env } from "../env.js"
@@ -84,6 +85,18 @@ export interface WebhookEvent {
 	message_id?: string
 	/** The recipient this event is about — on `received`, the sender who wrote to you. */
 	email?: string
+	/**
+	 * Which channel this event is about. Absent means email — every provider that
+	 * predates multi-channel delivery events leaves it unset, and email is what they
+	 * were all about.
+	 */
+	channel?: Channel
+	/**
+	 * The number this event is about, for `sms` and `whatsapp` events — in E.164, and
+	 * without the `whatsapp:` prefix Twilio addresses carry. Deliberately not `email`:
+	 * a handler that reads `event.email` should never be handed a phone number.
+	 */
+	phone?: string
 	/** When the event happened. */
 	timestamp?: Date
 	/** The message subject, when the provider includes it. */
@@ -147,6 +160,13 @@ export interface AdapterModule {
 		type: WebhookEventType
 		secret: string
 		url: string
+		/**
+		 * Which channel the sample is about, for providers whose payloads cover more
+		 * than email (the Postboi provider's `sms.*` / `whatsapp.*`). Without it the
+		 * shared normalized types map back to more than one wire type, and the sample
+		 * would be whichever the table happened to list first.
+		 */
+		channel?: Channel
 	}) => Promise<{ body: string; headers?: Record<string, string>; url?: string; secret?: string }>
 }
 
