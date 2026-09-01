@@ -177,7 +177,15 @@ describe("a config file's options never reach another provider", () => {
 		}
 
 		expect(reachable(registry.SMS_PROVIDERS as never)).toEqual([])
-		expect(reachable(registry.PUSH_PROVIDERS as never)).toEqual([])
+		// Expo needs no credential at all, so every sibling's bag "reaches" it trivially —
+		// and takes nothing from that bag, which is what the exploit needs. Pinned so a
+		// real subset appearing among the others is still visible.
+		expect(reachable(registry.PUSH_PROVIDERS as never)).toEqual([
+			"webpush -> expo",
+			"fcm -> expo",
+			"apns -> expo",
+			"hms -> expo",
+		])
 		expect(reachable(registry.WHATSAPP_PROVIDERS as never)).toEqual([])
 		// The two that are exploitable, so the numbers moving is visible rather than silent.
 		expect(reachable(registry.CHAT_PROVIDERS as never)).toHaveLength(6)
@@ -338,7 +346,9 @@ describe("provider inference reads intent, not ambience", () => {
 		// a new provider joins it deliberately, in a diff someone reads.
 		const keys = (channel: (typeof CHANNELS)[number]) =>
 			inferable_channel_providers(channel).map((p) => p.key)
-		expect(keys("push")).toEqual(["webpush", "fcm", "apns", "hms"])
+		// Expo is inferable from EXPO_ACCESS_TOKEN alone — its one field, and optional —
+		// but never from nothing: inference wants at least one credential actually set.
+		expect(keys("push")).toEqual(["webpush", "fcm", "apns", "hms", "expo"])
 		// Twilio is absent from both: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are the
 		// Twilio SDK's zero-argument defaults, so anyone using Voice or Verify has them set
 		// for reasons unrelated to sending a message. sns is absent for the same reason,

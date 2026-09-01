@@ -198,13 +198,13 @@ In development, texts and WhatsApp messages are **logged, never sent** — the s
 no-way-to-mail-a-customer-from-your-laptop guarantee the dev inbox gives email, but
 stricter, because a stray text costs money and can't be recalled.
 
-| Channel                  | Docs                                                           |
-| ------------------------ | -------------------------------------------------------------- |
-| Multi-channel `send()`   | [docs.postboi.app/send](https://docs.postboi.app/send)         |
-| SMS (and RCS)            | [docs.postboi.app/sms](https://docs.postboi.app/sms)           |
-| WhatsApp                 | [docs.postboi.app/whatsapp](https://docs.postboi.app/whatsapp) |
-| Push (Web Push, FCM)     | [docs.postboi.app/push](https://docs.postboi.app/push)         |
-| Chat (Slack, Discord, …) | [docs.postboi.app/slack](https://docs.postboi.app/slack)       |
+| Channel                          | Docs                                                           |
+| -------------------------------- | -------------------------------------------------------------- |
+| Multi-channel `send()`           | [docs.postboi.app/send](https://docs.postboi.app/send)         |
+| SMS (and RCS)                    | [docs.postboi.app/sms](https://docs.postboi.app/sms)           |
+| WhatsApp                         | [docs.postboi.app/whatsapp](https://docs.postboi.app/whatsapp) |
+| Push (Web Push, FCM, APNs, Expo) | [docs.postboi.app/push](https://docs.postboi.app/push)         |
+| Chat (Slack, Discord, …)         | [docs.postboi.app/slack](https://docs.postboi.app/slack)       |
 
 ## Development
 

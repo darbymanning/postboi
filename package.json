@@ -197,6 +197,10 @@
 			"types": "./dist/push/hms.d.ts",
 			"default": "./dist/push/hms.js"
 		},
+		"./expo": {
+			"types": "./dist/push/expo.d.ts",
+			"default": "./dist/push/expo.js"
+		},
 		"./push-mock": {
 			"types": "./dist/push/mock.d.ts",
 			"default": "./dist/push/mock.js"
@@ -208,6 +212,10 @@
 		"./push/sw": {
 			"types": "./dist/push/sw.d.ts",
 			"default": "./dist/push/sw.js"
+		},
+		"./push/expo": {
+			"types": "./dist/push/native.d.ts",
+			"default": "./dist/push/native.js"
 		},
 		"./whatsapp-twilio": {
 			"types": "./dist/whatsapp/twilio.d.ts",
@@ -273,6 +281,8 @@
 	"peerDependencies": {
 		"@maizzle/framework": "^6.0.0",
 		"@sveltejs/kit": "^2.0.0",
+		"expo-constants": ">=15",
+		"expo-notifications": ">=0.20",
 		"react": ">=18",
 		"svelte": "^5.7.0",
 		"vue": ">=3.3"
@@ -282,6 +292,12 @@
 			"optional": true
 		},
 		"@sveltejs/kit": {
+			"optional": true
+		},
+		"expo-constants": {
+			"optional": true
+		},
+		"expo-notifications": {
 			"optional": true
 		},
 		"react": {

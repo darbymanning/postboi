@@ -1,7 +1,7 @@
 ---
 title: Push
 name: Push
-description: Web Push, FCM, APNs and Huawei with push() — the only channel that costs nothing per message, and the only one where the address has to be registered first.
+description: Web Push, FCM, APNs, Huawei and Expo with push() — the only channel that costs nothing per message, and the only one where the address has to be registered first.
 category: Channels
 ---
 
@@ -13,7 +13,7 @@ await push({ to: subscription, title: "Order shipped", message: "On its way" })
 
 Push is the odd one out in two ways, and both shape how you use it.
 
-**It costs nothing.** FCM, APNs, Push Kit and Web Push are free from Google, Apple, Huawei
+**It costs nothing.** FCM, APNs, Push Kit, Expo's push service and Web Push are free from Google, Apple, Huawei, Expo
 and the browser vendors — there is no carrier and no termination fee anywhere in the chain. That's why push
 sits first in [`send()`'s cost ordering](/send#cheapest-first): routing a message to push
 instead of SMS doesn't save a percentage, it saves the entire cost.
@@ -65,10 +65,12 @@ a push service that answers 401 without saying why.
 | FCM | `postboi/fcm` | [Android](#android) apps — the only route to them, and it reaches iOS too |
 | APNs | `postboi/apns` | Apple apps, [direct](#ios) — no Firebase in the middle |
 | HMS | `postboi/hms` | [Huawei](#android) phones, which have no Play Services |
+| Expo | `postboi/expo` | [Expo and React Native](#expo-and-react-native) apps on both platforms, with Expo holding the FCM and APNs credentials |
 
-Those are the **server** imports — the senders. The browser half is a different import
+Those are the **server** imports — the senders. The client half is a different import
 on purpose: `postboi/push`, next, carries no provider and no private key, so neither can
-end up in a client bundle by accident.
+end up in a client bundle by accident. A phone gets the same helper as `postboi/push/expo`,
+[below](#in-the-app).
 
 ## Subscribing, in the browser
 
@@ -172,6 +174,7 @@ the browser subscription back, so there's never an address the server doesn't kn
 | Svelte | `subscription` from `postboi/svelte` | Reactive — `push.on` |
 | React | `usePush` from `postboi/react` | Hook — `push.on` |
 | Vue | `use_push` from `postboi/vue` | Composable — `on.value` |
+| Expo / React Native | `usePush` from `postboi/push/expo` | Hook — `push.on`, over the phone's [registration](#expo-and-react-native) |
 | Anything else | `subscription` from `postboi/push` | Store contract — `push.subscribe(fn)`, plain `push.on` reads |
 
 The last row is the machine the other three wrap, framework-neutral and plain DOM. Reach
@@ -517,3 +520,150 @@ either way.
 
 Web Push also works on iOS 16.4+, but **only for a home-screen web app**, and the user has
 to add it to their home screen first. Worth knowing before you build a flow around it.
+
+## Expo and React Native
+
+Two halves, like the browser: the app registers, the server sends. Both are JavaScript,
+so both ship in this package — there is no native SDK to install, and none coming. The
+app already has everything registration needs in `expo-notifications`; what was missing
+was the same small helper the browser gets, so the two apps read the same.
+
+### In the app
+
+```typescript
+import { subscribe } from "postboi/push/expo"
+
+const registration = await subscribe()
+await fetch("https://example.com/api/push/register", {
+	method: "POST",
+	headers: { "Content-Type": "application/json" },
+	body: JSON.stringify(registration), // { token, provider: "expo", platform }
+})
+```
+
+`token` is an `ExponentPushToken[…]` — what `postboi/expo` sends to — and `provider` says
+so, because a token from one push provider is meaningless to the others. Store both.
+**Call it on every launch**: it reuses the token the device has, tokens rotate, and the
+OS asks for permission at most once either way.
+
+Same surface as the browser, with the same names, so a settings screen shared between
+the two apps reads alike:
+
+| Call | Answers |
+| --- | --- |
+| `subscribe.supported()` | Is push available here? Not on the web build, not in Expo Go on Android |
+| `subscribe.permission()` | `"granted"`, `"denied"`, `"undetermined"` or `"unsupported"` — async, the OS is asked |
+| `subscribe.current()` | The registration this device holds, or null. Never prompts |
+| `subscribe.reason(error)` | Which wall a subscribe hit, or null for an error that wasn't ours |
+
+`unsubscribe()` unregisters the device and hands back the registration so you know which
+row to delete.
+
+On Android the helper creates the notification channel **before** asking — on Android 13+
+there is no permission prompt without one, and the OS answers "denied" as though the
+user had. Pass `channel: { id, name }` to name it; a send that names no `channelId` lands
+there.
+
+| Reason | What happened |
+| --- | --- |
+| `permission_denied` | The user said no. The OS will not ask again — they change it in Settings. |
+| `permission_dismissed` | The prompt was closed without an answer. You can ask again later. |
+| `unsupported` | The web build (use `postboi/push`), or Expo Go on Android, which lost remote push in SDK 53 — use a development build. |
+| `missing_project` | No EAS project id. `eas init` writes one to `app.json`, or pass `{ project_id }`. |
+| `failed` | Expo couldn't mint a token. |
+
+Simulators are fine: iOS since Xcode 14, Android emulators with Play services. That's
+new enough that older guides still tell you to check for a physical device; this helper
+doesn't.
+
+#### The toggle
+
+React Native is React, so the toggle is `usePush` — same shape as `postboi/react`'s, over
+the phone's registration:
+
+```tsx
+import { usePush } from "postboi/push/expo"
+import AsyncStorage from "@react-native-async-storage/async-storage"
+
+const push = usePush({
+	register: "https://example.com/push/registrations",
+	unregister: "https://example.com/push/registrations",
+	storage: AsyncStorage,
+})
+
+<Switch value={push.on} disabled={push.busy || !push.supported} onValueChange={push.toggle} />
+```
+
+Two things differ from the browser. `register` needs an **absolute URL** — a phone has no
+origin to resolve a relative one against. And `storage` is where the off switch is
+remembered: the OS remembers *permission*, but not that someone turned push off in your
+app while it stayed granted, which is exactly the state a toggle has to render after a
+restart. Anything with AsyncStorage's `getItem`/`setItem`/`removeItem` will do; without
+it the switch lasts until the app restarts. `subscription()` is the same machine for
+anything that isn't a component.
+
+The phone does have one thing the browser page lacks: it hears when the OS rotates the
+token underneath a running app. While something is rendering the toggle, a rotated token
+is re-filed at `register` on its own — the page-side twin of what the service worker does
+on `pushsubscriptionchange`.
+
+#### Raw device tokens instead
+
+If the server already sends through `postboi/fcm` and `postboi/apns`, skip Expo's service:
+
+```typescript
+const registration = await subscribe({ native: true })
+// { token: "…", provider: "apns" | "fcm", platform: "ios" | "android" }
+```
+
+`provider` follows the platform, and it's what to pick the sender by — the reason to store
+it. This is the route with two credentials on the server instead of none; Expo's is the
+one below.
+
+### On the server
+
+```bash
+# .env
+POSTBOI_PUSH_PROVIDER=expo
+```
+
+And that's the setup. Expo's push service holds your FCM and APNs credentials — set up
+once with `eas credentials`, where the app's build already needs them — and forwards to
+both, so the server carries nothing. The one credential that exists is optional:
+`EXPO_ACCESS_TOKEN`, only once **Enhanced Security for Push Notifications** is switched
+on for the project, and setting it alone is enough for postboi to infer `expo` without
+naming it.
+
+```typescript
+import { push } from "postboi"
+
+await push({ to: registration.token, title: "Order shipped", message: "On its way" })
+```
+
+`push.expired(error)` covers Expo too — its `DeviceNotRegistered` is the same instruction
+as a 410: delete your stored copy.
+
+**A 200 is a ticket, not a delivery.** Expo has taken the message and will pass it on;
+whether Apple or Google took it shows up in a **receipt** Expo keeps for a day, and that's
+where `DeviceNotRegistered` usually arrives. Fetch them at least once — a job an hour
+later is plenty:
+
+```typescript
+import Expo from "postboi/expo"
+
+const notify = new Expo()
+const { id } = await notify.send({ to: token, message: "…" })
+
+// Later.
+const receipts = await notify.receipts([id])
+const receipt = receipts[id] // absent until Expo hears back
+if (receipt && !receipt.ok && Expo.is_expired(receipt.error)) await forget_token(token)
+```
+
+Each receipt is `{ ok: true }` or carries the same `PostboiError` the send would have
+thrown, so the expiry check is the one you already have.
+
+Payloads are capped at **4096 bytes** of title, body and data together — checked before
+sending, like the other providers. Expo also rate-limits at 600 notifications a second
+per project and answers 429 past it; set `retries` and the built-in backoff honours its
+`Retry-After`.

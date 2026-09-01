@@ -675,6 +675,45 @@ as a follow-up if someone wants to skip Firebase.
 **Effort: a day, against the 1–2 week estimate** — the estimate assumed fighting the
 encryption, and the RFC vector meant it was either right or obviously wrong.
 
+### Expo / React Native, added later
+
+The "next if mobile pull appears" step above, taken. Two halves, both JavaScript, both on
+the existing npm pipeline — which was the whole argument for doing this one and not the
+native three.
+
+- **`postboi/push/expo`** is the app half: `subscribe()` / `unsubscribe()` /
+  `subscription()` / `usePush` over `expo-notifications`, with the browser helper's names
+  and reasons so a shared settings screen reads the same on both. It hands back
+  `{ token, provider, platform }` — `provider` because a token from one push provider is
+  meaningless to the others, and storing it is how the server picks the sender per device.
+  `{ native: true }` skips Expo's service and returns the raw FCM/APNs token tagged for
+  `postboi/fcm` / `postboi/apns`.
+- **`postboi/expo`** is the server half: Expo's push service, which holds the FCM and APNs
+  credentials itself, so the provider is the first with **no credential at all**
+  (`EXPO_ACCESS_TOKEN` exists only under Enhanced Security). A 200 is a ticket rather than
+  a delivery, so `receipts(ids)` fetches the outcome, and `DeviceNotRegistered` on either
+  normalizes to the expiry `push.expired()` already catches.
+- **The controller grew a driver seam** rather than a second copy: `machine(driver)` in
+  `push/controller.ts` is the toggle state machine over any platform, the browser and the
+  phone each supply five calls, and the choreography (busy state, register-then-rollback,
+  the stale-refresh guard) exists once.
+
+Two things the phone needed that the page didn't, and the plan hadn't listed:
+
+1. **An off switch with memory.** The OS remembers permission, not the user's choice —
+   after "turn off" in the app, `granted` is still the answer, and a toggle rendering that
+   lies. `storage` (AsyncStorage's shape) remembers it; without one it lasts a launch.
+2. **Inference needed a floor.** Expo's only field is optional, so under the old rule it
+   counted as configured on every machine and the VAPID trio could never infer Web Push
+   again. `infer_channel_provider` now also wants at least one credential actually set, and
+   `EXPO_ACCESS_TOKEN` alone infers `expo`. The registry's "reachable" pin names the four
+   siblings that trivially reach a credential-free provider, so a real subset stays visible.
+
+Not done, and deliberately: no Expo example app (nothing here runs it), and no support for
+Expo's batch endpoint — sends go one per request through the base class so hooks stay
+per-message, with 429 backoff honouring Expo's `Retry-After`. Native Swift/Kotlin/Flutter
+remain declined for the reasons above.
+
 ---
 
 ## Phase 4 — `send()` ✅ **done**

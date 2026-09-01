@@ -844,6 +844,26 @@ export const PUSH_PROVIDERS = [
 			{ env: "HMS_APP_SECRET", arg: "app_secret", label: "App secret", secret: true },
 		],
 	},
+	{
+		key: "expo",
+		name: "Expo",
+		import: "postboi/expo",
+		class: "Expo",
+		url: "https://expo.dev/accounts/[account]/settings/access-tokens",
+		note: "Expo and React Native apps, both platforms — Expo holds the FCM and APNs credentials, so the server needs none",
+		fields: [
+			{
+				env: "EXPO_ACCESS_TOKEN",
+				arg: "access_token",
+				// Optional, and the only push credential that is: the push service takes any
+				// request until the project switches on enhanced security. Setting it is
+				// still read as intent — see `infer_channel_provider`.
+				label: "Access token (only with Enhanced Security for Push Notifications on)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
 ] as const satisfies ReadonlyArray<NotedProviderMeta>
 
 /** A known push provider key, e.g. `"webpush"`. */
@@ -952,7 +972,9 @@ export function find_channel_provider(channel: Channel, key: string): ProviderMe
  *   still the way to say which.
  * - Optional fields (anything carrying a `default`) don't count towards a provider being
  *   configured, or every provider with one required field would qualify off a single stray
- *   variable.
+ *   variable. And at least one credential has to actually be set: a provider whose every
+ *   field is optional (Expo, whose access token only exists under enhanced security) is
+ *   configured by the token being there, not by needing nothing.
  * - A provider with any `ambient` field is never inferred. Inference reads credentials as
  *   a statement of intent, which only holds while the env var name belongs to postboi's
  *   world: `VAPID_PRIVATE_KEY` is set by exactly one kind of person, `AWS_ACCESS_KEY_ID`
@@ -971,8 +993,10 @@ export function infer_channel_provider(
 ): string | undefined {
 	// The registry's entries are literal-typed, so a field without `default` doesn't carry
 	// the property at all — read them through the shape they satisfy instead.
-	const configured = inferable_channel_providers(channel).filter((provider) =>
-		provider.fields.every((field) => field.default !== undefined || has(field.env))
+	const configured = inferable_channel_providers(channel).filter(
+		(provider) =>
+			provider.fields.some((field) => has(field.env)) &&
+			provider.fields.every((field) => field.default !== undefined || has(field.env))
 	)
 	return configured.length === 1 ? configured[0].key : undefined
 }

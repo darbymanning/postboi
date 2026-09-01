@@ -1564,10 +1564,12 @@ const CHANNEL_INIT = {
 			// A push target is per-device, so there is no global default worth committing.
 			return {}
 		},
-		done: () => [
+		done: (provider: ChannelProvider) => [
 			'import { push } from "postboi"\n\nawait push({ to: subscription, message: "…" })',
 			// The half people forget: a push target has to be registered before it exists.
-			"Subscribe in the browser with `subscribe()` from postboi/push first.",
+			provider.key === "expo"
+				? "Register in the app with `subscribe()` from postboi/push/expo first."
+				: "Subscribe in the browser with `subscribe()` from postboi/push first.",
 		],
 	},
 	whatsapp: {
@@ -1788,8 +1790,8 @@ async function channel_init(
 		}
 	}
 
-	// Web Push only: FCM, APNs and HMS deliver to a native app, which has no service worker
-	// and none of this to wire.
+	// Web Push only: FCM, APNs, HMS and Expo deliver to a native app, which has no service
+	// worker and none of this to wire.
 	if (channel === "push" && provider.key === "webpush") {
 		await offer_service_worker(prompts, files, values.VAPID_PUBLIC_KEY)
 	}
