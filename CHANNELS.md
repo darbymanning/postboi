@@ -969,13 +969,16 @@ Multi-channel turns that into the same thing everywhere:
 All of it sits in the ~free column on Workers, so it bundles into the existing email tiers
 and **the "never charge per contact" commitment survives**.
 
-**Declined:** visual journey builders, A/B testing, behavioural analytics, in-app messaging.
-Those are the parts that force per-MAU pricing, and they're a different company — different
-buyer (growth/marketing, not developers) and different discipline (campaign UX, not delivery
-correctness).
+**Previously declined, now planned:** journeys, A/B testing and behavioural analytics were
+declined here as "the parts that force per-MAU pricing". That was true of a _polled_ design —
+a journey ticking every contact hourly is the ~$360/month figure in [Pricing](#pricing). The
+plan that supersedes this paragraph, `postboi-app/LIFECYCLE.md`, is event-driven: an
+enrollment is a row with a `next_step_at`, a segment is evaluated at use and re-evaluated
+for one contact when that contact changes, and cost scales with sends, which are already
+metered. The commitment underneath the decline — **never charge per contact** — stands
+unchanged. In-app messaging stays declined. The original reasoning is in this file's history.
 
-**Sequencing:** revisit after Phase 4. An audience layer is only interesting once there's
-more than one channel to route between.
+**Sequencing:** Phase 4 has shipped, so the audience layer is due — LIFECYCLE.md is the plan.
 
 ---
 
