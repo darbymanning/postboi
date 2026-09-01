@@ -26,6 +26,7 @@ import type { ProviderKey } from "../registry.js"
 import { load_config } from "../config.js"
 import { ensure_env_loaded, read_env } from "../env.js"
 import { parse_json, sns_envelope, sns_subscribe_url } from "./shared.js"
+import { timing_safe_equal } from "./crypto.js"
 import { WebhookVerificationError } from "./errors.js"
 import type { EmailClient } from "./ua.js"
 
@@ -61,8 +62,9 @@ export type WebhookEventType =
 	 * Mail arriving at your sending address — the one event that isn't about a
 	 * send. `email` is the person who wrote to you, not a recipient, and
 	 * `message_id` is the send being replied to when the provider can tell.
-	 * The Postboi provider, Lettermint and Sequenzy (a tracked reply); providers without
-	 * inbound never emit it.
+	 * The Postboi provider, Lettermint and Sequenzy (a tracked reply); on WhatsApp
+	 * via Meta it is a message to your number, with the person in `phone`. Providers
+	 * without inbound never emit it.
 	 */
 	| "received"
 
@@ -147,6 +149,13 @@ export interface WebhookAdapter {
 	verify(ctx: VerifyContext): void | Promise<void>
 	/** Map the raw body to normalized events (providers may batch several per request). */
 	normalize(body: string, ctx: NormalizeContext): Array<WebhookEvent> | Promise<Array<WebhookEvent>>
+	/**
+	 * Providers that check an endpoint is yours before subscribing it (Meta): recognise
+	 * that GET and return the challenge it wants echoed plus the token it presented, or
+	 * `undefined` for a request that isn't one. {@link handshake} does the comparing —
+	 * fail-closed and timing-safe, like `verify` — so an adapter only has to read the URL.
+	 */
+	handshake?(ctx: NormalizeContext): { challenge: string; token?: string } | undefined
 }
 
 /** A loaded adapter module: the adapter plus its mock-payload builder (for tests). */
@@ -196,6 +205,9 @@ export const MODULES: Record<string, () => Promise<AdapterModule>> = {
 	plunk: () => import("./plunk.js"),
 	ses: () => import("./ses.js"),
 	scaleway: () => import("./scaleway.js"),
+	// WhatsApp via Meta's Cloud API — keyed like `whatsapp()`'s provider, and the one
+	// non-email provider here: Twilio reports both its channels by `poll()`.
+	meta: () => import("./meta.js"),
 }
 
 /** Options for {@link receive}. */
@@ -206,7 +218,7 @@ export interface ReceiveOptions {
 	 * `POSTBOI_PROVIDER`, then `postboi.config.ts`, then a `POSTBOI_TOKEN` → the
 	 * Postboi provider.
 	 */
-	provider?: ProviderKey | "postboi" | WebhookAdapter
+	provider?: ProviderKey | "postboi" | "meta" | WebhookAdapter
 	/**
 	 * The signing secret / verification key. Defaults to the provider's
 	 * `<PROVIDER>_WEBHOOK_SECRET` environment variable. For Svix-style providers
@@ -215,6 +227,13 @@ export interface ReceiveOptions {
 	 * or ride out a secret rotation.
 	 */
 	secret?: string
+	/**
+	 * The token a provider's endpoint {@link handshake} must present (Meta's verify
+	 * token — a string you choose and type into the app dashboard). Defaults to
+	 * `<PROVIDER>_WEBHOOK_VERIFY_TOKEN`. Separate from `secret` on purpose: it travels
+	 * in a query string, and query strings end up in access logs.
+	 */
+	verify_token?: string
 	/**
 	 * Set false to skip signature verification and only normalize. Verification is
 	 * otherwise required — a missing secret is an error, never a silent pass.
@@ -305,6 +324,55 @@ export async function receive(
 	}
 
 	return adapter.normalize(body, { headers: request.headers, url })
+}
+
+/**
+ * Answer a provider's endpoint handshake — the GET Meta makes once, when the callback
+ * URL is saved, to check the endpoint is yours before it subscribes it. Returns the
+ * challenge to send back as the response body (200, plain text), or `undefined` when
+ * the request isn't a handshake at all: not a GET, a provider that never does one, or a
+ * GET without the handshake's parameters. So a handler can try this first and fall
+ * through to {@link receive}; `webhook()` does exactly that.
+ *
+ * The presented token is compared (timing-safe) with `verify_token` — defaulting to
+ * `<PROVIDER>_WEBHOOK_VERIFY_TOKEN` — and, like signatures, this fails closed: no
+ * configured token throws rather than confirming a stranger's subscription. Throws
+ * {@link WebhookVerificationError} on a mismatch — return a 401 for those.
+ */
+export async function handshake(
+	request: Request,
+	options: ReceiveOptions = {}
+): Promise<string | undefined> {
+	if (request.method !== "GET") return undefined
+	const adapter =
+		typeof options.provider === "object"
+			? options.provider
+			: await adapter_for(options.provider ?? (await resolve_key()))
+	if (!adapter.handshake) return undefined
+
+	const url = new URL(request.url)
+	const presented = adapter.handshake({ headers: request.headers, url })
+	if (!presented) return undefined
+	if (options.verify === false) return presented.challenge
+
+	await ensure_env_loaded()
+	const env = `${adapter.provider.toUpperCase()}_WEBHOOK_VERIFY_TOKEN`
+	const expected = options.verify_token ?? read_env(env) ?? undefined
+	if (!expected) {
+		throw new WebhookVerificationError({
+			provider: adapter.provider,
+			message: `No webhook verify token configured for ${adapter.provider}. Set ${env} to the verify token you gave the provider, or pass { verify_token } — or { verify: false } to explicitly skip verification.`,
+			code: "missing_secret",
+		})
+	}
+	if (!presented.token || !timing_safe_equal(presented.token, expected)) {
+		throw new WebhookVerificationError({
+			provider: adapter.provider,
+			message: `${adapter.provider} webhook verify token did not match`,
+			code: "invalid_signature",
+		})
+	}
+	return presented.challenge
 }
 
 export { webhook, type RequestCarrier } from "./handler.js"

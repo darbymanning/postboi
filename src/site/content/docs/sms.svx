@@ -238,13 +238,17 @@ before any provider does. The keyword list is the one every carrier recognises �
 `STOPALL`, `UNSUBSCRIBE`, `CANCEL`, `END`, `QUIT`, and `ARRET` for Canada — and it is a
 whole-message test: `stop.` opts out, `please stop texting me` is a person to reply to.
 
-Two things surface it, so you needn't parse replies yourself:
+Three things surface it, so you needn't parse replies yourself:
 
 - **`poll()` on Twilio** reads the same Message resource it reads receipts from, and an
   inbound reply that is an opt-out keyword comes back as an `unsubscribed` event —
   `channel` is `"sms"` or `"whatsapp"` (whichever they replied over), and `phone` is
   their number. Nothing else anyone texts becomes an event; a conversation is not a
   delivery receipt. See [polling](/webhooks#providers-that-dont-push-poll).
+- **`receive()` on Meta** does the same for
+  [WhatsApp via the Cloud API](/whatsapp#delivery-receipts-and-replies), where the
+  reply arrives as a webhook: a STOP is `unsubscribed`, and anything else they write
+  is `received`.
 - **`is_opt_out(text)`**, from the package root, is the same test on its own — for an
   inbound webhook you already handle.
 

@@ -227,6 +227,63 @@ await send({
 The `whatsapp` override carries the template so that leg stays deliverable outside the
 window, while the plain `message` rides the channels that can always carry it.
 
+## Delivery receipts and replies
+
+Both providers report back, in the same [normalized events](/webhooks#the-event-shape)
+as email: `channel` is `"whatsapp"`, the number is in `phone` (never `email`), a read
+receipt is `opened` because it is the same fact as an email open, and a message Meta or
+Twilio couldn't deliver is `failed` with the provider's code and words in `bounce.detail`.
+
+**Twilio** is polled, because its status callbacks are set per message at send time —
+`poll({ provider: "twilio" })` covers SMS and WhatsApp in one row and needs no public
+endpoint. See [polling](/webhooks#providers-that-dont-push-poll).
+
+**Meta** pushes a real webhook, so it's [`receive()`](/webhooks) like an email provider.
+Two values from the app dashboard make it work: the **app secret** (Basic Settings) signs
+every delivery as `X-Hub-Signature-256`, and a **verify token** you make up is what Meta
+presents when it checks the endpoint is yours before subscribing it — a `GET` that
+`webhook()` answers, so export the same handler for both methods:
+
+```bash
+META_WEBHOOK_SECRET=…          # the app secret
+META_WEBHOOK_VERIFY_TOKEN=…    # the string you typed into the webhook form
+```
+
+```typescript
+// src/routes/webhooks/whatsapp/+server.ts — or the same line in any framework
+import { webhook } from "postboi/kit"
+import { mail } from "postboi"
+
+const handle = webhook(
+	async (event) => {
+		if (event.type === "unsubscribed" && event.phone) {
+			await mail.suppressions.add({ phone: event.phone, channel: "whatsapp" })
+		}
+		if (event.type === "received") {
+			// They wrote to you — the 24-hour window just opened for event.phone,
+			// and event.body?.text is what they said.
+		}
+	},
+	{ provider: "meta" }
+)
+export { handle as GET, handle as POST }
+```
+
+Subscribe the app to the **messages** field of the WhatsApp Business Account, and one
+endpoint hears about every number the account owns. What arrives:
+
+| Meta sends | You get |
+| --- | --- |
+| `sent`, `delivered`, `read` statuses | `sent`, `delivered`, `opened` |
+| a `failed` status | `failed`, with the error code and reason in `bounce.detail` — `131047` is a free-form message outside the window |
+| a message that is an [opt-out keyword](/sms#opt-outs) (`STOP` and friends, or a button reply that says so) | `unsubscribed` for the number that sent it |
+| any other message a person sends | `received` — `phone` is them, `body.text` their words when they were words, and `message_id` the send they replied to when they used WhatsApp's reply |
+
+Reactions, `system` notices and `deleted` statuses aren't delivery events and stay
+out; the untouched status or message is on `raw` if you want them. And because a
+`received` is the moment the customer service window opens, it's also the signal that
+free-form `message` sends to that number will deliver for the next 24 hours.
+
 ## Phone numbers
 
 The same [E.164 rules as SMS](/sms#phone-numbers): international forms pass through,

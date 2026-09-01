@@ -211,7 +211,9 @@ export function remote(a?: Mailer | ActionFields, b: ActionFields = {}): RemoteM
  *
  * Responses are what providers expect: `200 {received}` on success, `401` on a failed
  * signature, `400` on an unparseable payload, and `500` when your handler throws — so
- * the provider retries. SNS subscription handshakes (SES, Scaleway) confirm themselves.
+ * the provider retries. SNS subscription handshakes (SES, Scaleway) confirm themselves,
+ * and a provider that checks the endpoint with a GET before subscribing (Meta) gets its
+ * challenge echoed — export the same handler as `GET` too for those.
  *
  * @example
  * ```ts

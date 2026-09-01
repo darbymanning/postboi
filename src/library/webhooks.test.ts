@@ -6,6 +6,7 @@ import {
 	WebhookVerificationError,
 	mock_event,
 	mock_request,
+	handshake,
 } from "$library/webhooks/index.js"
 import {
 	svix_verify,
@@ -773,6 +774,214 @@ describe("receive — every provider round-trips through mock_request", () => {
 			expect(fetch_spy).not.toHaveBeenCalled()
 		} finally {
 			fetch_spy.mockRestore()
+		}
+	})
+})
+
+describe("receive — meta (WhatsApp Cloud API)", () => {
+	/** Sign a payload the way Meta does: sha256=<hex HMAC of the raw body, app secret>. */
+	async function signed(payload: unknown, secret: string): Promise<Request> {
+		const body = JSON.stringify(payload)
+		const hex = [...(await hmac_sha256(secret, body))].map((b) => b.toString(16).padStart(2, "0"))
+		return new Request("https://example.com/webhooks/whatsapp", {
+			method: "POST",
+			headers: { "x-hub-signature-256": `sha256=${hex.join("")}` },
+			body,
+		})
+	}
+
+	function envelope(
+		value: Record<string, unknown>,
+		field = "messages",
+		object = "whatsapp_business_account"
+	) {
+		return {
+			object,
+			entry: [{ id: "200000000000002", changes: [{ field, value }] }],
+		}
+	}
+
+	it("verifies X-Hub-Signature-256 and normalizes a receipt end to end", async () => {
+		const { request, secret } = await mock_request({ provider: "meta", type: "delivered" })
+		expect(request.headers.get("x-hub-signature-256")).toMatch(/^sha256=[0-9a-f]{64}$/)
+
+		const events = await receive(request, { provider: "meta", secret })
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({
+			type: "delivered",
+			provider: "meta",
+			channel: "whatsapp",
+			phone: "+15557770006",
+			message_id: "wamid.mock",
+		})
+		expect(events[0].timestamp).toBeInstanceOf(Date)
+		// A handler reading `email` must never be handed a phone number.
+		expect(events[0].email).toBeUndefined()
+	})
+
+	it("reads the read receipt as the open it is, and a failure with Meta's words", async () => {
+		const read = await mock_request({ provider: "meta", type: "opened" })
+		const [opened] = await receive(read.request, { provider: "meta", secret: read.secret })
+		expect(opened).toMatchObject({ type: "opened", channel: "whatsapp", phone: "+15557770006" })
+
+		const failed = await mock_request({ provider: "meta", type: "failed" })
+		const [failure] = await receive(failed.request, { provider: "meta", secret: failed.secret })
+		expect(failure.type).toBe("failed")
+		// No bounce classification for a text message — the code and the reason are the detail.
+		expect(failure.bounce?.category).toBe("unknown")
+		expect(failure.bounce?.detail).toMatch(/^131047 Message failed to send/)
+	})
+
+	it("turns a texted STOP into an unsubscribe for the number that sent it", async () => {
+		const { request, secret } = await mock_request({ provider: "meta", type: "unsubscribed" })
+		const [event] = await receive(request, { provider: "meta", secret })
+		expect(event).toMatchObject({
+			type: "unsubscribed",
+			channel: "whatsapp",
+			phone: "+15557770006",
+			message_id: "wamid.mock-inbound",
+		})
+		expect(event.body).toBeUndefined()
+	})
+
+	it("carries anything else a person writes as received, about the send they answered", async () => {
+		const { request, secret } = await mock_request({ provider: "meta", type: "received" })
+		const [event] = await receive(request, { provider: "meta", secret })
+		expect(event).toMatchObject({
+			type: "received",
+			channel: "whatsapp",
+			phone: "+15557770006",
+			// The reply's context names your message; that is the id worth carrying.
+			message_id: "wamid.mock",
+			body: { text: "Thanks — that works for me." },
+		})
+	})
+
+	it("emits one event per status and per message in a batched delivery", async () => {
+		const secret = "app-secret"
+		const request = await signed(
+			envelope({
+				messaging_product: "whatsapp",
+				metadata: { display_phone_number: "15551110001", phone_number_id: "1" },
+				statuses: [
+					{ id: "a", status: "sent", timestamp: "1756720000", recipient_id: "15557770006" },
+					{ id: "b", status: "delivered", timestamp: "1756720001", recipient_id: "15557770006" },
+					{ id: "c", status: "read", timestamp: "1756720002", recipient_id: "15557770006" },
+					{
+						id: "d",
+						status: "failed",
+						timestamp: "1756720003",
+						recipient_id: "15557770007",
+						errors: [{ code: 131026, title: "Message undeliverable" }],
+					},
+					// Not things that happened to the send, in the vocabulary's terms.
+					{ id: "e", status: "deleted", timestamp: "1756720004", recipient_id: "15557770006" },
+					{ id: "f", status: "warning", timestamp: "1756720005", recipient_id: "15557770006" },
+				],
+				messages: [
+					{
+						from: "15557770006",
+						id: "g",
+						timestamp: "1756720006",
+						type: "text",
+						text: { body: "hi" },
+					},
+					// A reply that didn't use WhatsApp's reply carries its own id.
+					{
+						from: "15557770008",
+						id: "h",
+						timestamp: "1756720007",
+						type: "image",
+						image: { id: "m" },
+					},
+					{ from: "15557770006", id: "i", timestamp: "1756720008", type: "reaction", reaction: {} },
+					{
+						from: "15557770006",
+						id: "j",
+						timestamp: "1756720009",
+						type: "text",
+						text: { body: "stop." },
+					},
+					{
+						from: "15557770006",
+						id: "k",
+						timestamp: "1756720010",
+						type: "button",
+						button: { text: "Unsubscribe", payload: "Unsubscribe" },
+					},
+				],
+			}),
+			secret
+		)
+		const events = await receive(request, { provider: "meta", secret })
+		expect(events.map((event) => [event.message_id, event.type])).toEqual([
+			["a", "sent"],
+			["b", "delivered"],
+			["c", "opened"],
+			["d", "failed"],
+			["g", "received"],
+			["h", "received"],
+			["j", "unsubscribed"],
+			["k", "unsubscribed"],
+		])
+		expect(events[3].bounce).toEqual({
+			category: "unknown",
+			detail: "131026 Message undeliverable",
+		})
+		expect(events[3].phone).toBe("+15557770007")
+		expect(events[3].timestamp?.toISOString()).toBe("2025-09-01T09:46:43.000Z")
+		// A picture is a message from a person, with nothing to quote.
+		expect(events[5]).toMatchObject({ phone: "+15557770008", body: undefined })
+		for (const event of events) expect(event.channel).toBe("whatsapp")
+	})
+
+	it("ignores other Meta products and other fields on the account", async () => {
+		const secret = "app-secret"
+		const other_product = await signed(
+			envelope({ statuses: [{ id: "a", status: "sent" }] }, "messages", "page"),
+			secret
+		)
+		expect(await receive(other_product, { provider: "meta", secret })).toEqual([])
+
+		const template_review = await signed(
+			envelope({ event: "APPROVED", message_template_id: 1 }, "message_template_status_update"),
+			secret
+		)
+		expect(await receive(template_review, { provider: "meta", secret })).toEqual([])
+	})
+
+	it("rejects a wrong app secret, a missing signature, and no secret at all", async () => {
+		const { request } = await mock_request({ provider: "meta", type: "delivered" })
+		const wrong = await receive(request.clone(), { provider: "meta", secret: "not-it" }).catch(
+			(e) => e
+		)
+		expect(wrong).toBeInstanceOf(WebhookVerificationError)
+		expect(wrong.code).toBe("invalid_signature")
+
+		const unsigned = new Request(request.url, {
+			method: "POST",
+			body: await request.clone().text(),
+		})
+		const missing = await receive(unsigned, { provider: "meta", secret: "app-secret" }).catch(
+			(e) => e
+		)
+		expect(missing).toBeInstanceOf(WebhookVerificationError)
+		expect(missing.code).toBe("invalid_signature")
+
+		delete process.env.META_WEBHOOK_SECRET
+		const none = await receive(request, { provider: "meta" }).catch((e) => e)
+		expect(none).toBeInstanceOf(WebhookVerificationError)
+		expect(none.code).toBe("missing_secret")
+	})
+
+	it("reads the verify token from META_WEBHOOK_VERIFY_TOKEN when none is passed", async () => {
+		process.env.META_WEBHOOK_VERIFY_TOKEN = "from-env"
+		try {
+			const url =
+				"https://example.com/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=from-env&hub.challenge=42"
+			expect(await handshake(new Request(url), { provider: "meta" })).toBe("42")
+		} finally {
+			delete process.env.META_WEBHOOK_VERIFY_TOKEN
 		}
 	})
 })

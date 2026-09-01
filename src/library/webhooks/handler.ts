@@ -11,7 +11,7 @@
  * Frameworks that wrap the request deeper (Hono keeps it at `c.req.raw`) unwrap in
  * place: `app.post("/webhooks", (c) => webhook(handler)(c.req.raw))`.
  */
-import { receive, WebhookVerificationError } from "./index.js"
+import { receive, handshake, WebhookVerificationError } from "./index.js"
 import type { ReceiveOptions, WebhookEvent } from "./index.js"
 import { is_error } from "../errors.js"
 
@@ -31,7 +31,9 @@ function json(body: unknown, status: number): Response {
  *
  * Responses are what providers expect: `200 {received}` on success, `401` on a failed
  * signature, `400` on an unparseable payload, and `500` when your handler throws — so
- * the provider retries. SNS subscription handshakes (SES, Scaleway) confirm themselves.
+ * the provider retries. SNS subscription handshakes (SES, Scaleway) confirm themselves,
+ * and a provider that checks the endpoint with a GET before subscribing (Meta) gets its
+ * challenge echoed — export the same handler as `GET` too for those.
  *
  * @example
  * ```ts
@@ -50,6 +52,21 @@ function build(
 ): (carrier: RequestCarrier) => Promise<Response> {
 	return async (carrier) => {
 		const request = carrier instanceof Request ? carrier : carrier.request
+
+		// A GET is only ever an endpoint handshake: events always arrive as a POST.
+		if (request.method === "GET") {
+			try {
+				const challenge = await handshake(request, options)
+				if (challenge === undefined) return json({ error: "Method not allowed" }, 405)
+				return new Response(challenge, { status: 200, headers: { "content-type": "text/plain" } })
+			} catch (error) {
+				if (error instanceof WebhookVerificationError) {
+					return json({ error: error.message }, 401)
+				}
+				const message = is_error(error) ? error.message : String(error)
+				return json({ error: message }, 400)
+			}
+		}
 
 		let events: Array<WebhookEvent>
 		try {

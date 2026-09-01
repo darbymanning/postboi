@@ -207,7 +207,9 @@ export const POST = webhook(async (event) => {
 })
 ```
 
-Elsewhere: `receive(request)` from `postboi/webhooks` → normalized `WebhookEvent[]` (`sent | delivered | delayed | bounced | complained | opened | clicked | unsubscribed | failed`), with `event.client` parsed locally into name/os/device on opens and clicks. Signature verification is **fail-closed**: set `<PROVIDER>_WEBHOOK_SECRET` (e.g. `RESEND_WEBHOOK_SECRET`) or `receive()` throws. Test without a tunnel using `mock_event` / `mock_request`. `/raw/webhooks`
+Elsewhere: `receive(request)` from `postboi/webhooks` → normalized `WebhookEvent[]` (`sent | delivered | delayed | bounced | complained | opened | clicked | unsubscribed | failed | received`), with `event.client` parsed locally into name/os/device on opens and clicks. Signature verification is **fail-closed**: set `<PROVIDER>_WEBHOOK_SECRET` (e.g. `RESEND_WEBHOOK_SECRET`) or `receive()` throws. Test without a tunnel using `mock_event` / `mock_request`. `/raw/webhooks`
+
+WhatsApp receipts: Twilio is `poll({ provider: "twilio" })` (callbacks are per message, so nothing to register); Meta's Cloud API is `receive()` / `webhook()` with `{ provider: "meta" }` — `META_WEBHOOK_SECRET` is the app secret (`X-Hub-Signature-256`), `META_WEBHOOK_VERIFY_TOKEN` answers the `hub.challenge` GET Meta makes before subscribing, so **export the handler as both `GET` and `POST`**. Events carry `channel: "whatsapp"` and `phone`, never `email`; a read is `opened`, a STOP is `unsubscribed`, anything else a person writes is `received` with `body.text` (and the 24-hour window just opened). `/raw/whatsapp`
 
 ## Scheduling, tracking, bulk
 

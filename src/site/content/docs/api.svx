@@ -160,13 +160,18 @@ interface PostboiError {
 Receive delivery events, normalized across providers. See [Webhooks](/webhooks).
 
 ```typescript
-import { receive, mock_event, mock_request, parse_user_agent } from 'postboi/webhooks'
+import { receive, handshake, mock_event, mock_request, parse_user_agent } from 'postboi/webhooks'
 
 await receive(request: Request, options?: {
-	provider?: ProviderKey | WebhookAdapter // default: same resolution as mail()
+	provider?: ProviderKey | 'meta' | WebhookAdapter // default: same resolution as mail()
 	secret?: string // default: <PROVIDER>_WEBHOOK_SECRET
+	verify_token?: string // Meta's endpoint handshake; default: <PROVIDER>_WEBHOOK_VERIFY_TOKEN
 	verify?: boolean // false skips verification (explicit opt-out)
 }): Promise<WebhookEvent[]>
+
+// The GET Meta makes before subscribing an endpoint — the challenge to echo, or
+// undefined for a request that isn't one. webhook() calls it for you.
+await handshake(request: Request, options?: ReceiveOptions): Promise<string | undefined>
 ```
 
 On SvelteKit, `webhook(handler, options?)` from `postboi/kit` wraps `receive` as a
