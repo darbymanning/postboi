@@ -527,7 +527,7 @@ describe("poll — twilio (SMS and WhatsApp)", () => {
 					message({ sid: "g", status: "sending" }),
 					message({ sid: "h", status: "accepted" }),
 					// Somebody writing to us, not a receipt for a send.
-					message({ sid: "i", status: "received", direction: "inbound" }),
+					message({ sid: "i", status: "received", direction: "inbound", body: "Thanks!" }),
 				],
 			})
 		)
@@ -542,6 +542,49 @@ describe("poll — twilio (SMS and WhatsApp)", () => {
 		// The carrier's own words, in the field consumers already read.
 		expect(result.events[2].bounce).toEqual({ category: "unknown", detail: "30006" })
 		expect(result.events[3].bounce?.detail).toBe("Unknown error")
+	})
+
+	it("reads an inbound STOP as an unsubscribe from the number that sent it", async () => {
+		const inbound = (overrides: Record<string, unknown>) =>
+			message({
+				status: "received",
+				direction: "inbound",
+				// The reply travels the other way: our number is `to`, theirs is `from`.
+				to: "+15551110001",
+				from: "+15557770006",
+				...overrides,
+			})
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({
+				messages: [
+					inbound({ sid: "r1", body: "STOP" }),
+					inbound({ sid: "r2", body: "stop." }),
+					inbound({
+						sid: "r3",
+						body: "Unsubscribe",
+						to: "whatsapp:+15551110001",
+						from: "whatsapp:+15557770006",
+					}),
+					// A sentence is a person to talk to, not a flag to set.
+					inbound({ sid: "r4", body: "please stop texting me" }),
+					inbound({ sid: "r5", body: "What time do you open?" }),
+				],
+			})
+		)
+		const result = await poll({ provider: "twilio", options: TW_OPTIONS })
+		expect(result.events).toMatchObject([
+			{ message_id: "r1", type: "unsubscribed", channel: "sms", phone: "+15557770006" },
+			{ message_id: "r2", type: "unsubscribed", channel: "sms", phone: "+15557770006" },
+			{ message_id: "r3", type: "unsubscribed", channel: "whatsapp", phone: "+15557770006" },
+		])
+		for (const event of result.events) expect(event.email).toBeUndefined()
+
+		// An inbound message never changes status, so the cursor emits it exactly once.
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			json({ messages: [inbound({ sid: "r1", body: "STOP" })] })
+		)
+		const again = await poll({ provider: "twilio", options: TW_OPTIONS, cursor: result.cursor })
+		expect(again.events).toEqual([])
 	})
 
 	it("re-emits on a status change, not on a sid it has seen", async () => {
@@ -639,6 +682,14 @@ describe("mock_poll", () => {
 		expect(whatsapp.events[0]).toMatchObject({
 			type: "opened",
 			channel: "whatsapp",
+			phone: "+15557770006",
+		})
+
+		// The one inbound sample: the person texting STOP, so the number is still theirs.
+		const stop = await mock_poll({ provider: "twilio", type: "unsubscribed" })
+		expect(stop.events[0]).toMatchObject({
+			type: "unsubscribed",
+			channel: "sms",
 			phone: "+15557770006",
 		})
 	})

@@ -977,6 +977,28 @@ correctness).
 **Sequencing:** revisit after Phase 4. An audience layer is only interesting once there's
 more than one channel to route between.
 
+### Status: the first slice has landed
+
+Items 1 and 3 have a first cut; item 2 is still email-only.
+
+- **Delivery profiles** — a contact carries `phone` (E.164, validated as definitive: a
+  national number is rejected rather than guessed at). One number, not one per channel:
+  SMS and WhatsApp reach the same handset, and a second field would be a second thing to
+  keep in step. Push subscriptions are still the caller's to store — `push()` takes raw
+  subscriptions, as Phase 3 decided, and nothing about a contact has changed that.
+- **Per-channel suppressions** — the account's list is keyed `(channel, address)` now:
+  `email`, `sms` and `whatsapp`. A texted **STOP** reaches it on its own: the Twilio poll
+  adapter reads inbound replies for exactly one thing, an opt-out keyword (`is_opt_out`,
+  exported from the root), and emits `unsubscribed` with the sender's number; the
+  platform's poll bridge writes the suppression for the channel replied over. This is
+  the SMS half of "legally required anyway". Nothing in the platform _sends_ SMS or
+  WhatsApp (Phase 2 stays declined), so today the list is a record the API, CLI and
+  dashboard expose and `send()` callers can honour — not a gate on a hosted send path.
+- **`lists.broadcast()` multi-channel** — unbuilt, and now the obvious next step: the
+  contact has a number, the suppression list knows the channel, and the app already
+  relays email through synced provider credentials, which is the same shape an SMS leg
+  through synced Twilio credentials would take.
+
 ---
 
 ## Risks
