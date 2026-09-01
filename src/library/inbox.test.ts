@@ -127,10 +127,11 @@ describe("inbox middleware", () => {
 		// The mailbox closes too, and the Start menu is how it comes back.
 		expect(html).toContain('id="m-mailbox"')
 		// Resize handles on the mailbox, the reader, the messenger, the three channel app
-		// windows (WhatsApp, chat, notifications), POOM.EXE and the app frame itself — the
-		// reading pane is only ever big enough because you can make it bigger. The Pokia has
+		// windows (WhatsApp, chat, notifications), the capture viewer, POOM.EXE and the app
+		// frame itself — the reading pane is only ever big enough because you can make it
+		// bigger, and a client capture is a tall render you want room for. The Pokia has
 		// none: a handset is not resizable, which is rather the point of it.
-		expect(html.match(/class="grip"/g)).toHaveLength(8)
+		expect(html.match(/class="grip"/g)).toHaveLength(9)
 	})
 
 	it("is branded Postboi, not the client it's dressed as", async () => {
@@ -151,6 +152,60 @@ describe("inbox middleware", () => {
 		expect(html).toMatch(/<input id="so-pass" type="password" value="[^"]*" disabled>/)
 		expect(html).toMatch(/<select id="so-loc" disabled>/)
 		expect(html).not.toContain("SETUP")
+	})
+
+	it("opens a client capture in its own window, not a new browser tab", () => {
+		const html = inbox_ui()
+		// The viewer is a window on the desktop like every other thing here.
+		expect(html).toContain('id="shotwin"')
+		expect(html).toContain('id="shot-img"')
+		// A capture cell is a button into that window — never a link off to a raw PNG on a
+		// blank tab, which loses which client it came from.
+		expect(html).toContain('class="r-open"')
+		expect(html).not.toContain('target="_blank" rel="noreferrer">')
+		// And it steps through the run's other captures without going back to the grid.
+		expect(html).toContain('id="shot-prev"')
+		expect(html).toContain('id="shot-next"')
+	})
+
+	it("has a system message box for a refusal it cannot fix itself", () => {
+		const html = inbox_ui()
+		// A dialog, not a console line: an exhausted render allowance needs a decision.
+		expect(html).toContain('id="alertwin"')
+		expect(html).toContain('id="alert-text"')
+		// ...and a way out of it, on the account the run was ordered from.
+		expect(html).toContain('id="alert-upgrade"')
+		expect(html).toContain('id="alert-topup"')
+		expect(html).toContain('id="alert-ok"')
+		// The failed cell says why too, so dismissing the dialog doesn't lose the reason —
+		// and it's a button, so the dialog can be brought back after it's dismissed.
+		expect(html).toContain('p.error || "no capture"')
+		// Wired by class, never an id minted inside the previews loop — a run with
+		// two refusals (a failed capture beside the allowance marker) would mint
+		// duplicate ids and leave the second button dead.
+		expect(html).toContain('class="r-hold r-why" data-err=')
+		expect(html).not.toContain('id="rwhy"')
+		// A run that rendered nothing offers its order key again, so credits bought in the
+		// tab you just came back from have something to be spent on.
+		expect(html).toContain("Try again")
+		// ...and returning focus re-asks, because a top-up lands by webhook and nothing
+		// here is told about it.
+		expect(html).toContain('window.addEventListener("focus"')
+	})
+
+	it("serves a script that parses and markup whose windows all close", () => {
+		const html = inbox_ui()
+		// The page is one inline script; a single truncated block kills the whole
+		// desktop, and substring assertions can't see it. Actually parse it — this
+		// exact gap shipped an unclosed listener that made the entire UI inert.
+		const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1] ?? ""
+		expect(script.length).toBeGreaterThan(1000)
+		expect(() => new Function(script)).not.toThrow()
+		// Every <div> closes: an unclosed window swallows its later siblings into a
+		// display:none parent (this shipped too — POOM and the Pokia vanished).
+		const opens = (html.match(/<div[\s>]/g) ?? []).length
+		const closes = (html.match(/<\/div>/g) ?? []).length
+		expect(opens).toBe(closes)
 	})
 
 	it("behaves like a Windows list, and a Windows app", async () => {
@@ -657,5 +712,105 @@ describe("channel captures", () => {
 
 		expect(inbox.store.list()[0]).toMatchObject({ channel: "chat", provider: "slack" })
 		await inbox.stop()
+	})
+})
+
+describe("inbox screenshots (hosted testing API)", () => {
+	let inbox: Awaited<ReturnType<typeof start_inbox>>
+	const real_fetch = globalThis.fetch
+
+	beforeEach(async () => {
+		inbox = await start_inbox()
+	})
+
+	afterEach(async () => {
+		await inbox.stop()
+		vi.unstubAllEnvs()
+		vi.unstubAllGlobals()
+	})
+
+	/** Route hosted-API calls to a stub; everything else (the inbox itself) stays real. */
+	function stub_hosted(handler: (url: string, init?: RequestInit) => Response) {
+		const seen: Array<{ url: string; init?: RequestInit }> = []
+		vi.stubGlobal("fetch", ((input: string | URL | Request, init?: RequestInit) => {
+			const url = String(input)
+			if (!url.startsWith("https://hosted.test")) return real_fetch(input as string, init)
+			seen.push({ url, init })
+			return Promise.resolve(handler(url, init))
+		}) as typeof globalThis.fetch)
+		return seen
+	}
+
+	it("reports the token's absence rather than erroring", async () => {
+		const stored = inbox.store.add(message)
+		const answer = await real_fetch(
+			`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/messages/${stored.id}/screenshots`
+		)
+		expect(answer.status).toBe(200)
+		// The billing links ride along even with no token: they're derived from the host,
+		// not from the account, and the dialog that offers them needs somewhere to point.
+		expect(await answer.json()).toEqual({
+			enabled: false,
+			run_id: null,
+			previews: [],
+			billing: {
+				packs: "https://postboi.app/dashboard/testing",
+				plan: "https://postboi.app/dashboard/settings/billing",
+			},
+		})
+
+		const order = await real_fetch(
+			`http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/messages/${stored.id}/screenshots`,
+			{ method: "POST" }
+		)
+		expect(order.status).toBe(400)
+	})
+
+	it("orders a run, pastes the capture in, and proxies status and images", async () => {
+		vi.stubEnv("POSTBOI_TOKEN", "tok-1")
+		vi.stubEnv("POSTBOI_API_URL", "https://hosted.test")
+		const seen = stub_hosted((url) => {
+			if (url.endsWith("/v1/testing")) {
+				return new Response(JSON.stringify({ id: "test_abc" }), { status: 201 })
+			}
+			if (url.endsWith("/v1/testing/test_abc/source")) {
+				return new Response(JSON.stringify({ ok: true }), { status: 200 })
+			}
+			if (url.endsWith("/v1/testing/test_abc/previews")) {
+				return new Response(
+					JSON.stringify({
+						data: [
+							{ id: "prev_1", client_name: "Outlook (Windows)", status: "ready" },
+							{ id: "prev_2", client_name: "Gmail (web)", status: "pending" },
+						],
+					}),
+					{ status: 200 }
+				)
+			}
+			if (url.endsWith("/v1/testing/test_abc/previews/prev_1")) {
+				return new Response(new Uint8Array([137, 80]), {
+					headers: { "content-type": "image/png" },
+				})
+			}
+			return new Response("nope", { status: 404 })
+		})
+		const stored = inbox.store.add(message)
+		const base = `http://127.0.0.1:${inbox.port}${INBOX_PATH}/api/messages/${stored.id}/screenshots`
+
+		const order = await real_fetch(base, { method: "POST" })
+		expect(order.status).toBe(201)
+		expect(await order.json()).toEqual({ run_id: "test_abc" })
+		// The token travelled as a bearer, and the capture's HTML went in whole.
+		expect((seen[0].init?.headers as Record<string, string>).authorization).toBe("Bearer tok-1")
+		expect(JSON.parse(String(seen[1].init?.body)).html).toBe("<p>Hello</p>")
+
+		const listed = await real_fetch(base)
+		const status = (await listed.json()) as { previews: Array<{ id: string; status: string }> }
+		expect(status.previews.map((preview) => preview.status)).toEqual(["ready", "pending"])
+
+		const image = await real_fetch(`${base}/prev_1`)
+		expect(image.status).toBe(200)
+		expect(image.headers.get("content-type")).toBe("image/png")
+		expect(new Uint8Array(await image.arrayBuffer())).toEqual(new Uint8Array([137, 80]))
 	})
 })

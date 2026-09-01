@@ -41,6 +41,7 @@ pages render client-side, so fetch those instead. All of it in one file:
 - 📈 **Per-send tracking & one-click unsubscribe** - `tracking: { opens, clicks }` and `unsubscribe_url` ([RFC 8058 headers](https://docs.postboi.app/tracking)) on any provider that supports them
 - ⏰ **Schedule & cancel** - `scheduled_at` for future sends, `cancel(id)` to [call them off](https://docs.postboi.app/scheduling)
 - 📥 **Local dev inbox** - mail you send in development lands in a [mailbox at `/__postboi`](https://docs.postboi.app/dev-inbox) instead of a real inbox — rendered HTML, headers, attachments. No code changes, no second tool, and no way to accidentally mail a customer from your laptop
+- 🔍 **Email testing** - [`analyze()` from `postboi/inspect`](https://docs.postboi.app/email-testing) lints an email before anyone receives it: client compatibility from [Can I email](https://www.caniemail.com) data, Gmail clipping, missing alt text, dead links, unsubscribe headers. Synchronous, zero-network, zero-dependency — drop it into any test suite
 - 🍯 **Invisible spam protection** - a zero-config [honeypot](https://docs.postboi.app/spam), plus invisible captcha — fully managed on the Postboi provider, or bring your own Turnstile key
 - 🧩 **`<Captcha />` component** - one prop-free tag inside your own form, for [Svelte, React, Vue and Astro](https://docs.postboi.app/spam#the-captcha-component) — `postboi sync` bakes in the key
 - 🛡️ **Type-safe** - full TypeScript support with normalized error handling
