@@ -57,7 +57,9 @@
 		})),
 	])
 
-	const metadata = $derived(data.metadata)
+	// The page owns its own metadata and headings (see `[...slug]/+page.ts`); they arrive
+	// through `page.data`, and are absent on an error page, which renders without them.
+	const metadata = $derived(page.data.metadata ?? null)
 	const docSlug = $derived(metadata?.slug)
 	const isHome = $derived(docSlug === "" || docSlug == null)
 	const currentDoc = $derived(sectionManifest.find((d) => d.slug === docSlug))
@@ -300,7 +302,7 @@
 					<div class="min-h-0 flex-1">
 						<TableOfContents
 							selector={tocSelector}
-							headings={data.tocHeadings}
+							headings={page.data.tocHeadings ?? []}
 							title={sectionUi.toc.title}
 							emptyLabel={sectionUi.toc.emptyLabel}
 							minViewportWidth={sectionUi.toc.minViewportWidth}
