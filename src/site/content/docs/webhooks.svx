@@ -112,7 +112,9 @@ interface WebhookEvent {
 ## Mail coming back
 
 `received` is the one event that isn't about a send: someone wrote to your
-[sending address](/provider#replies). It reads the other way round from the rest —
+[sending address](/provider#replies) or your
+[reply subdomain](/provider#receiving-on-your-own-domain). It reads the other way
+round from the rest —
 `email` is the person who wrote to you, and `message_id` is the send they were replying
 to, when we can tell:
 
