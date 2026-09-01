@@ -136,6 +136,20 @@ export const POST = webhook(async (event) => {
 
 Postboi-provider only — providers without inbound mail never emit it.
 
+## Text messages
+
+The same events cover [SMS](/sms#delivery-receipts): `channel` says `"sms"` (absent
+still means email), and the number is in `phone` — never in `email`, so a handler that
+reads `event.email` is never handed a phone number. A text that reached the handset is
+`delivered`; one the carrier gave up on is `failed`, with the carrier's code in
+`bounce.detail`; one it is still retrying is `delayed`. Which way they arrive depends on
+the provider. **The SMS Works** pushes account-wide delivery reports, so it is a
+`receive()` provider like any of the email ones — `provider: 'smsworks'`, verified with
+`SMSWORKS_WEBHOOK_SECRET` as `?token=…` (see the [table below](#verification)).
+**Twilio** sets its callbacks per message, so it is [polled](#providers-that-dont-push-poll).
+Both read an inbound reply for one thing: a reply that is an
+[opt-out keyword](/sms#opt-outs) is an `unsubscribed` event for the number that sent it.
+
 ## Who opened it, and on what
 
 On opens and clicks, most providers report the recipient's user-agent. postboi parses it
@@ -177,6 +191,7 @@ Providers fall into three camps:
 | Unosend | Signed (HMAC of body) | `UNOSEND_WEBHOOK_SECRET`, the `whsec_…` signing secret |
 | Sequenzy | Signed (HMAC timestamp+body, 5-minute replay window) | `SEQUENZY_WEBHOOK_SECRET`, the endpoint's `whsec_…` signing secret; several comma-separated during a rotation |
 | Postmark, Brevo, SparkPost, Mailjet, ZeptoMail, Elastic Email, Plunk | Shared secret | `<PROVIDER>_WEBHOOK_SECRET`, a token you make up; put the same value in the webhook URL as `?token=…` (or the provider's auth-header option) |
+| The SMS Works (SMS) | Shared secret | `SMSWORKS_WEBHOOK_SECRET`, a token you make up, as `?token=…` on the delivery-report URL (Delivery Reports → Webhook Configuration) — or the basic-auth password on a reply-number webhook |
 | Amazon SES, Scaleway | Shared secret over SNS | `SES_WEBHOOK_SECRET` / `SCALEWAY_WEBHOOK_SECRET` as `?token=…` on the subscription URL; SNS subscription handshakes confirm automatically |
 
 To skip verification deliberately (a local experiment, a payload replay), pass
@@ -231,6 +246,10 @@ await my_handler(mock_event('opened', { email: 'user@example.com' }))
 const { request, secret } = await mock_request({ provider: 'resend', type: 'clicked' })
 const events = await receive(request, { provider: 'resend', secret })
 // events[0].url === "https://example.com/pricing"
+
+// Text-message providers put the number in `phone`:
+const sms = await mock_request({ provider: 'smsworks', type: 'failed' })
+// (await receive(sms.request, { provider: 'smsworks', secret: sms.secret }))[0].phone === "+447700900123"
 ```
 
 Polling providers get the same treatment: `mock_poll` builds a realistic `poll()` result

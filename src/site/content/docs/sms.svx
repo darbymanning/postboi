@@ -231,6 +231,49 @@ Worth knowing before you switch it on:
 - **Which rail delivered** arrives on Twilio's status callbacks, not the send response —
   the message is queued before the routing decision happens.
 
+## Delivery receipts
+
+A send response says the provider *accepted* the message. Whether it reached the handset
+comes later, and the two providers report it in opposite ways — both landing in the same
+normalized [webhook events](/webhooks#text-messages), with `channel: "sms"` and the number in
+`phone`:
+
+- **The SMS Works pushes.** Delivery reports go to one account-wide URL, so point it at
+  `receive()` like an email provider: on the dashboard, **Delivery Reports → Webhook
+  Configuration**, paste your endpoint with a token you make up as `?token=…`, and set the
+  same value as `SMSWORKS_WEBHOOK_SECRET`. There is no signature scheme to verify — the
+  token is compared timing-safe, and that is honestly weaker than the HMAC most email
+  providers offer. Their delivery reports come from three published source addresses
+  (listed on their [developer page](https://thesmsworks.co.uk/developers)) if you want a
+  second check in front.
+- **Twilio is polled.** Its status callbacks are set per message at send time, so
+  `poll({ provider: "twilio" })` reads the Message resource instead — nothing to configure
+  and no public endpoint. See [polling](/webhooks#providers-that-dont-push-poll).
+
+```typescript
+// src/routes/webhooks/sms/+server.ts — the same one-liner as an email webhook
+import { webhook } from "postboi/kit"
+
+export const POST = webhook(
+	async (event) => {
+		if (event.type === "delivered") await mark_delivered(event.message_id)
+		if (event.type === "failed") console.warn(`${event.phone}: ${event.bounce?.detail}`)
+	},
+	{ provider: "smsworks" }
+)
+```
+
+A text that reached the handset is `delivered`; one the carrier gave up on
+(`UNDELIVERABLE`, `REJECTED`, `EXPIRED`) is `failed`, with the carrier's code and words in
+`bounce.detail`. The SMS Works also says whether a failure is permanent, so
+`bounce.category` is `"hard"` or `"soft"` rather than the `"unknown"` a Twilio failure
+carries; a `SENT` still carrying a temporary error is the carrier retrying, and arrives as
+`delayed`. `message_id` is the per-message id — for a [batch send](#sending-many) the id
+`send()` returned was the batch's, which each report carries as `batchid` in `raw`.
+A message the provider is still holding (`SCHEDULED`) is never an event. Test the whole
+path without a tunnel: `mock_request({ provider: "smsworks", type: "failed" })` builds a
+signed-in delivery report.
+
 ## Opt-outs
 
 Someone who texts **STOP** back has opted out, and the law in most places says so
@@ -238,13 +281,17 @@ before any provider does. The keyword list is the one every carrier recognises �
 `STOPALL`, `UNSUBSCRIBE`, `CANCEL`, `END`, `QUIT`, and `ARRET` for Canada — and it is a
 whole-message test: `stop.` opts out, `please stop texting me` is a person to reply to.
 
-Two things surface it, so you needn't parse replies yourself:
+Three things surface it, so you needn't parse replies yourself:
 
 - **`poll()` on Twilio** reads the same Message resource it reads receipts from, and an
   inbound reply that is an opt-out keyword comes back as an `unsubscribed` event —
   `channel` is `"sms"` or `"whatsapp"` (whichever they replied over), and `phone` is
   their number. Nothing else anyone texts becomes an event; a conversation is not a
   delivery receipt. See [polling](/webhooks#providers-that-dont-push-poll).
+- **The SMS Works' reply webhook** — configured per reply number or keyword on their
+  dashboard — goes to the same endpoint as its [delivery reports](#delivery-receipts),
+  and `receive()` draws the same line: a STOP is `unsubscribed` for the number that sent
+  it, and anything else is left for whatever reads your replies.
 - **`is_opt_out(text)`**, from the package root, is the same test on its own — for an
   inbound webhook you already handle.
 

@@ -196,6 +196,9 @@ export const MODULES: Record<string, () => Promise<AdapterModule>> = {
 	plunk: () => import("./plunk.js"),
 	ses: () => import("./ses.js"),
 	scaleway: () => import("./scaleway.js"),
+	// SMS. Twilio is in POLL_MODULES instead; The SMS Works pushes account-wide delivery
+	// reports, so it belongs here with the email providers that push.
+	smsworks: () => import("./smsworks.js"),
 }
 
 /** Options for {@link receive}. */

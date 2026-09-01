@@ -207,7 +207,7 @@ export const POST = webhook(async (event) => {
 })
 ```
 
-Elsewhere: `receive(request)` from `postboi/webhooks` → normalized `WebhookEvent[]` (`sent | delivered | delayed | bounced | complained | opened | clicked | unsubscribed | failed`), with `event.client` parsed locally into name/os/device on opens and clicks. Signature verification is **fail-closed**: set `<PROVIDER>_WEBHOOK_SECRET` (e.g. `RESEND_WEBHOOK_SECRET`) or `receive()` throws. Test without a tunnel using `mock_event` / `mock_request`. `/raw/webhooks`
+Elsewhere: `receive(request)` from `postboi/webhooks` → normalized `WebhookEvent[]` (`sent | delivered | delayed | bounced | complained | opened | clicked | unsubscribed | failed`), with `event.client` parsed locally into name/os/device on opens and clicks. Signature verification is **fail-closed**: set `<PROVIDER>_WEBHOOK_SECRET` (e.g. `RESEND_WEBHOOK_SECRET`) or `receive()` throws. Test without a tunnel using `mock_event` / `mock_request`. SMS receipts arrive the same way with `channel: "sms"` and the number in `event.phone` (never `email`): The SMS Works pushes delivery reports to `receive()` (`provider: "smsworks"`, `SMSWORKS_WEBHOOK_SECRET` as `?token=…` on the URL; a STOP reply is `unsubscribed`), Twilio is `poll({ provider: "twilio" })`. `/raw/webhooks`
 
 ## Scheduling, tracking, bulk
 
