@@ -1,6 +1,8 @@
 import type { SentMessage } from "./mock.js"
 import type { InboxMessage } from "./inbox.js"
 import { INBOX_PATH } from "./inbox.js"
+import { read_env } from "./env.js"
+import { analyze } from "./inspect/index.js"
 import { inbox_ui, type InboxUiOptions } from "./inbox_ui.js"
 import { SOUNDS } from "./inbox_sounds.js"
 import { ART } from "./inbox_art.js"
@@ -368,6 +370,27 @@ export function inbox_middleware(
 	base: string = INBOX_PATH,
 	ui: InboxUiOptions = {}
 ): InboxMiddleware {
+	// Hosted screenshot runs, one per captured message: message id → run id at
+	// the testing API. Memory, like the store itself — the dashboard's run list
+	// is the durable record, this is just which run belongs to which capture.
+	const screenshot_runs = new Map<string, string>()
+	const hosted_token = () => read_env("POSTBOI_TOKEN")
+	const hosted_api = () =>
+		(read_env("POSTBOI_API_URL") ?? "https://postboi.app").replace(/\/+$/, "")
+	/*
+	 * The two ways out of an exhausted allowance, both on the host the run was ordered
+	 * from — a self-hosted or staging account is never sent to postboi.app to pay.
+	 * Packs live on the testing page beside the balance they refill; changing plan is a
+	 * different decision on its own page. Sent as a pair so the UI never has to do path
+	 * surgery on a URL it didn't build.
+	 */
+	const billing_url = () => ({
+		packs: `${hosted_api()}/dashboard/testing`,
+		plan: `${hosted_api()}/dashboard/settings/billing`,
+	})
+	const escape_html = (value: string) =>
+		value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+
 	return (request, response, next) => {
 		const url = request.url ?? ""
 		const path = url.split("?")[0].replace(/\/+$/, "") || "/"
@@ -472,6 +495,115 @@ export function inbox_middleware(
 			response.setHeader("content-type", "text/html; charset=utf-8")
 			response.setHeader("cache-control", "no-store")
 			return void response.end(body_document(message))
+		}
+
+		// The captured message through postboi/inspect — the Report tab's data. Computed
+		// on request rather than at capture: analysis is milliseconds, and this way a
+		// message captured before the tab existed still gets a report.
+		const report_match = /^\/api\/messages\/([^/]+)\/report$/.exec(route)
+		if (report_match && method === "GET") {
+			const message = store.get(report_match[1])
+			if (!message) return void send_json(response, 404, { error: "no such message" })
+			return void send_json(
+				response,
+				200,
+				analyze({
+					html: message.html ?? undefined,
+					text: message.text ?? undefined,
+					subject: message.subject,
+				})
+			)
+		}
+
+		// Real-client screenshots, through the hosted testing API. POST buys a run
+		// (every client on it is a billed preview from the account's allowance) and
+		// pastes the captured message in; GET reports how the captures are coming
+		// along; the :preview_id leg proxies the image bytes so the API token never
+		// reaches the browser.
+		const shots_match = /^\/api\/messages\/([^/]+)\/screenshots$/.exec(route)
+		if (shots_match && method === "POST") {
+			const message = store.get(shots_match[1])
+			if (!message) return void send_json(response, 404, { error: "no such message" })
+			const token = hosted_token()
+			if (!token) return void send_json(response, 400, { error: "POSTBOI_TOKEN is not set" })
+			const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" }
+			return void (async () => {
+				const created = await fetch(`${hosted_api()}/v1/testing`, {
+					method: "POST",
+					headers,
+					body: JSON.stringify({ label: message.subject ?? "Dev inbox capture" }),
+				})
+				if (!created.ok) throw new Error(`create answered ${created.status}`)
+				const run = (await created.json()) as { id: string }
+				// The paste door wants HTML; a text-only capture goes in the way any
+				// client would show it.
+				const html =
+					message.html ??
+					`<pre style="font-family:monospace;white-space:pre-wrap">${escape_html(message.text ?? "")}</pre>`
+				const pasted = await fetch(`${hosted_api()}/v1/testing/${run.id}/source`, {
+					method: "POST",
+					headers,
+					body: JSON.stringify({ subject: message.subject, html, text: message.text ?? undefined }),
+				})
+				if (!pasted.ok) throw new Error(`source answered ${pasted.status}`)
+				screenshot_runs.set(message.id, run.id)
+				send_json(response, 201, { run_id: run.id })
+			})().catch((error: unknown) => send_json(response, 502, { error: String(error) }))
+		}
+		if (shots_match && method === "GET") {
+			const message = store.get(shots_match[1])
+			if (!message) return void send_json(response, 404, { error: "no such message" })
+			const run_id = screenshot_runs.get(message.id)
+			if (!run_id || !hosted_token()) {
+				return void send_json(response, 200, {
+					enabled: Boolean(hosted_token()),
+					run_id: null,
+					previews: [],
+					billing: billing_url(),
+				})
+			}
+			return void (async () => {
+				const listed = await fetch(`${hosted_api()}/v1/testing/${run_id}/previews`, {
+					headers: { authorization: `Bearer ${hosted_token()}` },
+				})
+				if (!listed.ok) throw new Error(`previews answered ${listed.status}`)
+				const body = (await listed.json()) as {
+					data: Array<{ id: string; client_name: string; status: string; error?: string }>
+				}
+				send_json(response, 200, {
+					enabled: true,
+					run_id,
+					billing: billing_url(),
+					previews: body.data.map((preview) => ({
+						id: preview.id,
+						client_name: preview.client_name,
+						status: preview.status,
+						error: preview.error,
+					})),
+				})
+			})().catch((error: unknown) => send_json(response, 502, { error: String(error) }))
+		}
+
+		const shot_image = /^\/api\/messages\/([^/]+)\/screenshots\/([^/]+)$/.exec(route)
+		if (shot_image && method === "GET") {
+			const run_id = screenshot_runs.get(shot_image[1])
+			const token = hosted_token()
+			if (!run_id || !token) return void send_json(response, 404, { error: "no such capture" })
+			return void (async () => {
+				const image = await fetch(
+					`${hosted_api()}/v1/testing/${run_id}/previews/${encodeURIComponent(shot_image[2])}`,
+					{ headers: { authorization: `Bearer ${token}` } }
+				)
+				if (!image.ok) throw new Error(`capture answered ${image.status}`)
+				response.statusCode = 200
+				response.setHeader(
+					"content-type",
+					image.headers.get("content-type") ?? "application/octet-stream"
+				)
+				// Bought once and immutable — the browser can keep it for the session.
+				response.setHeader("cache-control", "private, max-age=3600")
+				response.end(Buffer.from(await image.arrayBuffer()))
+			})().catch((error: unknown) => send_json(response, 502, { error: String(error) }))
 		}
 
 		const attachment_match = /^\/api\/messages\/([^/]+)\/attachments\/(\d+)$/.exec(route)

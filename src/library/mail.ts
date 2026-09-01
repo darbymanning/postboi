@@ -1,5 +1,6 @@
 import type {
 	SendOptions,
+	TestSendOptions,
 	BatchOptions,
 	BatchData,
 	Email,
@@ -7,6 +8,7 @@ import type {
 	CancelResponse,
 	ProviderBase,
 } from "./index.js"
+import type { HostedTest } from "./inspect/hosted.js"
 import { PostboiError } from "./index.js"
 // Type-only — erased at compile time, so the provider module stays a dynamic-only leaf
 // (see the LOADERS note below).
@@ -185,8 +187,38 @@ async function resolve_provider({ intercept = false } = {}): Promise<ProviderBas
 	return new Provider(options)
 }
 
+/**
+ * `mail({ test: … })` — the send that goes to the proving house instead of a person.
+ * Creates (or continues) the named test entry on Postboi's hosted testing and submits
+ * the email as a new attempt; the finished report is on the answer. Deliberately not
+ * intercepted by the dev inbox or the mock: a test run *is* the interception, and it
+ * only exists on the hosted API.
+ */
+async function send_test(options: TestSendOptions): Promise<HostedTest> {
+	// `body` may be a promise (symmetry with the real send path) — but a test takes the
+	// email as rendered HTML: FormData is a submission being forwarded, not a template
+	// being proven, and its rendering belongs to the provider that will actually send it.
+	const body = await options.body
+	if (typeof body !== "string") {
+		throw new PostboiError({
+			provider: "postboi",
+			code: "invalid_test_body",
+			message: "mail({ test }) proves a rendered email — pass `body` as an HTML string.",
+		})
+	}
+	const { hosted_test } = await import("./inspect/hosted.js")
+	return hosted_test({
+		series: options.test,
+		html: body,
+		text: options.text,
+		subject: options.subject,
+		clients: options.clients,
+	})
+}
+
 // The bare send function. Exported below as `mail`, augmented with the resource
 // namespaces (`mail.recipients`, `mail.lists`, …).
+function send_mail(options: TestSendOptions): Promise<HostedTest>
 function send_mail<const T extends ReadonlyArray<Email>>(
 	options: Omit<BatchOptions, "to" | "data"> & { to: T; data: BatchData<T> }
 ): Promise<Array<BatchResult<unknown>>>
@@ -196,9 +228,12 @@ function send_mail(
 	batch?: { concurrency?: number }
 ): Promise<Array<BatchResult<unknown>>>
 async function send_mail(
-	options: SendOptions | BatchOptions | Array<SendOptions>,
+	options: SendOptions | TestSendOptions | BatchOptions | Array<SendOptions>,
 	batch: { concurrency?: number } = {}
 ): Promise<unknown> {
+	if (!Array.isArray(options) && "test" in options && typeof options.test === "string") {
+		return send_test(options as TestSendOptions)
+	}
 	const provider = await resolve_provider({ intercept: true })
 	if (Array.isArray(options)) return provider.send(options, batch)
 	return provider.send(options as SendOptions)
@@ -278,6 +313,7 @@ function lazy_namespace<K extends PostboiNamespace>(name: K): Postboi[K] {
  * import { mail } from "postboi"
  *
  * await mail({ to: "contact@example.com", subject: "Hi", body: "<p>Hello</p>" })
+ * await mail({ test: "welcome", subject: "Hi", body: "<p>Hello</p>" }) // hosted test run
  * await mail.recipients.add("Newsletter", "ada@example.com")
  * await mail.lists.create("Newsletter", { confirmation: true })
  * ```

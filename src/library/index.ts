@@ -290,6 +290,34 @@ export interface SendOptions {
 }
 
 /**
+ * The test form of {@link SendOptions}: `test` names a run on Postboi's hosted testing
+ * instead of `to` addressing a person. The email is built exactly as a real send would
+ * build it, then submitted to the proving house — compatibility findings, real-client
+ * screenshots — and the finished report comes back on the same call.
+ *
+ * The name is the entry: every `mail({ test: "welcome" })` adds an attempt to the same
+ * dashboard entry, which is the edit-and-re-run loop from code. Recipient fields are a
+ * type error here — a test has readers, not recipients — and `clients` only exists here,
+ * because only a test renders screenshots.
+ *
+ * Needs `POSTBOI_TOKEN`, whatever provider sends your real mail. Every run counts
+ * against the account's daily cap and each screenshot client is one rendered preview
+ * from the monthly allowance — in CI, keep this behind a flag.
+ */
+export type TestSendOptions = Omit<SendOptions, "to" | "cc" | "bcc"> & {
+	/** The test entry's name. Same name, same entry — each call is a new attempt on it. */
+	test: string
+	/**
+	 * Screenshot client ids (`GET /v1/testing/clients`). Omit to keep the entry's
+	 * previous pick, or the curated default set on a fresh entry.
+	 */
+	clients?: Array<string>
+	to?: never
+	cc?: never
+	bcc?: never
+}
+
+/**
  * The personalized-batch form of {@link SendOptions}: an array `to` plus per-recipient
  * `data`. `data` is kept off {@link SendOptions} so a plain send literal can't smuggle it
  * in — only this shape (the batch overload) accepts it.

@@ -198,8 +198,12 @@ The rules, because these are secrets:
   unlocks the rest — the store must not contain its own key.
 - **Encrypted at rest**, and only ever decrypted for a bearer of your account token: the
   same trust that could already send with those credentials.
-- **CLI-time only.** Nothing in the send path reads this store — the library sends with
-  whatever is in your process environment, servers included.
+- **Used server-side for exactly two things.** The library itself sends with whatever is
+  in your process environment, servers included — the synced store never feeds your send
+  path. On Postboi's side, synced credentials are decrypted only to poll a provider that
+  can't push delivery webhooks (SMTP, Microsoft 365, Cloudflare — on by default once
+  synced, pausable per provider on the credentials page), and to send on your behalf when
+  you've turned on **send via** there. Never otherwise.
 
 See what's synced, push a hand-set var, or remove one:
 
@@ -208,6 +212,33 @@ bunx postboi env                # list (values masked)
 bunx postboi env push           # push every known credential from your local env
 bunx postboi env remove OLD_KEY
 ```
+
+## Relay: send via your own provider
+
+With credentials synced, the credentials page grows a **Send via** setting: pick a
+provider and the account's sends go out through *it* — Postboi keeps the message log,
+the suppression list, webhooks and the dashboard timeline, while your Resend, Postmark,
+Cloudflare (or any other synced provider) does the delivering. Your code doesn't change:
+you keep sending through the Postboi provider exactly as before.
+
+```ts
+// Or per send, without touching the account setting:
+const mail = new Postboi({ send_via: "resend" })
+```
+
+What flows back depends on the target:
+
+- **SMTP, Microsoft 365, Cloudflare** — the providers without webhooks — get their
+  delivery and bounce events polled (see [webhooks](/webhooks)) and correlated into the
+  timeline, so a relayed send shows Delivered/Bounced like a native one.
+- **Webhook-capable providers** (Resend, Postmark, …) report events to whatever webhooks
+  you configure *with them*; the Postboi timeline shows Sent only. Cloudflare's send
+  response reports per-recipient verdicts immediately, bounces included.
+
+Two honest notes: set `from` to an address the relay provider can send as (the usual
+`from` rule is skipped for relayed sends — your provider enforces its own sender
+authentication, and anything it can't authenticate fails with its error), and relayed
+sends still count toward your Postboi plan like any other send.
 
 ## Type-safe `from`
 

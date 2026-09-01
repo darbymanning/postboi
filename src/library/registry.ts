@@ -152,6 +152,16 @@ export const PROVIDERS = [
 				ambient: true,
 			},
 			{ env: "CLOUDFLARE_ACCOUNT_ID", arg: "account_id", label: "Account ID", ambient: true },
+			// Read by poll() (webhooks/poll_cloudflare.ts), not the send constructor: the
+			// Queue an Email Sending event subscription publishes delivery events to.
+			// Auto-provisioned when empty; here so `postboi sync` carries a manual choice.
+			{
+				env: "CLOUDFLARE_QUEUE_ID",
+				arg: "queue_id",
+				label: "Event queue ID (optional — auto-provisioned)",
+				default: "",
+				ambient: true,
+			},
 		],
 	},
 	{
@@ -348,6 +358,46 @@ export const PROVIDERS = [
 				env: "SMTP_SECURE",
 				arg: "secure",
 				label: "Implicit TLS (auto/true/false)",
+				default: "auto",
+				ambient: true,
+			},
+			// The bounce-mailbox half of the SMTP story: poll() reads DSN reports from the
+			// return-path's POP3 mailbox (see webhooks/poll_smtp.ts). The SMTP constructor
+			// ignores these, like other providers ignore their webhook_secret fields —
+			// they're here so `postboi sync` carries them.
+			{
+				env: "POP3_HOST",
+				arg: "pop3_host",
+				label: "Bounce mailbox host (POP3, optional)",
+				default: "",
+				ambient: true,
+			},
+			{
+				env: "POP3_PORT",
+				arg: "pop3_port",
+				label: "Bounce mailbox port",
+				default: "995",
+				ambient: true,
+			},
+			{
+				env: "POP3_USER",
+				arg: "pop3_user",
+				label: "Bounce mailbox user",
+				default: "",
+				ambient: true,
+			},
+			{
+				env: "POP3_PASS",
+				arg: "pop3_pass",
+				label: "Bounce mailbox password",
+				secret: true,
+				default: "",
+				ambient: true,
+			},
+			{
+				env: "POP3_SECURE",
+				arg: "pop3_secure",
+				label: "Bounce mailbox implicit TLS (auto/true/false)",
 				default: "auto",
 				ambient: true,
 			},

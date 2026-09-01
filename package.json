@@ -1,6 +1,6 @@
 {
 	"name": "postboi",
-	"version": "0.39.0",
+	"version": "0.41.0",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -213,9 +213,17 @@
 			"types": "./dist/webhooks/index.d.ts",
 			"default": "./dist/webhooks/index.js"
 		},
+		"./registry": {
+			"types": "./dist/registry.d.ts",
+			"default": "./dist/registry.js"
+		},
 		"./maizzle": {
 			"types": "./dist/maizzle.d.ts",
 			"default": "./dist/maizzle.js"
+		},
+		"./inspect": {
+			"types": "./dist/inspect/index.d.ts",
+			"default": "./dist/inspect/index.js"
 		},
 		"./kit": {
 			"types": "./dist/kit.d.ts",
