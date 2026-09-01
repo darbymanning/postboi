@@ -5,10 +5,10 @@ import { brandLogoRaw, siteConfig } from "$site"
 import {
 	getContentSectionConfig,
 	getContentSectionItemBySlug,
-	getContentSectionMetadata,
 	getContentSectionHref,
 	getContentSectionManifest,
 } from "$site/content/sections"
+import { getContentSectionMetadata } from "$site/content/sources"
 import { contentSections } from "$site/config/navigation"
 // The static cuts, not the variable ones the site loads: the image renderer wants
 // a single instance per weight, and a variable file would arrive at whatever its

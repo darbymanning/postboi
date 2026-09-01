@@ -3,6 +3,8 @@ import { siteConfig } from "$site"
 import { contentSections } from "$site/config/navigation"
 import { getContentSectionHref, getContentSectionManifest } from "$site/content/sections"
 
+export const prerender = true
+
 type SitemapEntry = {
 	path: string
 	changefreq?: string
