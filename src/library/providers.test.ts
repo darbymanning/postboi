@@ -15,6 +15,7 @@ import Mailtrap from "$library/mailtrap.js"
 import MailPace from "$library/mailpace.js"
 import Lettermint from "$library/lettermint.js"
 import Unosend from "$library/unosend.js"
+import Sequenzy from "$library/sequenzy.js"
 import Scaleway from "$library/scaleway.js"
 import SES from "$library/ses.js"
 import Microsoft365 from "$library/microsoft365.js"
@@ -687,6 +688,71 @@ describe("Unosend", () => {
 		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
 		expect(error.provider).toBe("unosend")
 		expect(error.message).toContain("Invalid to")
+	})
+})
+
+describe("Sequenzy", () => {
+	const mail = () => new Sequenzy({ api_key: "seq_live_key", default: { from: "from@test.com" } })
+	const accepted = { success: true, emailSendId: "send_1", jobId: "job_1", to: "to@test.com" }
+
+	it("maps a send to the Sequenzy transactional endpoint", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			reply_to: ["Support <reply@test.com>", "extra@test.com"],
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			tags: ["welcome"],
+			attachments: attachment(),
+		})
+
+		expect(sent_url()).toBe("https://api.sequenzy.com/api/v1/transactional/send")
+		expect(sent_init().headers).toMatchObject({ Authorization: "Bearer seq_live_key" })
+		expect(sent_init().headers["x-company-id"]).toBeUndefined()
+		const body = sent_json()
+		// One recipient is a string, and a bare address: Sequenzy files it as a subscriber.
+		expect(body.to).toBe("to@test.com")
+		expect(body.cc).toEqual(["cc@test.com"])
+		expect(body.from).toBe("from@test.com")
+		expect(body.replyTo).toBe("Support <reply@test.com>")
+		expect(body.subject).toBe("Hi")
+		expect(body.body).toBe("<p>x</p>")
+		expect(body.attachments).toEqual([{ filename: "doc.pdf", content: b64("filedata") }])
+		// No equivalent on the wire — dropped rather than sent under a guessed name.
+		expect(body.headers).toBeUndefined()
+		expect(body.tags).toBeUndefined()
+		expect(body.text).toBeUndefined()
+		expect(result).toEqual(accepted)
+	})
+
+	it("sends several recipients as an array, and a text-only message as the body", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		await new Sequenzy({
+			api_key: "seq_user_key",
+			company_id: "company_1",
+			default: { from: "from@test.com" },
+		}).send({ to: ["a@test.com", "b@test.com"], subject: "Hi", text: "plain" })
+		expect(sent_init().headers).toMatchObject({ "x-company-id": "company_1" })
+		const body = sent_json()
+		expect(body.to).toEqual(["a@test.com", "b@test.com"])
+		expect(body.body).toBe("plain")
+	})
+
+	it("detects errors, including a rejection that arrives with a 200", async () => {
+		fetch.mockResolvedValue(
+			respond({ ok: false, status: 401, json: { success: false, error: "Unauthorized" } })
+		)
+		let error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("sequenzy")
+		expect(error.status).toBe(401)
+		expect(error.message).toBe("Unauthorized")
+
+		fetch.mockResolvedValue(respond({ json: { success: false, error: "Sending paused" } }))
+		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.message).toBe("Sending paused")
 	})
 })
 

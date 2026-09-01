@@ -504,6 +504,134 @@ describe("receive — unosend", () => {
 	})
 })
 
+describe("receive — sequenzy", () => {
+	const ctx = { headers: new Headers(), url: new URL("https://example.com/webhooks") }
+
+	it("rejects a stale timestamp (replay protection)", async () => {
+		const { request, secret } = await mock_request({ provider: "sequenzy", type: "delivered" })
+		const body = await request.text()
+		const { hmac_sha256, hex_encode } = await import("./webhooks/crypto.js")
+		const stale = String(Math.floor(Date.now() / 1000) - 3600)
+		const hex = hex_encode(await hmac_sha256(secret, `v1:${stale}:${body}`))
+		const replay = new Request(request.url, {
+			method: "POST",
+			headers: { "x-sequenzy-timestamp": stale, "x-sequenzy-signature": `v1=${hex}` },
+			body,
+		})
+		const error = await receive(replay, { provider: "sequenzy", secret }).catch((e) => e)
+		expect(error).toBeInstanceOf(WebhookVerificationError)
+		expect(error.code).toBe("stale_timestamp")
+	})
+
+	it("accepts any v1= value in the header, and any configured secret, during a rotation", async () => {
+		const { request, secret } = await mock_request({ provider: "sequenzy", type: "delivered" })
+		const body = await request.text()
+		const timestamp = request.headers.get("x-sequenzy-timestamp")!
+		const { hmac_sha256, hex_encode } = await import("./webhooks/crypto.js")
+		const good = hex_encode(await hmac_sha256(secret, `v1:${timestamp}:${body}`))
+		const other = hex_encode(await hmac_sha256("retired-secret", `v1:${timestamp}:${body}`))
+		const rotated = new Request(request.url, {
+			method: "POST",
+			headers: {
+				"x-sequenzy-timestamp": timestamp,
+				"x-sequenzy-signature": `v1=${other},v1=${good}`,
+			},
+			body,
+		})
+		const [event] = await receive(rotated, { provider: "sequenzy", secret: `old-one, ${secret}` })
+		expect(event.type).toBe("delivered")
+		expect(event.message_id).toBe("send_mock")
+	})
+
+	it("verifies whichever reading of the whsec_ secret the vendor signs with", async () => {
+		const { default: adapter } = await import("./webhooks/sequenzy.js")
+		const { hmac_sha256, hex_encode, base64_encode } = await import("./webhooks/crypto.js")
+		const body = JSON.stringify({ type: "email.delivered", data: { email_send_id: "s" } })
+		const timestamp = String(Math.floor(Date.now() / 1000))
+		const raw = new Uint8Array(24).fill(7)
+		const secret = `whsec_${base64_encode(raw)}`
+		const keys: Array<Uint8Array | string> = [secret, secret.slice(6), raw]
+		for (const key of keys) {
+			const digest = await hmac_sha256(key, `v1:${timestamp}:${body}`)
+			for (const signature of [hex_encode(digest), base64_encode(digest)]) {
+				await expect(
+					adapter.verify({
+						body,
+						headers: new Headers({
+							"x-sequenzy-timestamp": timestamp,
+							"x-sequenzy-signature": `v1=${signature}`,
+						}),
+						url: ctx.url,
+						secret,
+					})
+				).resolves.toBeUndefined()
+			}
+		}
+		const wrong = hex_encode(await hmac_sha256("something-else", `v1:${timestamp}:${body}`))
+		await expect(
+			adapter.verify({
+				body,
+				headers: new Headers({
+					"x-sequenzy-timestamp": timestamp,
+					"x-sequenzy-signature": `v1=${wrong}`,
+				}),
+				url: ctx.url,
+				secret,
+			})
+		).rejects.toBeInstanceOf(WebhookVerificationError)
+	})
+
+	it("keys events on the send id, reads engagement, and classifies bounces", async () => {
+		const { request, secret } = await mock_request({ provider: "sequenzy", type: "clicked" })
+		const [clicked] = await receive(request, { provider: "sequenzy", secret })
+		expect(clicked.message_id).toBe("send_mock")
+		expect(clicked.url).toBe("https://example.com/pricing")
+		expect(clicked.ip).toBe("192.0.2.1")
+		expect(clicked.client?.name).toBeTruthy()
+
+		const { default: adapter } = await import("./webhooks/sequenzy.js")
+		const bounced = JSON.stringify({
+			type: "email.bounced",
+			created_at: new Date().toISOString(),
+			data: { email_send_id: "send_1", message_id: "upstream", recipient: "r@example.com" },
+		})
+		// Unlabelled is hard: Sequenzy only calls it a bounce once the mailbox was judged bad.
+		expect((await adapter.normalize(bounced, ctx))[0].bounce).toEqual({ category: "hard" })
+		const soft = JSON.stringify({
+			type: "email.bounced",
+			data: { email_send_id: "send_1", bounce_type: "soft", reason: "Mailbox full" },
+		})
+		expect((await adapter.normalize(soft, ctx))[0].bounce).toEqual({
+			category: "soft",
+			detail: "Mailbox full",
+		})
+	})
+
+	it("maps delays and exhausted deliveries, and ignores everything that isn't mail", async () => {
+		const { default: adapter } = await import("./webhooks/sequenzy.js")
+		const one = async (type: string, data: Record<string, unknown> = {}) =>
+			adapter.normalize(JSON.stringify({ type, data }), ctx)
+		expect((await one("email.delivery_delayed"))[0].type).toBe("delayed")
+		expect((await one("email.failed", { failure: { code: "admin_bounce" } }))[0].type).toBe(
+			"failed"
+		)
+		expect((await one("email.unsubscribed"))[0].type).toBe("unsubscribed")
+		for (const type of ["campaign.sent", "sms.delivered", "subscriber.updated", "poll.answered"]) {
+			expect(await one(type), type).toEqual([])
+		}
+	})
+
+	it("turns a tracked reply into received, with the sender as the address", async () => {
+		const { request, secret } = await mock_request({ provider: "sequenzy", type: "received" })
+		const [event] = await receive(request, { provider: "sequenzy", secret })
+		expect(event.type).toBe("received")
+		expect(event.email).toBe("someone@example.com")
+		expect(event.message_id).toBe("send_mock")
+		expect(event.body?.text).toContain("works for me")
+		expect(event.body?.html).toContain("<p>")
+	})
+})
+
 describe("mock_event", () => {
 	it("builds a normalized event with sensible defaults and overrides", () => {
 		const event = mock_event("clicked", { email: "user@example.com" })
@@ -532,6 +660,7 @@ describe("receive — every provider round-trips through mock_request", () => {
 		["mailtrap", ["delivered", "opened", "clicked", "bounced"]],
 		["lettermint", ["delivered", "opened", "clicked", "bounced"]],
 		["unosend", ["delivered", "opened", "clicked", "bounced"]],
+		["sequenzy", ["delivered", "opened", "clicked", "bounced"]],
 		["zepto", ["delivered", "opened", "clicked", "bounced"]],
 		["elasticemail", ["delivered", "opened", "clicked", "bounced"]],
 		// Plunk's documented payload is minimal — no click URL surfaced.
@@ -584,6 +713,7 @@ describe("receive — every provider round-trips through mock_request", () => {
 			"mailtrap",
 			"lettermint",
 			"unosend",
+			"sequenzy",
 		]) {
 			const { request } = await mock_request({ provider, type: "delivered" })
 			const error = await receive(request, {

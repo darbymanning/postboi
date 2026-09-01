@@ -117,6 +117,10 @@
 			"types": "./dist/unosend.d.ts",
 			"default": "./dist/unosend.js"
 		},
+		"./sequenzy": {
+			"types": "./dist/sequenzy.d.ts",
+			"default": "./dist/sequenzy.js"
+		},
 		"./scaleway": {
 			"types": "./dist/scaleway.d.ts",
 			"default": "./dist/scaleway.js"
