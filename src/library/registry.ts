@@ -486,6 +486,29 @@ export const PROVIDERS = [
 		],
 	},
 	{
+		key: "sequenzy",
+		name: "Sequenzy",
+		import: "postboi/sequenzy",
+		class: "Sequenzy",
+		url: "https://www.sequenzy.com/dashboard",
+		fields: [
+			{ env: "SEQUENZY_API_KEY", arg: "api_key", label: "API key (seq_live_…)", secret: true },
+			{
+				env: "SEQUENZY_COMPANY_ID",
+				arg: "company_id",
+				label: "Workspace id (optional; only for seq_user_ account keys)",
+				default: "",
+			},
+			{
+				env: "SEQUENZY_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook signing secret (whsec_…, optional)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
 		key: "zepto",
 		name: "ZeptoMail",
 		import: "postboi/zepto",

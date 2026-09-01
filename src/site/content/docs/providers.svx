@@ -40,6 +40,7 @@ keep the secrets in the environment.
 | Resend         | `postboi/resend`     | `RESEND_API_KEY`                                       | `api_key`                            |
 | Scaleway       | `postboi/scaleway`   | `SCALEWAY_SECRET_KEY`, `SCALEWAY_PROJECT_ID`, `SCALEWAY_REGION` | `secret_key`, `project_id`, `region` |
 | SendGrid       | `postboi/sendgrid`   | `SENDGRID_API_KEY`                                     | `api_key`, `region?`                 |
+| Sequenzy       | `postboi/sequenzy`   | `SEQUENZY_API_KEY`, `SEQUENZY_COMPANY_ID`              | `api_key`, `company_id?`             |
 | SMTP (any)     | `postboi/smtp`       | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE` | `host`, `port?`, `user?`, `pass?`, `secure?` |
 | SparkPost      | `postboi/sparkpost`  | `SPARKPOST_API_KEY`                                    | `api_key`, `region?`                 |
 | Unosend        | `postboi/unosend`    | `UNOSEND_API_KEY`                                      | `api_key`                            |
@@ -131,6 +132,11 @@ native concept, and quietly ignored where unsupported:
 - **tags** → SendGrid (categories), Mailgun (`o:tag`), Brevo, MailerSend, Mandrill,
   MailPace, SES (`EmailTags`), Resend, Lettermint, Unosend (`{name,value}` pairs). Postmark
   and Mailtrap use the **first** tag only.
+
+Sequenzy's send API has no slot for either, nor for a plain-text part: the HTML body is
+the message, and a text-only send goes out as that body. Its `company_id` is only for a
+`seq_user_…` account key that can reach several workspaces; a `seq_live_…` workspace key
+needs nothing more.
 
 The same forwarded-where-supported convention applies to
 [`scheduled_at`](/scheduling), [`tracking`](/tracking) and
