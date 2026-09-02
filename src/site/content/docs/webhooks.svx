@@ -242,8 +242,9 @@ logs.
 
 SMTP, Microsoft 365 and Cloudflare Email Service don't emit delivery-event webhooks —
 `receive()` throws `webhooks_not_supported` and points here. Gmail has no delivery
-events at all, and Iterable, JetEmail, Lettr, MailChannels, Maileroo and Primitive have
-none postboi receives yet, so `receive()` throws the same for them. Twilio is here for a
+events at all, and Alibaba Direct Mail, HubSpot, Iterable, JetEmail, Klaviyo, Lettr,
+MailChannels, Maileroo, Netcore, OneSignal, Primitive and Yandex Cloud Postbox have none
+postboi receives yet, so `receive()` throws the same for them. Twilio is here for a
 different reason: its status callbacks are set per message, at send time, so polling is
 what makes SMS and WhatsApp delivery receipts work with nothing configured and no public
 endpoint. (Meta's Cloud API pushes a real webhook, so WhatsApp via Meta is `receive()`

@@ -789,6 +789,117 @@ export const PROVIDERS = [
 			},
 		],
 	},
+	{
+		key: "netcore",
+		name: "Netcore (Pepipost)",
+		import: "postboi/netcore",
+		class: "Netcore",
+		url: "https://cpaas.netcorecloud.com/app/settings/api",
+		fields: [
+			{ env: "NETCORE_API_KEY", arg: "api_key", label: "API key", secret: true },
+			{
+				env: "NETCORE_REGION",
+				arg: "region",
+				label: "Region (global or eu; optional)",
+				default: "",
+			},
+		],
+	},
+	{
+		key: "klaviyo",
+		name: "Klaviyo",
+		import: "postboi/klaviyo",
+		class: "Klaviyo",
+		url: "https://www.klaviyo.com/settings/account/api-keys",
+		fields: [
+			{ env: "KLAVIYO_API_KEY", arg: "api_key", label: "Private API key (pk_…)", secret: true },
+			{
+				env: "KLAVIYO_METRIC",
+				arg: "metric",
+				label: "Metric the flow is triggered by",
+				default: "Postboi Email",
+			},
+		],
+	},
+	{
+		key: "hubspot",
+		name: "HubSpot",
+		import: "postboi/hubspot",
+		class: "HubSpot",
+		url: "https://app.hubspot.com/private-apps",
+		fields: [
+			{
+				env: "HUBSPOT_ACCESS_TOKEN",
+				arg: "api_key",
+				label: "Private app access token",
+				secret: true,
+			},
+			{ env: "HUBSPOT_EMAIL_ID", arg: "email_id", label: "Transactional email id" },
+		],
+	},
+	{
+		key: "onesignal",
+		name: "OneSignal",
+		import: "postboi/onesignal",
+		class: "OneSignal",
+		url: "https://dashboard.onesignal.com",
+		fields: [
+			{ env: "ONESIGNAL_API_KEY", arg: "api_key", label: "REST API key", secret: true },
+			{ env: "ONESIGNAL_APP_ID", arg: "app_id", label: "App ID" },
+		],
+	},
+	{
+		key: "alibaba",
+		name: "Alibaba Cloud Direct Mail",
+		import: "postboi/alibaba",
+		class: "DirectMail",
+		url: "https://ram.console.aliyun.com/manage/ak",
+		fields: [
+			{
+				env: "ALIBABA_CLOUD_ACCESS_KEY_ID",
+				arg: "access_key_id",
+				label: "Access key ID",
+				secret: true,
+				ambient: true,
+			},
+			{
+				env: "ALIBABA_CLOUD_ACCESS_KEY_SECRET",
+				arg: "access_key_secret",
+				label: "Access key secret",
+				secret: true,
+				ambient: true,
+			},
+			{
+				env: "ALIBABA_CLOUD_REGION_ID",
+				arg: "region",
+				label: "Region",
+				default: "cn-hangzhou",
+				ambient: true,
+			},
+		],
+	},
+	{
+		key: "yandex",
+		name: "Yandex Cloud Postbox",
+		import: "postboi/yandex",
+		class: "Postbox",
+		url: "https://console.yandex.cloud",
+		fields: [
+			{
+				env: "YANDEX_ACCESS_KEY_ID",
+				arg: "access_key_id",
+				label: "Static access key ID",
+				secret: true,
+			},
+			{
+				env: "YANDEX_SECRET_ACCESS_KEY",
+				arg: "secret_access_key",
+				label: "Static secret access key",
+				secret: true,
+			},
+			{ env: "YANDEX_REGION", arg: "region", label: "Region", default: "ru-central1" },
+		],
+	},
 ] as const satisfies ReadonlyArray<ProviderMeta>
 
 /** A known provider key, e.g. `"resend"` — derived from {@link PROVIDERS} so it can't drift. */

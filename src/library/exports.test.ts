@@ -46,6 +46,8 @@ describe("package exports", () => {
 			"channel_inbox.ts", // channel captures → dev inbox bridge, used by the dev interceptions
 			"captcha.ts", // spam protection, reached via the root export
 			"aws.ts", // SigV4 signing, used by ses.ts (and SNS later)
+			"ses_v2.ts", // the SES v2 wire format, shared by ses.ts and yandex.ts
+			"crypto.ts", // WebCrypto HMACs, used by webhooks/crypto.ts and alibaba.ts
 			"mime.ts", // RFC 5322 composition, used by smtp.ts and gmail.ts
 			"oauth.ts", // shared token cache + Google service-account JWT, used by gmail.ts, sendpulse.ts and push/
 			"errors.ts", // normalized errors, re-exported from the root

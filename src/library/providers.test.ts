@@ -32,8 +32,14 @@ import Iterable from "$library/iterable.js"
 import JetEmail from "$library/jetemail.js"
 import Lettr from "$library/lettr.js"
 import Primitive from "$library/primitive.js"
+import Netcore from "$library/netcore.js"
+import Klaviyo from "$library/klaviyo.js"
+import HubSpot from "$library/hubspot.js"
+import OneSignal from "$library/onesignal.js"
+import AlibabaDirectMail from "$library/alibaba.js"
+import YandexPostbox from "$library/yandex.js"
 import { clear_token_cache } from "$library/push/oauth.js"
-import { createHash, generateKeyPairSync } from "node:crypto"
+import { createHash, createHmac, generateKeyPairSync } from "node:crypto"
 import Scaleway from "$library/scaleway.js"
 import SES from "$library/ses.js"
 import Microsoft365 from "$library/microsoft365.js"
@@ -2401,5 +2407,440 @@ describe("review fixes", () => {
 			)
 			.join("")
 		expect(decoded).toBe("Ünterwegs ".repeat(30).trim())
+	})
+})
+
+describe("Netcore", () => {
+	const mail = () => new Netcore({ api_key: "nc_key", default: { from: "Acme <from@test.com>" } })
+
+	it("maps the send onto one personalization", async () => {
+		fetch.mockResolvedValue(
+			respond({ json: { status: "success", data: { total_count: 1, message_ids: [] } } })
+		)
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			bcc: "bcc@test.com",
+			reply_to: "reply@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Custom": "1" },
+			tags: ["welcome"],
+			tracking: { opens: true, clicks: false },
+			attachments: attachment(),
+		})
+
+		expect(sent_url()).toBe("https://emailapi.netcorecloud.net/v5.1/mail/send")
+		expect(sent_init().headers).toMatchObject({ api_key: "nc_key" })
+		const body = sent_json()
+		expect(body.from).toEqual({ email: "from@test.com", name: "Acme" })
+		expect(body.subject).toBe("Hi")
+		expect(body.content).toEqual([{ type: "html", value: "<p>x</p>" }])
+		expect(body.personalizations).toEqual([
+			{
+				to: [{ email: "to@test.com", name: "To" }],
+				cc: [{ email: "cc@test.com" }],
+				bcc: [{ email: "bcc@test.com" }],
+				attachments: [{ name: "doc.pdf", content: b64("filedata") }],
+				"x-apiheader": { "X-Custom": "1" },
+			},
+		])
+		expect(body.reply_to).toBe("reply@test.com")
+		expect(body.tags).toEqual(["welcome"])
+		expect(body.settings).toEqual({ open_track: true, click_track: false })
+		expect(result).toEqual({ status: "success", data: { total_count: 1, message_ids: [] } })
+	})
+
+	it("sends a text-only body as the content block, and honours the EU host", async () => {
+		fetch.mockResolvedValue(respond({ json: { status: "success" } }))
+		await new Netcore({ api_key: "nc_key", region: "eu", default: { from: "from@test.com" } }).send(
+			{ to: "to@test.com", subject: "Hi", text: "plain only" }
+		)
+		expect(sent_url()).toBe("https://apieu.netcorecloud.net/v5.1/mail/send")
+		expect(sent_json().content).toEqual([{ type: "html", value: "plain only" }])
+	})
+
+	it("reads whatever shape the error envelope arrived in", async () => {
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 400,
+				json: { status: "error", error: [{ field: "from", message: "unverified domain" }] },
+			})
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("netcore")
+		expect(error.message).toBe("from: unverified domain")
+
+		fetch.mockResolvedValue(respond({ ok: false, status: 401, json: { status: "error" } }))
+		expect((await caught(mail().send({ to: "to@test.com", body: "x" }))).message).toBe(
+			"netcore rejected the send"
+		)
+	})
+})
+
+describe("Klaviyo", () => {
+	const mail = () => new Klaviyo({ api_key: "pk_key", metric: "Password reset" })
+
+	it("files the send as an event for the flow to send", async () => {
+		fetch.mockResolvedValue(respond({ status: 202 }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			from: "Acme <from@test.com>",
+			subject: "Hi {name}",
+			body: "<p>x</p>",
+			text: "x",
+			idempotency_key: "idem-1",
+		})
+
+		expect(sent_url()).toBe("https://a.klaviyo.com/api/events")
+		expect(sent_init().headers).toMatchObject({
+			Authorization: "Klaviyo-API-Key pk_key",
+			revision: "2026-07-15",
+			"Content-Type": "application/vnd.api+json",
+		})
+		const attributes = sent_json().data.attributes
+		expect(attributes.metric).toEqual({
+			data: { type: "metric", attributes: { name: "Password reset" } },
+		})
+		expect(attributes.profile).toEqual({
+			data: { type: "profile", attributes: { email: "to@test.com" } },
+		})
+		expect(attributes.properties).toEqual({
+			subject: "Hi {name}",
+			from: "Acme <from@test.com>",
+			html: "<p>x</p>",
+			text: "x",
+			name: "To",
+		})
+		expect(attributes.unique_id).toBe("idem-1")
+		// 202 with no body: the acceptance is the whole answer.
+		expect(result).toEqual({ accepted: true })
+	})
+
+	it("needs no from, and refuses several recipients or a cc", async () => {
+		fetch.mockResolvedValue(respond({ status: 202 }))
+		await mail().send({ to: "to@test.com", subject: "Hi", body: "x" })
+		expect(sent_json().data.attributes.properties.from).toBeUndefined()
+
+		let error = await caught(mail().send({ to: ["a@test.com", "b@test.com"], body: "x" }))
+		expect(error.code).toBe("single_recipient")
+		error = await caught(mail().send({ to: "a@test.com", cc: "b@test.com", body: "x" }))
+		expect(error.code).toBe("single_recipient")
+		expect(fetch).toHaveBeenCalledTimes(1)
+	})
+
+	it("reads the JSON:API error envelope", async () => {
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 400,
+				json: {
+					errors: [
+						{
+							code: "invalid",
+							title: "Invalid input.",
+							detail: "The email address is not valid.",
+							source: { pointer: "/data/attributes/profile" },
+						},
+					],
+				},
+			})
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("klaviyo")
+		expect(error.message).toBe("The email address is not valid. (/data/attributes/profile)")
+		expect(error.code).toBe("invalid")
+	})
+})
+
+describe("HubSpot", () => {
+	const mail = () => new HubSpot({ api_key: "pat-key", email_id: "123456789" })
+
+	it("maps the send onto the single-send shape", async () => {
+		fetch.mockResolvedValue(
+			respond({ json: { status: "COMPLETE", sendResult: "SENT", eventId: { id: "ev-1" } } })
+		)
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			from: "Acme <from@test.com>",
+			cc: "cc@test.com",
+			bcc: "bcc@test.com",
+			reply_to: "reply@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			idempotency_key: "idem-1",
+		})
+
+		expect(sent_url()).toBe("https://api.hubapi.com/marketing/v3/transactional/single-email/send")
+		expect(sent_init().headers).toMatchObject({ Authorization: "Bearer pat-key" })
+		const body = sent_json()
+		expect(body.emailId).toBe(123456789)
+		expect(body.message).toEqual({
+			to: "to@test.com",
+			from: "Acme <from@test.com>",
+			cc: ["cc@test.com"],
+			bcc: ["bcc@test.com"],
+			replyTo: ["reply@test.com"],
+			sendId: "idem-1",
+		})
+		expect(body.customProperties).toEqual({
+			subject: "Hi",
+			from: "Acme <from@test.com>",
+			html: "<p>x</p>",
+			text: "x",
+			name: "To",
+		})
+		expect(result).toEqual({ status: "COMPLETE", sendResult: "SENT", eventId: { id: "ev-1" } })
+	})
+
+	it("throws on a refusal reported as a 200", async () => {
+		fetch.mockResolvedValue(
+			respond({ json: { status: "COMPLETE", sendResult: "INVALID_TO_ADDRESS" } })
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("hubspot")
+		expect(error.code).toBe("INVALID_TO_ADDRESS")
+	})
+
+	it("reads HubSpot's own error envelope, and refuses several recipients", async () => {
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 400,
+				json: { status: "error", message: "Email 123 not found", category: "VALIDATION_ERROR" },
+			})
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.message).toBe("Email 123 not found")
+		expect(error.code).toBe("VALIDATION_ERROR")
+
+		expect((await caught(mail().send({ to: ["a@test.com", "b@test.com"], body: "x" }))).code).toBe(
+			"single_recipient"
+		)
+	})
+})
+
+describe("OneSignal", () => {
+	const mail = () =>
+		new OneSignal({
+			api_key: "os_key",
+			app_id: "app-1",
+			preheader: "A peek",
+			default: { from: "Acme <from@test.com>" },
+		})
+
+	it("maps the send onto an email message", async () => {
+		fetch.mockResolvedValue(respond({ json: { id: "n-1", recipients: 2 } }))
+		const result = await mail().send({
+			to: "to@test.com",
+			cc: "cc@test.com",
+			bcc: "bcc@test.com",
+			reply_to: "reply@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			scheduled_at: new Date("2026-01-01T09:00:00.000Z"),
+			tracking: { clicks: false },
+		})
+
+		expect(sent_url()).toBe("https://api.onesignal.com/notifications")
+		expect(sent_init().headers).toMatchObject({ Authorization: "Key os_key" })
+		const body = sent_json()
+		expect(body.app_id).toBe("app-1")
+		expect(body.target_channel).toBe("email")
+		// No cc on OneSignal — a copy each, rather than a copy silently lost.
+		expect(body.email_to).toEqual(["to@test.com", "cc@test.com"])
+		expect(body.email_bcc).toEqual(["bcc@test.com"])
+		expect(body.email_subject).toBe("Hi")
+		expect(body.email_body).toBe("<p>x</p>")
+		expect(body.email_from_name).toBe("Acme")
+		expect(body.email_from_address).toBe("from@test.com")
+		expect(body.email_reply_to_address).toBe("reply@test.com")
+		expect(body.email_preheader).toBe("A peek")
+		expect(body.include_unsubscribed).toBe(true)
+		expect(body.disable_email_click_tracking).toBe(true)
+		expect(body.send_after).toBe("2026-01-01T09:00:00.000Z")
+		expect(result).toEqual({ id: "n-1", recipients: 2 })
+	})
+
+	it("respects the list when include_unsubscribed is turned off", async () => {
+		fetch.mockResolvedValue(respond({ json: { id: "n-2" } }))
+		await new OneSignal({ api_key: "os_key", app_id: "app-1", include_unsubscribed: false }).send({
+			to: "to@test.com",
+			subject: "Hi",
+			body: "x",
+		})
+		expect(sent_json().include_unsubscribed).toBe(false)
+	})
+
+	it("throws on the 200 that reached nobody, and on an errors array", async () => {
+		fetch.mockResolvedValue(respond({ json: { id: "", recipients: 0 } }))
+		let error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("onesignal")
+		expect(error.message).toMatch(/reached no recipients/)
+
+		fetch.mockResolvedValue(
+			respond({ ok: false, status: 400, json: { errors: ["Invalid app_id format"] } })
+		)
+		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.message).toBe("Invalid app_id format")
+	})
+})
+
+describe("Alibaba Cloud Direct Mail", () => {
+	const mail = () =>
+		new AlibabaDirectMail({
+			access_key_id: "LTAIEXAMPLE",
+			access_key_secret: "secret",
+			region: "ap-southeast-1",
+			default: { from: "Acme <from@test.com>" },
+		})
+
+	/** The form body Direct Mail was posted, as a plain object. */
+	function sent_form(): Record<string, string> {
+		const init = fetch.mock.calls.at(-1)![1] as RequestInit
+		return Object.fromEntries(new URLSearchParams(init.body as string))
+	}
+
+	it("maps the send onto SingleSendMail parameters", async () => {
+		fetch.mockResolvedValue(respond({ json: { EnvId: "env-1", RequestId: "req-1" } }))
+		const result = await mail().send({
+			to: "to@test.com",
+			cc: "cc@test.com",
+			bcc: "bcc@test.com",
+			reply_to: "Support <reply@test.com>",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			tags: ["welcome", "ignored"],
+			tracking: { clicks: true },
+		})
+
+		expect(sent_url()).toBe("https://dm.ap-southeast-1.aliyuncs.com/")
+		expect(sent_init().headers).toMatchObject({
+			"Content-Type": "application/x-www-form-urlencoded",
+		})
+		const form = sent_form()
+		expect(form.Action).toBe("SingleSendMail")
+		expect(form.AccountName).toBe("from@test.com")
+		expect(form.FromAlias).toBe("Acme")
+		expect(form.AddressType).toBe("1")
+		// No cc or bcc of its own: every address becomes a recipient.
+		expect(form.ToAddress).toBe("to@test.com,cc@test.com,bcc@test.com")
+		expect(form.Subject).toBe("Hi")
+		expect(form.HtmlBody).toBe("<p>x</p>")
+		expect(form.TextBody).toBe("x")
+		expect(form.ReplyToAddress).toBe("true")
+		expect(form.ReplyAddress).toBe("reply@test.com")
+		expect(form.ReplyAddressAlias).toBe("Support")
+		expect(form.TagName).toBe("welcome")
+		expect(form.ClickTrace).toBe("1")
+		expect(form.Version).toBe("2015-11-23")
+		expect(form.RegionId).toBe("ap-southeast-1")
+		expect(form.SignatureMethod).toBe("HMAC-SHA1")
+		expect(form.Timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
+		expect(result).toEqual({ EnvId: "env-1", RequestId: "req-1" })
+	})
+
+	it("signs the request the way Alibaba's RPC scheme says", async () => {
+		fetch.mockResolvedValue(respond({ json: { EnvId: "env-1" } }))
+		await mail().send({ to: "to@test.com", subject: "It's here (now)", body: "<p>x</p>" })
+
+		const form = sent_form()
+		const { Signature, ...params } = form
+		// Recomputed independently of the provider: ordering, the encoding of the awkward
+		// characters, the `POST&%2F&` prefix and the trailing `&` on the key all matter.
+		const encode = (v: string) =>
+			encodeURIComponent(v).replace(
+				/[!'()*]/g,
+				(c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`
+			)
+		const canonical = Object.keys(params)
+			.sort()
+			.map((k) => `${encode(k)}=${encode(params[k])}`)
+			.join("&")
+		const expected = createHmac("sha1", "secret&")
+			.update(`POST&${encode("/")}&${encode(canonical)}`)
+			.digest("base64")
+		expect(Signature).toBe(expected)
+	})
+
+	it("reads the RPC error envelope", async () => {
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 400,
+				json: {
+					RequestId: "req-1",
+					HostId: "dm.aliyuncs.com",
+					Code: "InvalidMailAddress.NotFound",
+					Message: "The specified mail address does not exist.",
+				},
+			})
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("alibaba")
+		expect(error.message).toBe("The specified mail address does not exist.")
+		expect(error.code).toBe("InvalidMailAddress.NotFound")
+	})
+})
+
+describe("Yandex Cloud Postbox", () => {
+	const mail = () =>
+		new YandexPostbox({
+			access_key_id: "YCAJEEXAMPLE",
+			secret_access_key: "secret",
+			default: { from: "from@test.com" },
+		})
+
+	it("speaks the SES v2 wire format against Postbox's endpoint", async () => {
+		fetch.mockResolvedValue(respond({ json: { MessageId: "yc-1" } }))
+		const result = await mail().send({
+			to: "to@test.com",
+			cc: "cc@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			attachments: attachment(),
+		})
+
+		expect(sent_url()).toBe("https://postbox.cloud.yandex.net/v2/email/outbound-emails")
+		// Signed as `ses` in ru-central1 — Postbox implements Amazon's API, credentials and all.
+		expect(sent_init().headers.Authorization).toMatch(
+			/^AWS4-HMAC-SHA256 Credential=YCAJEEXAMPLE\/\d{8}\/ru-central1\/ses\/aws4_request, /
+		)
+		const body = sent_json()
+		expect(body.FromEmailAddress).toBe("from@test.com")
+		expect(body.Destination).toEqual({
+			ToAddresses: ["to@test.com"],
+			CcAddresses: ["cc@test.com"],
+		})
+		expect(body.Content.Simple.Body).toEqual({ Html: { Data: "<p>x</p>" }, Text: { Data: "x" } })
+		expect(body.Content.Simple.Attachments).toEqual([
+			{
+				RawContent: b64("filedata"),
+				FileName: "doc.pdf",
+				ContentType: "application/pdf",
+				ContentDisposition: "ATTACHMENT",
+			},
+		])
+		expect(result).toEqual({ MessageId: "yc-1" })
+	})
+
+	it("reads the shared error shape, attributed to yandex", async () => {
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 400,
+				json: { message: "Sender address is not verified" },
+				headers: { "x-amzn-errortype": "MessageRejected:" },
+			})
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("yandex")
+		expect(error.message).toBe("Sender address is not verified")
+		expect(error.code).toBe("MessageRejected")
 	})
 })
