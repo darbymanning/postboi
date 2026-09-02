@@ -325,6 +325,10 @@ describe("provider inference reads intent, not ambience", () => {
 				for (const field of provider.fields) if (field.ambient) marked.add(field.env)
 
 		expect([...marked].sort()).toEqual([
+			// The Alibaba Cloud SDKs' own credential names.
+			"ALIBABA_CLOUD_ACCESS_KEY_ID",
+			"ALIBABA_CLOUD_ACCESS_KEY_SECRET",
+			"ALIBABA_CLOUD_REGION_ID",
 			// Any box that has ever touched AWS.
 			"AWS_ACCESS_KEY_ID",
 			"AWS_REGION",

@@ -1,5 +1,5 @@
 import type { PreparedMessage, ApiKeyOptions, ProviderError, RequestSpec } from "./index.js"
-import { ProviderBase, PostboiError } from "./index.js"
+import { ProviderBase } from "./index.js"
 
 /** Options for the Primitive provider constructor. */
 type Options = ApiKeyOptions
@@ -59,23 +59,15 @@ export default class Primitive extends ProviderBase<SendResponse> {
 	}
 
 	protected async build_request(message: PreparedMessage): Promise<RequestSpec> {
-		const to = this.parse_addresses(message.to)
-		const copied = [
-			...(message.cc ? this.parse_addresses(message.cc) : []),
-			...(message.bcc ? this.parse_addresses(message.bcc) : []),
-		]
-		if (to.length !== 1 || copied.length) {
-			throw new PostboiError({
-				provider: "primitive",
-				code: "single_recipient",
-				message:
-					"Primitive sends to one recipient per request, with no cc or bcc. Pass an array of sends to reach several people.",
-			})
-		}
+		const to = this.single_recipient(
+			message,
+			"Primitive sends to one recipient per request, with no cc or bcc.",
+			[message.cc, message.bcc]
+		)
 
 		const params: SendParams = {
 			from: this.stringify_address(this.parse_email_address(message.from)),
-			to: this.stringify_address(to[0]),
+			to: this.stringify_address(to),
 			subject: message.subject,
 			body_text: message.text,
 			body_html: message.html,

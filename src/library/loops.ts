@@ -1,5 +1,5 @@
 import type { PreparedMessage, ApiKeyOptions, ProviderError, RequestSpec } from "./index.js"
-import { ProviderBase, PostboiError } from "./index.js"
+import { ProviderBase } from "./index.js"
 
 /** Options for the Loops provider constructor. */
 type Options = ApiKeyOptions & {
@@ -68,26 +68,12 @@ export default class Loops extends ProviderBase<SendResponse> {
 	}
 
 	protected async build_request(message: PreparedMessage): Promise<RequestSpec> {
-		const to = this.parse_addresses(message.to)
-		if (to.length !== 1) {
-			throw new PostboiError({
-				provider: "loops",
-				code: "single_recipient",
-				message:
-					"Loops sends one transactional email per recipient. Pass an array of sends (or a batch with `data`) to reach several people.",
-			})
-		}
-
-		const variables: Record<string, string | number> = { subject: message.subject }
-		if (message.from)
-			variables.from = this.stringify_address(this.parse_email_address(message.from))
-		if (message.html) variables.html = message.html
-		if (message.text) variables.text = message.text
-		if (to[0].name) variables.name = to[0].name
+		const to = this.single_recipient(message, "Loops sends one transactional email per recipient.")
+		const variables = this.template_fields(message, to)
 
 		const params: SendParams = {
 			transactionalId: this.#transactional_id,
-			email: to[0].address,
+			email: to.address,
 			addToAudience: this.#add_to_audience,
 			dataVariables: variables,
 			attachments: message.attachments

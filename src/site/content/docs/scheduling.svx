@@ -58,6 +58,7 @@ Scheduling is done by the provider, so it only works where the provider offers i
 | Infobip       | Sent as `sendAt`.                                                    |
 | Iterable      | Sent as `sendAt`, in Iterable's own `yyyy-MM-dd HH:mm:ss` form.      |
 | Lettr         | Sent as `scheduled_at`, through the `/emails/scheduled` endpoint.    |
+| OneSignal     | Sent as `send_after`.                                                |
 
 Every other provider **ignores** `scheduled_at` and sends immediately, so don't lean on it
 with a provider that doesn't support it.
