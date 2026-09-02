@@ -22,7 +22,7 @@
  */
 import { PostboiError } from "../index.js"
 import type { Channel } from "../errors.js"
-import type { ProviderKey } from "../registry.js"
+import type { ProviderKey, WhatsappProviderKey } from "../registry.js"
 import { load_config } from "../config.js"
 import { ensure_env_loaded, read_env } from "../env.js"
 import { parse_json, sns_envelope, sns_subscribe_url } from "./shared.js"
@@ -86,7 +86,10 @@ export interface WebhookEvent {
 	provider: string
 	/** The provider's message id — matches the id `send()` returned, where the provider allows. */
 	message_id?: string
-	/** The recipient this event is about — on `received`, the sender who wrote to you. */
+	/**
+	 * The recipient this event is about — on `received`, the sender who wrote to you.
+	 * Unset on `sms` and `whatsapp` events, where the person is in `phone`.
+	 */
 	email?: string
 	/**
 	 * Which channel this event is about. Absent means email — every provider that
@@ -216,9 +219,13 @@ export interface ReceiveOptions {
 	 * Which provider the request comes from — a key like `"resend"`, or a custom
 	 * {@link WebhookAdapter}. Defaults to the same resolution `mail()` uses:
 	 * `POSTBOI_PROVIDER`, then `postboi.config.ts`, then a `POSTBOI_TOKEN` → the
-	 * Postboi provider.
+	 * Postboi provider — and, only when none of those names an email provider, the
+	 * WhatsApp provider (`POSTBOI_WHATSAPP_PROVIDER` / `whatsapp.provider`) when it
+	 * pushes webhooks. A project with both names `"meta"` here: the endpoint Meta
+	 * calls is never the one the email provider calls. (Twilio types but polls —
+	 * `poll()` is where its receipts are.)
 	 */
-	provider?: ProviderKey | "postboi" | "meta" | WebhookAdapter
+	provider?: ProviderKey | WhatsappProviderKey | "postboi" | WebhookAdapter
 	/**
 	 * The signing secret / verification key. Defaults to the provider's
 	 * `<PROVIDER>_WEBHOOK_SECRET` environment variable. For Svix-style providers
@@ -241,23 +248,36 @@ export interface ReceiveOptions {
 	verify?: boolean
 }
 
-/** Resolve the provider key the same way the zero-config `mail()` does. */
+/**
+ * Resolve the provider key the same way the zero-config `mail()` does. A project with
+ * no email provider at all falls through to its WhatsApp one, if that pushes webhooks
+ * (Meta does; Twilio polls) — so a WhatsApp-only app gets zero-config `receive()` too.
+ */
 export async function resolve_key(): Promise<string> {
 	const config = await load_config()
 	await ensure_env_loaded()
-	const key =
+	const email =
 		read_env("POSTBOI_PROVIDER") ??
 		config.provider ??
 		(read_env("POSTBOI_TOKEN") ? "postboi" : undefined)
+	const whatsapp = read_env("POSTBOI_WHATSAPP_PROVIDER") ?? config.whatsapp?.provider
+	const key = email ?? (whatsapp && whatsapp in MODULES ? whatsapp : undefined)
 	if (!key) {
 		throw new PostboiError({
 			provider: "postboi",
 			code: "no_provider",
 			message:
-				"No provider configured. Run `bunx postboi init`, set POSTBOI_PROVIDER, or pass { provider } to receive().",
+				"No provider configured. Run `bunx postboi init`, set POSTBOI_PROVIDER (or POSTBOI_WHATSAPP_PROVIDER=meta), or pass { provider } to receive().",
 		})
 	}
 	return key
+}
+
+/** The adapter `options` name — explicitly, by key, or by the zero-config resolution. */
+async function adapter_from(options: ReceiveOptions): Promise<WebhookAdapter> {
+	return typeof options.provider === "object"
+		? options.provider
+		: adapter_for(options.provider ?? (await resolve_key()))
 }
 
 /** Load the adapter for a provider key, or throw `webhooks_not_supported`. */
@@ -289,10 +309,7 @@ export async function receive(
 	request: Request,
 	options: ReceiveOptions = {}
 ): Promise<Array<WebhookEvent>> {
-	const adapter =
-		typeof options.provider === "object"
-			? options.provider
-			: await adapter_for(options.provider ?? (await resolve_key()))
+	const adapter = await adapter_from(options)
 
 	await ensure_env_loaded()
 	const secret =
@@ -338,22 +355,25 @@ export async function receive(
  * `<PROVIDER>_WEBHOOK_VERIFY_TOKEN` — and, like signatures, this fails closed: no
  * configured token throws rather than confirming a stranger's subscription. Throws
  * {@link WebhookVerificationError} on a mismatch — return a 401 for those.
+ *
+ * `verify: false` does not apply here. It exists to normalize a payload you already
+ * trust (a replay, a local experiment), and a handshake has no payload: echoing any
+ * challenge would let whoever found the URL subscribe it to their own app.
  */
 export async function handshake(
 	request: Request,
 	options: ReceiveOptions = {}
 ): Promise<string | undefined> {
+	// Every handshake we know of rides the query string; a bare GET (a health check, a
+	// browser) is turned away before any adapter is resolved or loaded for it.
 	if (request.method !== "GET") return undefined
-	const adapter =
-		typeof options.provider === "object"
-			? options.provider
-			: await adapter_for(options.provider ?? (await resolve_key()))
-	if (!adapter.handshake) return undefined
-
 	const url = new URL(request.url)
+	if (!url.search) return undefined
+
+	const adapter = await adapter_from(options)
+	if (!adapter.handshake) return undefined
 	const presented = adapter.handshake({ headers: request.headers, url })
 	if (!presented) return undefined
-	if (options.verify === false) return presented.challenge
 
 	await ensure_env_loaded()
 	const env = `${adapter.provider.toUpperCase()}_WEBHOOK_VERIFY_TOKEN`
@@ -361,7 +381,7 @@ export async function handshake(
 	if (!expected) {
 		throw new WebhookVerificationError({
 			provider: adapter.provider,
-			message: `No webhook verify token configured for ${adapter.provider}. Set ${env} to the verify token you gave the provider, or pass { verify_token } — or { verify: false } to explicitly skip verification.`,
+			message: `No webhook verify token configured for ${adapter.provider}. Set ${env} to the verify token you gave the provider, or pass { verify_token }.`,
 			code: "missing_secret",
 		})
 	}

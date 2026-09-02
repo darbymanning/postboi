@@ -12,6 +12,7 @@ import {
 	svix_verify,
 	timing_safe_equal,
 	hmac_sha256,
+	hex_encode,
 	base64_encode,
 	base64_decode,
 	verify_ecdsa_p256_sha256,
@@ -782,10 +783,10 @@ describe("receive — meta (WhatsApp Cloud API)", () => {
 	/** Sign a payload the way Meta does: sha256=<hex HMAC of the raw body, app secret>. */
 	async function signed(payload: unknown, secret: string): Promise<Request> {
 		const body = JSON.stringify(payload)
-		const hex = [...(await hmac_sha256(secret, body))].map((b) => b.toString(16).padStart(2, "0"))
+		const hex = hex_encode(await hmac_sha256(secret, body))
 		return new Request("https://example.com/webhooks/whatsapp", {
 			method: "POST",
-			headers: { "x-hub-signature-256": `sha256=${hex.join("")}` },
+			headers: { "x-hub-signature-256": `sha256=${hex}` },
 			body,
 		})
 	}
@@ -909,6 +910,38 @@ describe("receive — meta (WhatsApp Cloud API)", () => {
 						type: "button",
 						button: { text: "Unsubscribe", payload: "Unsubscribe" },
 					},
+					// An interactive button or list row they tapped is words too.
+					{
+						from: "15557770006",
+						id: "l",
+						timestamp: "1756720011",
+						type: "interactive",
+						interactive: { type: "button_reply", button_reply: { id: "opt-out", title: "Stop" } },
+					},
+					{
+						from: "15557770006",
+						id: "m",
+						timestamp: "1756720012",
+						type: "interactive",
+						interactive: { type: "list_reply", list_reply: { id: "size-l", title: "Large" } },
+					},
+					// Quoting their own earlier message is not a reply to a send of yours.
+					{
+						from: "15557770006",
+						id: "n",
+						timestamp: "1756720013",
+						type: "text",
+						text: { body: "still waiting" },
+						context: { from: "15557770006", id: "g" },
+					},
+					{
+						from: "15557770006",
+						id: "o",
+						timestamp: "1756720014",
+						type: "text",
+						text: { body: "yes please" },
+						context: { from: "15551110001", id: "wamid.sent" },
+					},
 				],
 			}),
 			secret
@@ -923,7 +956,12 @@ describe("receive — meta (WhatsApp Cloud API)", () => {
 			["h", "received"],
 			["j", "unsubscribed"],
 			["k", "unsubscribed"],
+			["l", "unsubscribed"],
+			["m", "received"],
+			["n", "received"],
+			["wamid.sent", "received"],
 		])
+		expect(events[9]).toMatchObject({ body: { text: "Large" } })
 		expect(events[3].bounce).toEqual({
 			category: "unknown",
 			detail: "131026 Message undeliverable",
@@ -983,5 +1021,28 @@ describe("receive — meta (WhatsApp Cloud API)", () => {
 		} finally {
 			delete process.env.META_WEBHOOK_VERIFY_TOKEN
 		}
+	})
+
+	it("is the default when no email provider is configured but the WhatsApp one pushes", async () => {
+		const saved = { ...process.env }
+		delete process.env.POSTBOI_PROVIDER
+		delete process.env.POSTBOI_TOKEN
+		process.env.POSTBOI_WHATSAPP_PROVIDER = "meta"
+		try {
+			const { request, secret } = await mock_request({ provider: "meta", type: "opened" })
+			const [event] = await receive(request, { secret })
+			expect(event).toMatchObject({ provider: "meta", type: "opened", channel: "whatsapp" })
+		} finally {
+			for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]
+			Object.assign(process.env, saved)
+		}
+	})
+
+	it("mock_event knows a text-message event is about a number", () => {
+		const event = mock_event("received", { channel: "whatsapp" })
+		expect(event).toMatchObject({ channel: "whatsapp", phone: "+15557770006" })
+		expect(event.email).toBeUndefined()
+		expect(event.subject).toBeUndefined()
+		expect(event.body?.text).toBeDefined()
 	})
 })

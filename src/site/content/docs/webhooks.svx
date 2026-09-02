@@ -125,7 +125,7 @@ the same way:
 export const POST = webhook(async (event) => {
 	if (event.type === 'received') {
 		await open_ticket({
-			from: event.email,
+			from: event.email ?? event.phone, // a number when they wrote over WhatsApp
 			subject: event.subject,
 			body: event.body?.text ?? event.body?.html,
 			about: event.message_id, // the send being answered, if any
@@ -191,16 +191,25 @@ To skip verification deliberately (a local experiment, a payload replay), pass
 Meta checks an endpoint is yours before it subscribes it: saving the callback URL in
 the app dashboard sends a `GET` with `hub.mode=subscribe`, the **verify token** you
 typed into the same form, and a `hub.challenge` it expects back as the response body.
-`webhook()` answers that on any `GET` — export the same handler for both methods — and
+`webhook()` answers that on a `GET` — route both methods to the same handler — and
 compares the token with `META_WEBHOOK_VERIFY_TOKEN` (or `{ verify_token }`), timing-safe
 and fail-closed like everything else here: no configured token is a 401, never a
-stranger's subscription confirmed.
+stranger's subscription confirmed. `{ verify: false }` doesn't reach it, for the same
+reason — a handshake has no payload to trust, only a URL anyone could have found.
 
 ```typescript
-// src/routes/webhooks/whatsapp/+server.ts
+// SvelteKit src/routes/webhooks/whatsapp/+server.ts · Next.js route.ts
 const handle = webhook(async (event) => { … }, { provider: 'meta' })
 export { handle as GET, handle as POST }
+
+// Express: app.all('/webhooks/whatsapp', webhook.node(handler, { provider: 'meta' }))
+// Hono:    app.on(['GET', 'POST'], '/webhooks/whatsapp', (c) => handle(c.req.raw))
 ```
+
+Name the provider: the zero-config default is your *email* provider, and the endpoint
+Meta calls is never the one your email provider calls. (A project with no email
+provider at all does fall through to `POSTBOI_WHATSAPP_PROVIDER=meta`, so a
+WhatsApp-only app needs nothing here.)
 
 Calling `receive()` yourself? `handshake(request, options)` from the same module is
 the piece `webhook()` uses: it returns the challenge to echo (send it as `200`, plain

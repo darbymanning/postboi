@@ -242,7 +242,9 @@ endpoint. See [polling](/webhooks#providers-that-dont-push-poll).
 Two values from the app dashboard make it work: the **app secret** (Basic Settings) signs
 every delivery as `X-Hub-Signature-256`, and a **verify token** you make up is what Meta
 presents when it checks the endpoint is yours before subscribing it — a `GET` that
-`webhook()` answers, so export the same handler for both methods:
+`webhook()` answers, so route both methods to the same handler. Name the provider: the
+zero-config default is your email provider (a project without one falls through to
+`POSTBOI_WHATSAPP_PROVIDER=meta` on its own).
 
 ```bash
 META_WEBHOOK_SECRET=…          # the app secret
@@ -276,13 +278,21 @@ endpoint hears about every number the account owns. What arrives:
 | --- | --- |
 | `sent`, `delivered`, `read` statuses | `sent`, `delivered`, `opened` |
 | a `failed` status | `failed`, with the error code and reason in `bounce.detail` — `131047` is a free-form message outside the window |
-| a message that is an [opt-out keyword](/sms#opt-outs) (`STOP` and friends, or a button reply that says so) | `unsubscribed` for the number that sent it |
+| a message that is an [opt-out keyword](/sms#opt-outs) (`STOP` and friends, typed or as the label of a button or list row they tapped) | `unsubscribed` for the number that sent it |
 | any other message a person sends | `received` — `phone` is them, `body.text` their words when they were words, and `message_id` the send they replied to when they used WhatsApp's reply |
 
-Reactions, `system` notices and `deleted` statuses aren't delivery events and stay
-out; the untouched status or message is on `raw` if you want them. And because a
-`received` is the moment the customer service window opens, it's also the signal that
-free-form `message` sends to that number will deliver for the next 24 hours.
+Reactions, `system` notices and `deleted` statuses aren't delivery events and produce
+nothing — a [custom adapter](/webhooks#custom-providers) is the route to them if you
+need one. And because a `received` is the moment the customer service window opens,
+it's also the signal that free-form `message` sends to that number will deliver for the
+next 24 hours.
+
+Two honest caveats. The suppression call in the example is the
+[Postboi provider's](/provider#suppressions); with another email provider, write the
+number wherever you keep opt-outs instead. And `phone` is Meta's `wa_id` with a `+` in
+front, which is the E.164 number everywhere except Mexico and Argentina, where WhatsApp
+inserts a digit after the country code (`+52 1 …`, `+54 9 …`) — the send response's
+`contacts[].wa_id` is the same form, so match on that rather than the number you dialled.
 
 ## Phone numbers
 

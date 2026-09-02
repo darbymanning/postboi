@@ -213,7 +213,7 @@ export function remote(a?: Mailer | ActionFields, b: ActionFields = {}): RemoteM
  * signature, `400` on an unparseable payload, and `500` when your handler throws — so
  * the provider retries. SNS subscription handshakes (SES, Scaleway) confirm themselves,
  * and a provider that checks the endpoint with a GET before subscribing (Meta) gets its
- * challenge echoed — export the same handler as `GET` too for those.
+ * challenge echoed — export the same handler as `GET` and `POST` for those.
  *
  * @example
  * ```ts

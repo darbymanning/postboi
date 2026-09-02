@@ -163,7 +163,7 @@ Receive delivery events, normalized across providers. See [Webhooks](/webhooks).
 import { receive, handshake, mock_event, mock_request, parse_user_agent } from 'postboi/webhooks'
 
 await receive(request: Request, options?: {
-	provider?: ProviderKey | 'meta' | WebhookAdapter // default: same resolution as mail()
+	provider?: ProviderKey | WhatsappProviderKey | WebhookAdapter // default: as mail(); a WhatsApp-only project falls through to its WhatsApp provider
 	secret?: string // default: <PROVIDER>_WEBHOOK_SECRET
 	verify_token?: string // Meta's endpoint handshake; default: <PROVIDER>_WEBHOOK_VERIFY_TOKEN
 	verify?: boolean // false skips verification (explicit opt-out)

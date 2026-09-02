@@ -25,6 +25,12 @@ function json(body: unknown, status: number): Response {
 	})
 }
 
+/** What `receive()` and `handshake()` throwing means to the provider: 401 or 400. */
+function failure(error: unknown): Response {
+	if (error instanceof WebhookVerificationError) return json({ error: error.message }, 401)
+	return json({ error: is_error(error) ? error.message : String(error) }, 400)
+}
+
 /**
  * Build a request handler that receives provider delivery-event webhooks: verifies the
  * signature, normalizes the payload, and calls your handler once per event.
@@ -33,7 +39,7 @@ function json(body: unknown, status: number): Response {
  * signature, `400` on an unparseable payload, and `500` when your handler throws — so
  * the provider retries. SNS subscription handshakes (SES, Scaleway) confirm themselves,
  * and a provider that checks the endpoint with a GET before subscribing (Meta) gets its
- * challenge echoed — export the same handler as `GET` too for those.
+ * challenge echoed — route `GET` to the same handler for those.
  *
  * @example
  * ```ts
@@ -53,30 +59,19 @@ function build(
 	return async (carrier) => {
 		const request = carrier instanceof Request ? carrier : carrier.request
 
-		// A GET is only ever an endpoint handshake: events always arrive as a POST.
-		if (request.method === "GET") {
-			try {
-				const challenge = await handshake(request, options)
-				if (challenge === undefined) return json({ error: "Method not allowed" }, 405)
-				return new Response(challenge, { status: 200, headers: { "content-type": "text/plain" } })
-			} catch (error) {
-				if (error instanceof WebhookVerificationError) {
-					return json({ error: error.message }, 401)
-				}
-				const message = is_error(error) ? error.message : String(error)
-				return json({ error: message }, 400)
-			}
-		}
-
+		// A provider's endpoint handshake is answered before anything is read as an event.
+		// Any other GET goes on to receive() exactly as it always did — a custom adapter
+		// may be answering its own provider's ping there, and every stock adapter turns it
+		// away with the same 401 whether or not it has a handshake of its own.
 		let events: Array<WebhookEvent>
 		try {
+			const challenge = await handshake(request, options)
+			if (challenge !== undefined) {
+				return new Response(challenge, { status: 200, headers: { "content-type": "text/plain" } })
+			}
 			events = await receive(request, options)
 		} catch (error) {
-			if (error instanceof WebhookVerificationError) {
-				return json({ error: error.message }, 401)
-			}
-			const message = is_error(error) ? error.message : String(error)
-			return json({ error: message }, 400)
+			return failure(error)
 		}
 
 		try {
@@ -146,10 +141,13 @@ function node(
 		}
 
 		// The URL only matters to adapters that sign over it — the host is a stand-in.
+		const method = req.method ?? "POST"
 		const request = new Request(new URL(req.url ?? "/", "http://localhost"), {
-			method: req.method ?? "POST",
+			method,
 			headers,
-			body: body.length ? body : undefined,
+			// A web Request refuses a body on GET/HEAD; node happily delivers one (a probe,
+			// a proxy). Nothing signs over a GET body, so dropping it loses nothing.
+			body: body.length && method !== "GET" && method !== "HEAD" ? body : undefined,
 		})
 
 		const response = await build(handler, options)(request)
