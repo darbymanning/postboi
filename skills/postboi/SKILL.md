@@ -214,6 +214,44 @@ SMS receipts: The SMS Works pushes delivery reports to `receive()` / `webhook()`
 
 WhatsApp receipts: Twilio is `poll({ provider: "twilio" })` (callbacks are per message, so nothing to register); Meta's Cloud API is `receive()` / `webhook()` with `{ provider: "meta" }` — `META_WEBHOOK_SECRET` is the app secret (`X-Hub-Signature-256`), `META_WEBHOOK_VERIFY_TOKEN` answers the `hub.challenge` GET Meta makes before subscribing, so **export the handler as both `GET` and `POST`**. Events carry `channel: "whatsapp"` and `phone`, never `email`; a read is `opened`, a STOP is `unsubscribed`, anything else a person writes is `received` with `body.text` (and the 24-hour window just opened). `/raw/whatsapp`
 
+## Lifecycle (contact timeline)
+
+A contact's timeline is every event about one person: the opens and clicks Postboi observed, and the ones only your app knows. Segments filter on it, sequences trigger from it, an email reads it (`{event.plan}`). One call writes to it:
+
+```ts
+await mail.events.track("ada@example.com", "project_created", { plan: "pro" })
+await mail.events.track({ external_id: "user_42" }, "usage.limit_reached")
+```
+
+Names are snake_case, optionally namespaced by one dot. `contact.*` / `email.*` / `sms.*` / `whatsapp.*` are the platform's own and are refused — an open is a fact Postboi observed, and an API caller claiming one puts a fiction in the timeline every segment trusts.
+
+Three first-party plugins write the `auth.*` half so you don't:
+
+```ts
+import { postboi } from "postboi/better-auth"
+betterAuth({ plugins: [postboi()] }) // auth.signed_up, auth.email_verified, auth.user_updated
+```
+
+- **`postboi/better-auth`** — database hooks. Never fails a sign-up (every call is caught → `on_error`). Sign-ins need `user_for_session` (Better Auth's session hook has the session, not the user) or `events: { signed_in: false }`.
+- **`postboi/convex`** — `track` / `identify` for **actions**; Convex mutations can't do network I/O, so the mutation schedules an action (`ctx.scheduler.runAfter(0, internal.postboi.signed_up, …)`). Clerk-auth projects should connect Clerk in the dashboard instead.
+- **`postboi/lunora`** — an opt-in package: `ctx.postboi.track()` on every action and job; `auth()` re-exports the Better Auth plugin unchanged.
+
+Or connect the source and write no code: **Stripe, Paddle, Lemon Squeezy, Polar, Clerk, Supabase, Shopify, WooCommerce, PostHog**, plus a generic inbound hook for anything that can POST JSON (send it one request, then map the payload's fields). They write the same vocabulary — `billing.*` (`payment_failed`, `payment_recovered`, `subscription_started`, `purchase`, …), `auth.*`, `commerce.*` — so a sequence written against `billing.payment_recovered` works whichever processor the money moved through. `/raw/lifecycle`
+
+## MCP (agents)
+
+```bash
+bunx postboi mcp          # stdio, uses POSTBOI_TOKEN
+```
+
+Or the hosted one: `https://postboi.app/mcp`, streamable HTTP, `Authorization: Bearer <API key>`. Both serve the same tools — the local command is a proxy to the hosted server, so there is no second tool list to fall behind.
+
+Tools are **generated from the API's OpenAPI description**, so every endpoint is a tool. On top: `simulate_sequence` (walk a definition, saved or not, for one contact — sends nothing), `preview_email` (client compatibility, Gmail clipping, links, SPF/DKIM/DMARC — sends nothing, costs nothing) and `explain_enrollment` (why one contact didn't get the email).
+
+**Keys carry scopes** — `read`, `write`, `send`, `admin`. A key for an agent wants `read,write`: enough to create contacts, segments and sequence drafts and simulate them, not enough to send, enable a sequence or delete. Tools the key can't call aren't listed at all, so an empty `send` tool means ask a person, not retry. `admin` implies everything, `write` implies `read`, `send` implies nothing. Out of scope answers **403 `insufficient_scope`**, not 401.
+
+A generated or agent-written sequence is always a **draft**: write it, `simulate_sequence` it, show the simulation, let a person enable it. `https://postboi.app/agents.md` is the operating manual, including what always needs a human (sending, enabling, deleting, and anything that decides who can reach the account).
+
 ## Scheduling, tracking, bulk
 
 - `scheduled_at: { days: 1, hours: 5 } | Date | ISO string` — provider-side; only Postboi, Resend, Brevo, Mailgun and SendGrid support it, **others send immediately**. `cancel(id)` where supported; unsupported providers throw `cancel_not_supported`, never a silent no-op. `/raw/scheduling`
@@ -317,13 +355,13 @@ Order matters — the old provider keeps sending until the new domain verifies.
 
 1. `init` + `whoami`.
 2. `domains add` the sending domain. The DKIM CNAMEs coexist with the old provider's records, so this is zero-downtime. `domains check` until verified.
-3. **Import suppressions before anything sends** — export bounces/complaints/unsubscribes from the old provider, then `suppressions add` each (a loop is fine, one address per call).
-4. Import recipients. Bare emails: `recipients <list> add …`. With names/custom data, or in bulk (up to 10,000 per call), POST the API:
+3. **From Mailchimp, Kit, Loops or Brevo, steps 3 and 4 are one command.** `bunx postboi import --from kit --list Newsletter` reads the source's API **on this machine** with the user's own key (`--key`, or `KIT_API_KEY` / `MAILCHIMP_API_KEY` / `LOOPS_API_KEY` / `BREVO_API_KEY` in the environment) and never sends that key to Postboi. It walks every page, maps names, custom fields and tags, and writes each page's **suppressions before that page's contacts** — unsubscribed, bounced and complained addresses land as suppressions rather than as recipients. `--dry-run` reads the source and writes nothing, which is the way to check the mapping first. Mailchimp also needs `--source-list <audience id>`. Re-running is harmless: adding an address again never flips a membership. Then skip to step 5.
+4. Otherwise, by hand. **Import suppressions before anything sends** — export bounces/complaints/unsubscribes from the old provider, then `suppressions add` each (a loop is fine, one address per call). Then the recipients: bare emails with `recipients <list> add …`; with names, custom data or tags, or in bulk (up to 10,000 per call), POST the API:
 
    ```bash
    curl -X POST "https://api.postboi.app/v1/lists/Newsletter/recipients?status=subscribed" \
    	-H "Authorization: Bearer $POSTBOI_TOKEN" -H "Content-Type: application/json" \
-   	-d '[{ "email": "a@b.co", "name": "Ada", "data": { "plan": "pro" } }]'
+   	-d '[{ "email": "a@b.co", "name": "Ada", "data": { "plan": "pro" }, "tags": ["vip"] }]'
    ```
 
    **Critical on double-opt-in lists:** pass `?status=subscribed` (or per-row `"status": "subscribed"`) for already-confirmed subscribers — those rows get **no** confirmation email. Omitting it re-confirms the entire imported base.
@@ -356,4 +394,7 @@ Order matters — the old provider keeps sending until the new domain verifies.
 | Global config                         | `config` from `postboi` (file) · `configure` from `postboi` (runtime)                                                                                                                                                                                                                    |
 | Tests                                 | `postboi/mock`, `postboi/sms-mock`, `postboi/whatsapp-mock`, `postboi/push-mock`, `postboi/chat-mock`                                                                                                                                                                                    |
 | Email linting                         | `analyze`, `check_links` from `postboi/inspect`                                                                                                                                                                                                                                          |
+| Contact timeline                      | `mail.events.track` / `.record` from `postboi`                                                                                                                                                                                                                                           |
+| Auth-layer lifecycle plugins          | `postboi` from `postboi/better-auth` · `track`, `identify` from `postboi/convex` · `postboi`, `auth` from `postboi/lunora`                                                                                                                                                               |
+| MCP for agents                        | `bunx postboi mcp` (stdio) · `https://postboi.app/mcp` (hosted) · `https://postboi.app/agents.md`                                                                                                                                                                                        |
 | Spam helpers                          | `is_spam`, `SkipSendError` from `postboi`                                                                                                                                                                                                                                                |

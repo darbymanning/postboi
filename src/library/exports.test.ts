@@ -53,6 +53,7 @@ describe("package exports", () => {
 			"oauth.ts", // shared token cache + Google service-account JWT, used by gmail.ts, sendpulse.ts and push/
 			"errors.ts", // normalized errors, re-exported from the root
 			"transport.ts", // channel-agnostic provider base, re-exported from the root
+			"lifecycle.ts", // the auth.* reporter the better-auth, convex and lunora plugins share
 			"register.ts", // generated-types placeholder, reached via the root export
 			"inbox.ts", // dev inbox discovery, reached via mail.ts (and patched by postboi/vite)
 			"inbox_server.ts", // dev inbox HTTP surface, mounted by postboi/vite and the CLI

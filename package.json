@@ -368,6 +368,18 @@
 		"./form": {
 			"types": "./dist/form.d.ts",
 			"default": "./dist/form.js"
+		},
+		"./better-auth": {
+			"types": "./dist/better_auth.d.ts",
+			"default": "./dist/better_auth.js"
+		},
+		"./convex": {
+			"types": "./dist/convex.d.ts",
+			"default": "./dist/convex.js"
+		},
+		"./lunora": {
+			"types": "./dist/lunora.d.ts",
+			"default": "./dist/lunora.js"
 		}
 	},
 	"peerDependencies": {

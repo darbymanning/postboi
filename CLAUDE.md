@@ -30,6 +30,17 @@ sequences-as-code, the `postboi/better-auth`, `postboi/convex` and `postboi/luno
 plugins, `postboi mcp`, `postboi import`, and the skill's Lifecycle section. Read it before
 starting any of those.
 
+Shipped so far: the `mail.*` namespaces, `sequence()`, the three auth-layer plugins, the
+Lifecycle docs page and the skill's Lifecycle section. Still to come: `postboi mcp` and
+`postboi import`.
+
+The three plugins share `src/library/lifecycle.ts`, and share one rule with it: **a
+signup must not fail because email tracking failed.** They sit inside somebody's
+authentication path, so every call is caught and reported through `on_error` rather than
+thrown. They write the same `auth.*` names the hosted Clerk and Supabase integrations
+write, so a sequence keeps working when a customer moves an event between a webhook and
+their own code.
+
 ## Conventions
 
 - Code style: snake_case, no semicolons. Run `bun run check` and `bun run lint`.
