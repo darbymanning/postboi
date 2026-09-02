@@ -21,10 +21,17 @@
  * back stays theirs to read; a conversation is not a delivery event, which is the same
  * line the Twilio poll draws.
  */
-import type { WebhookAdapter, WebhookEvent, WebhookEventType, AdapterModule } from "./index.js"
-import type { BounceDetail } from "./index.js"
+import { PostboiError } from "../index.js"
+import type {
+	AdapterModule,
+	BounceDetail,
+	WebhookAdapter,
+	WebhookEvent,
+	WebhookEventType,
+} from "./index.js"
 import { parse_json, to_date, shared_secret_verify } from "./shared.js"
 import { is_opt_out } from "../sms/opt_out.js"
+import { to_e164 } from "../sms/phone.js"
 
 /** Why a message didn't (or hasn't yet) arrived — `permanent` is the classification. */
 interface FailureReason {
@@ -80,11 +87,29 @@ const TYPES: Record<string, WebhookEventType> = {
 	EXPIRED: "failed",
 }
 
-/** `447700900123` (a number or a string, with or without a `+`) → `+447700900123`. */
+/**
+ * `447700900123` (a number or a string, with or without a `+`) → `+447700900123`. The
+ * send side strips the `+` from E.164 and the report echoes that, so putting it back is
+ * the whole conversion; `to_e164` then owns what a plausible number is, as it does for
+ * every send. A report about something that isn't one carries no `phone` rather than
+ * throwing — a webhook normaliser has to answer every payload the provider posts.
+ */
 function e164(value: string | number | undefined): string | undefined {
-	if (value === undefined || value === null) return undefined
-	const digits = String(value).replace(/\D/g, "")
-	return digits ? `+${digits}` : undefined
+	const digits = String(value ?? "").replace(/\D/g, "")
+	try {
+		return digits ? to_e164(`+${digits}`) : undefined
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * Does this failure reason say anything? Their message object is documented with the
+ * object always present, so a healthy report may carry `{ code: 0, details: "",
+ * permanent: false }` — which must not read as a temporary failure.
+ */
+function has_reason(reason: FailureReason | null | undefined): reason is FailureReason {
+	return Boolean(reason && ((reason.code !== undefined && reason.code !== 0) || reason.details))
 }
 
 /**
@@ -94,9 +119,10 @@ function e164(value: string | number | undefined): string | undefined {
  * already read for "why didn't this arrive".
  */
 function bounce(reason: FailureReason | null | undefined): BounceDetail {
-	const code = reason?.code ?? undefined
-	const text = reason?.details ?? undefined
-	const detail = code && text ? `${code} ${text}` : (text ?? (code ? String(code) : undefined))
+	const detail =
+		[reason?.code, reason?.details]
+			.filter((part) => part !== undefined && part !== null && part !== "")
+			.join(" ") || undefined
 	return {
 		category:
 			reason?.permanent === true ? "hard" : reason?.permanent === false ? "soft" : "unknown",
@@ -109,7 +135,7 @@ function bounce(reason: FailureReason | null | undefined): BounceDetail {
  * anything else. The number is the *sender's*: they are the one opting out. The id is
  * the reply's own, as the Twilio poll does; `outboundmessageid` stays in `raw`.
  */
-function normalize_inbound(payload: Payload): WebhookEvent | undefined {
+function normalize_inbound(payload: InboundMessage): WebhookEvent | undefined {
 	if (!is_opt_out(payload.content)) return undefined
 	return {
 		type: "unsubscribed",
@@ -122,12 +148,11 @@ function normalize_inbound(payload: Payload): WebhookEvent | undefined {
 }
 
 /** One delivery report as an event — or nothing, for a status we don't emit. */
-function normalize_report(payload: Payload): WebhookEvent | undefined {
-	const status = payload.status?.toUpperCase()
-	let type = status ? TYPES[status] : undefined
+function normalize_report(payload: DeliveryReport): WebhookEvent | undefined {
+	let type = TYPES[payload.status?.toUpperCase() ?? ""]
 	if (!type) return undefined
-	const reason = payload.failurereason ?? undefined
-	if (type === "sent" && reason?.permanent === false) type = "delayed"
+	const reason = payload.failurereason
+	if (type === "sent" && has_reason(reason) && reason.permanent === false) type = "delayed"
 	return {
 		type,
 		provider: "smsworks",
@@ -150,10 +175,25 @@ const adapter: WebhookAdapter = {
 	},
 
 	normalize(body) {
-		const payload = parse_json("smsworks", body) as Payload
-		const event =
-			payload.messagetype === "incoming" ? normalize_inbound(payload) : normalize_report(payload)
-		return event ? [event] : []
+		const parsed = parse_json("smsworks", body)
+		// One report per POST is what they document; a list is the natural batch shape,
+		// so it is taken too. Anything else isn't a report at all.
+		const payloads = Array.isArray(parsed) ? parsed : [parsed]
+		const events: Array<WebhookEvent> = []
+		for (const payload of payloads as Array<Payload | null>) {
+			if (payload === null || typeof payload !== "object") {
+				throw new PostboiError({
+					provider: "smsworks",
+					message: "smsworks webhook payload is not a delivery report",
+					code: "invalid_payload",
+					raw: parsed,
+				})
+			}
+			const event =
+				payload.messagetype === "incoming" ? normalize_inbound(payload) : normalize_report(payload)
+			if (event) events.push(event)
+		}
+		return events
 	},
 }
 

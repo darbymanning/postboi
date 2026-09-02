@@ -22,7 +22,7 @@
  */
 import { PostboiError } from "../index.js"
 import type { Channel } from "../errors.js"
-import type { ProviderKey } from "../registry.js"
+import type { ProviderKey, SmsProviderKey } from "../registry.js"
 import { load_config } from "../config.js"
 import { ensure_env_loaded, read_env } from "../env.js"
 import { parse_json, sns_envelope, sns_subscribe_url } from "./shared.js"
@@ -204,12 +204,14 @@ export const MODULES: Record<string, () => Promise<AdapterModule>> = {
 /** Options for {@link receive}. */
 export interface ReceiveOptions {
 	/**
-	 * Which provider the request comes from — a key like `"resend"`, or a custom
-	 * {@link WebhookAdapter}. Defaults to the same resolution `mail()` uses:
-	 * `POSTBOI_PROVIDER`, then `postboi.config.ts`, then a `POSTBOI_TOKEN` → the
-	 * Postboi provider.
+	 * Which provider the request comes from — a key like `"resend"` (or an SMS one that
+	 * pushes, like `"smsworks"`), or a custom {@link WebhookAdapter}. Defaults to the
+	 * same resolution `mail()` uses: `POSTBOI_PROVIDER`, then `postboi.config.ts`, then
+	 * a `POSTBOI_TOKEN` → the Postboi provider. A key with no adapter (the polled ones)
+	 * is a `webhooks_not_supported` error at runtime, not a type error — the email keys
+	 * have always worked that way, and the SMS keys follow suit.
 	 */
-	provider?: ProviderKey | "postboi" | WebhookAdapter
+	provider?: ProviderKey | SmsProviderKey | "postboi" | WebhookAdapter
 	/**
 	 * The signing secret / verification key. Defaults to the provider's
 	 * `<PROVIDER>_WEBHOOK_SECRET` environment variable. For Svix-style providers

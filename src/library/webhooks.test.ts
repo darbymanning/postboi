@@ -813,6 +813,44 @@ describe("receive — smsworks (SMS delivery reports and replies)", () => {
 		expect(await post({ ...base, status: "SCHEDULED" })).toEqual([])
 		// Lower-case, just in case a payload ever arrives that way.
 		expect((await post({ ...base, status: "delivered" }))[0].type).toBe("delivered")
+		// A healthy report can carry an empty failure object; that is not a retry.
+		const healthy = {
+			...base,
+			status: "SENT",
+			failurereason: { code: 0, details: "", permanent: false },
+		}
+		expect((await post(healthy))[0]).toMatchObject({ type: "sent", bounce: undefined })
+	})
+
+	it("takes a list of reports, and refuses a body that is no report at all", async () => {
+		const secret = "smsworks-token"
+		const url = `https://example.com/webhooks?token=${secret}`
+		const post = (body: string) =>
+			receive(new Request(url, { method: "POST", body }), { provider: "smsworks", secret })
+		const events = await post(
+			JSON.stringify([
+				{ messageid: "a", status: "DELIVERED", destination: 447700900123 },
+				{ messageid: "b", status: "SCHEDULED", destination: 447700900124 },
+				{ messageid: "c", status: "EXPIRED", destination: 447700900125 },
+			])
+		)
+		expect(events.map((event) => [event.message_id, event.type])).toEqual([
+			["a", "delivered"],
+			["c", "failed"],
+		])
+		const error = await post("null").catch((e) => e)
+		expect(error).toMatchObject({ code: "invalid_payload", provider: "smsworks" })
+	})
+
+	it("leaves phone unset for a destination that isn't a number, rather than inventing one", async () => {
+		const secret = "smsworks-token"
+		const request = new Request(`https://example.com/webhooks?token=${secret}`, {
+			method: "POST",
+			body: JSON.stringify({ messageid: "m1", status: "DELIVERED", destination: "4477" }),
+		})
+		const [event] = await receive(request, { provider: "smsworks", secret })
+		expect(event.type).toBe("delivered")
+		expect(event.phone).toBeUndefined()
 	})
 
 	it("classifies a failure by the permanent flag, with the carrier's code in the detail", async () => {

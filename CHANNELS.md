@@ -921,9 +921,9 @@ as for a deployed app.
 email — no existing adapter starts claiming a channel), and the number lands in `phone`,
 never in `email`. The shared vocabulary does the rest: an SMS that reached the handset is
 `delivered`, an undeliverable one is `failed` with the carrier's code in `bounce.detail`
-(there is no bounce _classification_ for a text message — no mailbox to be permanently or
-temporarily unavailable), and WhatsApp's read receipt is `opened`, because it is the same
-fact as an email open.
+(Twilio offers no bounce _classification_ for a text message, so its category stays
+`unknown`; The SMS Works does, below), and WhatsApp's read receipt is `opened`, because it
+is the same fact as an email open.
 
 **The window is trailing, not incremental.** Twilio filters its list by `DateSent`, but
 what changes over a message's life is its _status_ — a message sent last night and
