@@ -13,6 +13,7 @@ type SmsConstructor = new (options: Record<string, unknown>) => SmsProvider<unkn
 /** Lazy loaders keyed by `POSTBOI_SMS_PROVIDER` — one chunk per provider. */
 const LOADERS: ChannelResolution<SmsProvider<unknown>>["loaders"] = {
 	smsworks: () => import("./smsworks.js").then((m) => m.default as unknown as SmsConstructor),
+	puresms: () => import("./puresms.js").then((m) => m.default as unknown as SmsConstructor),
 	twilio: () => import("./twilio.js").then((m) => m.default as unknown as SmsConstructor),
 	sns: () => import("./sns.js").then((m) => m.default as unknown as SmsConstructor),
 	// Credential-free no-op, and the development fallback.

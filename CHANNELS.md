@@ -546,7 +546,7 @@ Every new channel touches more than a provider file. This is the actual cost:
 
 - `sms/phone.ts` — E.164 normalisation and GSM segment counting, not a libphonenumber port
 - `sms/provider.ts` — `SmsProvider extends Transport`, same three hooks as email
-- The SMS Works, Twilio and AWS SNS, plus an SMS mock
+- The SMS Works, Twilio and AWS SNS, plus an SMS mock; PureSMS followed once the shape was proven
 - `sms()` with env resolution, and `postboi init --sms` asking destination first
 - Docs at `/sms`, in a new **Channels** nav section
 - 45 tests across normalisation, providers, the resolver and dev interception
@@ -1378,6 +1378,11 @@ offers only optional basic auth. That's genuinely weaker, and it stings because
 `webhooks/crypto.ts` already implements HMAC for other providers. Basic auth over HTTPS
 plus the `?token=…` pattern used elsewhere in `webhooks/` is workable, but say so in the
 docs rather than glossing it.
+
+**Since then:** PureSMS shipped as the second UK provider (`postboi/puresms`) once the
+`SmsProvider` shape had carried three providers unchanged. The undocumented error bodies
+are still the caveat: its `parse_error` reads RFC 7807 problem details on the assumption
+the platform is ASP.NET, and a 207 partly-accepted batch is turned into a failure.
 
 **Unverified:** their volume tiers aren't published ("more than that? talk to us"), so
 high-volume rates need a conversation. Not a Phase 1 blocker.

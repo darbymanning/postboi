@@ -192,6 +192,20 @@ export abstract class Transport<TResponse = unknown, TPrepared = unknown> {
 	}
 
 	/**
+	 * Any request that isn't a send — a cancel, a login, an API call — with the same
+	 * request → read → validate sequence as {@link deliver}, so the provider's `parse_error`
+	 * judges every call it makes and a `kind` names the one that failed. Resolves to the
+	 * parsed body; providers that don't need it ignore it.
+	 */
+	protected async call(spec: RequestSpec, kind: string): Promise<unknown> {
+		const response = await this.request(spec)
+		const data = await this.read_json(response)
+		const error = this.error_for(response, data, kind)
+		if (error) throw error
+		return data
+	}
+
+	/**
 	 * Map a response into a {@link PostboiError} if the provider flags it as a failure
 	 * (via `parse_error`) or the HTTP status is not ok. Returns undefined on success.
 	 */

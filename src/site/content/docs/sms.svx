@@ -167,6 +167,7 @@ for (const result of results) {
 | Provider | Import | Best for |
 | --- | --- | --- |
 | The SMS Works | `postboi/smsworks` | UK — bills only for delivered messages |
+| PureSMS | `postboi/puresms` | UK — flat-rate pay-as-you-go, hosted in the EU |
 | Twilio | `postboi/twilio` | Global, and automatic RCS upgrade via a Messaging Service |
 | Amazon SNS | `postboi/sns` | Already on AWS |
 
