@@ -118,20 +118,19 @@ export default class PureSms extends SmsProvider<SendResponse> {
 	 */
 	async cancel(id: string, kind: "message" | "batch" = "message"): Promise<{ id: string }> {
 		const path = kind === "batch" ? "bulk/" : ""
-		const response = await this.request({
-			url: `${this.#host}/sms/send/${path}${encodeURIComponent(id)}`,
-			method: "DELETE",
-			headers: this.#headers(false),
-		})
-		const data = await this.read_json(response)
-		const error = this.error_for(response, data, "cancel")
-		if (error) throw error
+		const data = await this.call(
+			{
+				url: `${this.#host}/sms/send/${path}${encodeURIComponent(id)}`,
+				method: "DELETE",
+				headers: this.#headers(false),
+			},
+			"cancel"
+		)
 		const d = data as { cancelledCount?: number; reason?: string } | null
 		if (kind === "batch" && d?.cancelledCount === 0) {
 			throw new PostboiError({
 				provider: this.provider,
 				channel: this.channel,
-				status: response.status,
 				message: d.reason ?? `puresms cancelled nothing in batch ${id}`,
 				raw: data,
 			})

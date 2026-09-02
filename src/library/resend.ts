@@ -127,14 +127,14 @@ export default class Resend extends ProviderBase<SendResponse> {
 
 	/** Cancel a scheduled email — https://resend.com/docs/api-reference/emails/cancel-email */
 	async cancel(id: string): Promise<CancelResponse> {
-		const response = await this.request({
-			url: `https://api.resend.com/emails/${encodeURIComponent(id)}/cancel`,
-			headers: { Authorization: `Bearer ${this.#api_key}` },
-			body: "",
-		})
-		const data = await this.read_json(response)
-		const error = this.error_for(response, data, "cancel")
-		if (error) throw error
+		await this.call(
+			{
+				url: `https://api.resend.com/emails/${encodeURIComponent(id)}/cancel`,
+				headers: { Authorization: `Bearer ${this.#api_key}` },
+				body: "",
+			},
+			"cancel"
+		)
 		return { id }
 	}
 

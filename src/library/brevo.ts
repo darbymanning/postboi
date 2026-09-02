@@ -130,15 +130,15 @@ export default class Brevo extends ProviderBase<SendResponse> {
 	 * https://developers.brevo.com/reference/deletescheduledemailbyid
 	 */
 	async cancel(id: string): Promise<CancelResponse> {
-		const response = await this.request({
-			url: `https://api.brevo.com/v3/smtp/email/${encodeURIComponent(id)}`,
-			method: "DELETE",
-			headers: { "api-key": this.#api_key, Accept: "application/json" },
-			body: "",
-		})
-		const data = await this.read_json(response)
-		const error = this.error_for(response, data, "cancel")
-		if (error) throw error
+		await this.call(
+			{
+				url: `https://api.brevo.com/v3/smtp/email/${encodeURIComponent(id)}`,
+				method: "DELETE",
+				headers: { "api-key": this.#api_key, Accept: "application/json" },
+				body: "",
+			},
+			"cancel"
+		)
 		return { id }
 	}
 

@@ -120,17 +120,17 @@ export default class Twilio extends SmsProvider<SendResponse> {
 
 	/** Cancel a scheduled message — only possible while its status is still `scheduled`. */
 	async cancel(id: string): Promise<{ id: string }> {
-		const response = await this.request({
-			url: twilio_messages_url(this.#account_sid, id),
-			headers: {
-				Authorization: twilio_auth(this.#account_sid, this.#auth_token),
-				"Content-Type": "application/x-www-form-urlencoded",
+		await this.call(
+			{
+				url: twilio_messages_url(this.#account_sid, id),
+				headers: {
+					Authorization: twilio_auth(this.#account_sid, this.#auth_token),
+					"Content-Type": "application/x-www-form-urlencoded",
+				},
+				body: new URLSearchParams({ Status: "canceled" }).toString(),
 			},
-			body: new URLSearchParams({ Status: "canceled" }).toString(),
-		})
-		const data = await this.read_json(response)
-		const error = this.error_for(response, data, "cancel")
-		if (error) throw error
+			"cancel"
+		)
 		return { id }
 	}
 }
