@@ -101,7 +101,7 @@ export default class MailChannels extends ProviderBase<SendResponse> {
 				? (await this.parse_attachments(message.attachments)).map((a) => ({
 						filename: a.name,
 						content: a.content,
-						type: a.mime_type || "application/octet-stream",
+						type: a.mime_type,
 					}))
 				: undefined,
 		}

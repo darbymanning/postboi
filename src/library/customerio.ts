@@ -38,8 +38,8 @@ type SendResponse = {
  * recipient's address — that person is created if new. `to` is a comma-separated list
  * and Customer.io has no cc, so `cc` addresses join it; `bcc` has its own. A single
  * `reply_to`, custom `headers`, attachments as a filename→base64 map, `scheduled_at` as
- * `send_at` and `tracking` as the one `tracked` switch (on when either flag is) pass
- * through; `tags` have no equivalent and are dropped.
+ * `send_at` and `tracking` as the one `tracked` switch (on when either flag is, off when
+ * both are) pass through; `tags` have no equivalent and are dropped.
  *
  * @example
  * ```ts
@@ -83,15 +83,9 @@ export default class CustomerIO extends ProviderBase<SendResponse> {
 						.join(", ")
 				: undefined,
 			headers: message.headers,
-			attachments: message.attachments
-				? Object.fromEntries(
-						(await this.parse_attachments(message.attachments)).map((a) => [a.name, a.content])
-					)
-				: undefined,
+			attachments: message.attachments ? await this.attachment_map(message.attachments) : undefined,
 			send_at: message.scheduled_at ? Math.floor(message.scheduled_at.getTime() / 1000) : undefined,
-			tracked: message.tracking
-				? Boolean(message.tracking.opens || message.tracking.clicks)
-				: undefined,
+			tracked: this.tracking_switch(message.tracking),
 		}
 
 		return {

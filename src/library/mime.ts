@@ -7,7 +7,7 @@
 import type { MailAddress, MailAttachment } from "./index.js"
 
 /** Hex string of `bytes` random bytes, via the WebCrypto global (works everywhere node:crypto doesn't). */
-export const random_hex = (bytes: number): string =>
+const random_hex = (bytes: number): string =>
 	Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) =>
 		b.toString(16).padStart(2, "0")
 	).join("")
@@ -15,17 +15,61 @@ export const random_hex = (bytes: number): string =>
 /** Strip CR/LF from a header value — the trust boundary that blocks header injection. */
 export const clean = (value: string): string => value.replace(/[\r\n]/g, " ")
 
-/** RFC 2047 encode a header word only when it contains non-ASCII. */
+// eslint-disable-next-line no-control-regex
+const ASCII = /^[\x00-\x7F]*$/
+
+/**
+ * RFC 2047 encoded-word budget: 75 characters including the `=?UTF-8?B?…?=` furniture,
+ * which leaves 63 base64 characters, i.e. 45 bytes of input per word.
+ */
+const WORD_BYTES = 45
+
+/**
+ * RFC 2047 encode a header word only when it contains non-ASCII — as a run of
+ * encoded-words, each within the 75-character limit and never splitting a character,
+ * folded onto continuation lines so no header line grows past what servers accept.
+ */
 function enc_word(value: string): string {
 	const v = clean(value)
-	// eslint-disable-next-line no-control-regex
-	if (/^[\x00-\x7F]*$/.test(v)) return v
-	return `=?UTF-8?B?${Buffer.from(v, "utf8").toString("base64")}?=`
+	if (ASCII.test(v)) return v
+	const words: Array<string> = []
+	let chunk = ""
+	let bytes = 0
+	for (const char of v) {
+		const size = Buffer.byteLength(char, "utf8")
+		if (bytes + size > WORD_BYTES) {
+			words.push(chunk)
+			chunk = ""
+			bytes = 0
+		}
+		chunk += char
+		bytes += size
+	}
+	if (chunk) words.push(chunk)
+	return words
+		.map((word) => `=?UTF-8?B?${Buffer.from(word, "utf8").toString("base64")}?=`)
+		.join("\r\n ")
 }
 
 /** Format an address as `Encoded Name <addr>` (or bare `addr`), CR/LF stripped. */
-export function format_address(a: MailAddress): string {
+function format_address(a: MailAddress): string {
 	return a.name ? `${enc_word(a.name)} <${clean(a.address)}>` : clean(a.address)
+}
+
+/**
+ * A MIME parameter (`filename=…`) carrying a name that came from a form upload, so it
+ * may hold quotes, backslashes or non-ASCII. ASCII is quoted with those escaped; anything
+ * else goes the RFC 2231 way (`filename*=UTF-8''…`), which every current client reads
+ * and which keeps the header line 7-bit for the relays that insist.
+ */
+function param(name: string, value: string): string {
+	const v = clean(value)
+	if (ASCII.test(v)) return `${name}="${v.replace(/["\\]/g, "\\$&")}"`
+	const encoded = encodeURIComponent(v).replace(
+		/[*'()]/g,
+		(c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`
+	)
+	return `${name}*=UTF-8''${encoded}`
 }
 
 /** Wrap a base64 string to 76-character lines, as MIME requires. */
@@ -44,12 +88,11 @@ function leaf(content_type: string, text: string): Part {
 
 /** A leaf part for an attachment (its content is already base64). */
 function attachment_part(a: MailAttachment): Part {
-	const name = clean(a.name)
 	return {
 		headers: [
-			`Content-Type: ${a.mime_type || "application/octet-stream"}; name="${name}"`,
+			`Content-Type: ${a.mime_type || "application/octet-stream"}; ${param("name", a.name)}`,
 			"Content-Transfer-Encoding: base64",
-			`Content-Disposition: attachment; filename="${name}"`,
+			`Content-Disposition: attachment; ${param("filename", a.name)}`,
 		],
 		body: wrap(a.content),
 	}

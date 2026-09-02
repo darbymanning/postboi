@@ -1,10 +1,4 @@
-import type {
-	PreparedMessage,
-	CommonProviderOptions,
-	ProviderError,
-	RequestSpec,
-	MailAddress,
-} from "./index.js"
+import type { PreparedMessage, CommonProviderOptions, ProviderError, RequestSpec } from "./index.js"
 import { ProviderBase, PostboiError } from "./index.js"
 import { cached_token } from "./push/oauth.js"
 
@@ -16,21 +10,16 @@ type Options = CommonProviderOptions & {
 	client_secret: string
 }
 
-interface Address {
-	email: string
-	name?: string
-}
-
 export interface SendParams {
 	email: {
 		/** Base64 — SendPulse's own rule for the HTML body. */
 		html?: string
 		text?: string
 		subject: string
-		from: Address
-		to: Array<Address>
-		cc?: Array<Address>
-		bcc?: Array<Address>
+		from: { email: string; name?: string }
+		to: Array<{ email: string; name?: string }>
+		cc?: Array<{ email: string; name?: string }>
+		bcc?: Array<{ email: string; name?: string }>
 		/** Filename → base64 content. */
 		attachments_binary?: Record<string, string>
 	}
@@ -74,10 +63,6 @@ export default class SendPulse extends ProviderBase<SendResponse> {
 		this.#client_secret = client_secret
 	}
 
-	#address(a: MailAddress): Address {
-		return a.name ? { email: a.address, name: a.name } : { email: a.address }
-	}
-
 	/** The bearer token — a live cached one, or a fresh client-credentials exchange. */
 	async #token(): Promise<string> {
 		return cached_token(`sendpulse:${this.#client_id}`, Date.now(), () => this.#exchange())
@@ -115,16 +100,16 @@ export default class SendPulse extends ProviderBase<SendResponse> {
 				html: message.html ? Buffer.from(message.html, "utf8").toString("base64") : undefined,
 				text: message.text,
 				subject: message.subject,
-				from: this.#address(this.parse_email_address(message.from)),
-				to: this.parse_addresses(message.to).map((a) => this.#address(a)),
-				cc: message.cc ? this.parse_addresses(message.cc).map((a) => this.#address(a)) : undefined,
+				from: this.email_name(this.parse_email_address(message.from)),
+				to: this.parse_addresses(message.to).map((a) => this.email_name(a)),
+				cc: message.cc
+					? this.parse_addresses(message.cc).map((a) => this.email_name(a))
+					: undefined,
 				bcc: message.bcc
-					? this.parse_addresses(message.bcc).map((a) => this.#address(a))
+					? this.parse_addresses(message.bcc).map((a) => this.email_name(a))
 					: undefined,
 				attachments_binary: message.attachments
-					? Object.fromEntries(
-							(await this.parse_attachments(message.attachments)).map((a) => [a.name, a.content])
-						)
+					? await this.attachment_map(message.attachments)
 					: undefined,
 			},
 		}

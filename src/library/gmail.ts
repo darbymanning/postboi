@@ -1,7 +1,6 @@
 import type { PreparedMessage, CommonProviderOptions, ProviderError, RequestSpec } from "./index.js"
 import { ProviderBase, PostboiError } from "./index.js"
-import { pem_to_der, to_base64url } from "./encoding.js"
-import { cached_token } from "./push/oauth.js"
+import { cached_token, google_service_account_assertion } from "./oauth.js"
 import { compose_mime } from "./mime.js"
 
 /** Options for the Gmail provider constructor. */
@@ -73,8 +72,7 @@ export default class Gmail extends ProviderBase<SendResponse> {
 			})
 		}
 		this.#client_email = client_email
-		// Env files often hold the PEM with literal "\n" — Google's own SDKs unescape it too.
-		this.#private_key = private_key?.replace(/\\n/g, "\n")
+		this.#private_key = private_key
 		this.#user = user || undefined
 		this.#access_token = access_token || undefined
 	}
@@ -90,36 +88,13 @@ export default class Gmail extends ProviderBase<SendResponse> {
 
 	/** Sign a service-account JWT for `subject` and trade it for an access token. */
 	async #exchange(subject: string, now: number): Promise<{ value: string; expires_in: number }> {
-		const encoder = new TextEncoder()
-		const issued = Math.floor(now / 1000)
-		const header = to_base64url(encoder.encode(JSON.stringify({ alg: "RS256", typ: "JWT" })))
-		const payload = to_base64url(
-			encoder.encode(
-				JSON.stringify({
-					iss: this.#client_email,
-					sub: subject,
-					scope: SCOPE,
-					aud: "https://oauth2.googleapis.com/token",
-					iat: issued,
-					exp: issued + 3600,
-				})
-			)
-		)
-		const signing_input = `${header}.${payload}`
-		const key = await crypto.subtle.importKey(
-			"pkcs8",
-			pem_to_der(this.#private_key!),
-			{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-			false,
-			["sign"]
-		)
-		const signature = await crypto.subtle.sign(
-			"RSASSA-PKCS1-v1_5",
-			key,
-			encoder.encode(signing_input)
-		)
-		const assertion = `${signing_input}.${to_base64url(new Uint8Array(signature))}`
-
+		const assertion = await google_service_account_assertion({
+			client_email: this.#client_email!,
+			private_key: this.#private_key!,
+			scope: SCOPE,
+			subject,
+			now,
+		})
 		const response = await fetch("https://oauth2.googleapis.com/token", {
 			method: "POST",
 			headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -168,7 +143,9 @@ export default class Gmail extends ProviderBase<SendResponse> {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
-			body: JSON.stringify({ raw: to_base64url(new TextEncoder().encode(raw)) }),
+			// The blob can be megabytes once attachments are in it; Buffer encodes it in one
+			// pass where the byte-at-a-time helper the JWT uses would not.
+			body: JSON.stringify({ raw: Buffer.from(raw, "utf8").toString("base64url") }),
 		}
 	}
 

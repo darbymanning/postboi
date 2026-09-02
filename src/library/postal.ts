@@ -94,7 +94,7 @@ export default class Postal extends ProviderBase<SendResponse> {
 			attachments: message.attachments
 				? (await this.parse_attachments(message.attachments)).map((a) => ({
 						name: a.name,
-						content_type: a.mime_type || "application/octet-stream",
+						content_type: a.mime_type,
 						data: a.content,
 					}))
 				: undefined,

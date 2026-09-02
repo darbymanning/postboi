@@ -87,7 +87,7 @@ export default class Lettr extends ProviderBase<SendResponse> {
 				? (await this.parse_attachments(message.attachments)).map((a) => ({
 						filename: a.name,
 						content: a.content,
-						content_type: a.mime_type || "application/octet-stream",
+						content_type: a.mime_type,
 					}))
 				: undefined,
 			scheduled_at,

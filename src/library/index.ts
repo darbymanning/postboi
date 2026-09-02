@@ -735,8 +735,41 @@ export abstract class EmailProvider<TResponse = unknown> extends Transport<
 		return {
 			name: file.name,
 			content: await this.file_to_base64(file),
-			mime_type: file.type,
+			// `File.type` is "" for an extension the runtime doesn't know; every wire format
+			// wants a type, and this is the one that means "bytes".
+			mime_type: file.type || "application/octet-stream",
 		}
+	}
+
+	/**
+	 * Attachments as the filename→base64 map some APIs take (Customer.io, SendPulse). Two
+	 * files with one name — two phone-camera `image.jpg`s — would collapse to one entry,
+	 * so the later ones are numbered before the extension.
+	 */
+	protected async attachment_map(files: File | Array<File>): Promise<Record<string, string>> {
+		const map: Record<string, string> = {}
+		for (const a of await this.parse_attachments(files)) {
+			let name = a.name
+			for (let n = 2; name in map; n++) {
+				const dot = a.name.lastIndexOf(".")
+				name = dot > 0 ? `${a.name.slice(0, dot)} (${n})${a.name.slice(dot)}` : `${a.name} (${n})`
+			}
+			map[name] = a.content
+		}
+		return map
+	}
+
+	/**
+	 * Per-send tracking collapsed to the one switch some providers have (Maileroo,
+	 * Customer.io, Azure): on when either flag is, off only when both are turned off, and
+	 * left to the provider's default otherwise — so `{ opens: false }` alone doesn't
+	 * quietly switch clicks off too.
+	 */
+	protected tracking_switch(tracking: Tracking | undefined): boolean | undefined {
+		if (!tracking) return undefined
+		if (tracking.opens === true || tracking.clicks === true) return true
+		if (tracking.opens === false && tracking.clicks === false) return false
+		return undefined
 	}
 
 	/** Convert one or many Files into provider-agnostic attachments. */

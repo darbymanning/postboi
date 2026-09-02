@@ -50,6 +50,17 @@ function bounce(payload: Smtp2goPayload): BounceDetail {
 	}
 }
 
+/**
+ * SMTP2GO's `time` / `sendtime` are `YYYY-MM-DD HH:MM:SS` in UTC with no zone marker —
+ * which `Date` would read as local time — so the marker is put back before parsing.
+ */
+function utc(value: string | undefined): Date | undefined {
+	if (value && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) {
+		return to_date(`${value.replace(" ", "T")}Z`)
+	}
+	return to_date(value)
+}
+
 /** JSON or `application/x-www-form-urlencoded` — SMTP2GO offers both. */
 function parse_body(body: string): Smtp2goPayload {
 	const trimmed = body.trim()
@@ -97,7 +108,7 @@ const adapter: WebhookAdapter = {
 				provider: "smtp2go",
 				message_id: payload.email_id,
 				email: recipient,
-				timestamp: to_date(payload.time ?? payload.sendtime),
+				timestamp: utc(payload.time ?? payload.sendtime),
 				subject: payload.subject,
 				url: type === "clicked" ? (payload.url ?? payload.link) : undefined,
 				bounce: type === "bounced" ? bounce(payload) : undefined,

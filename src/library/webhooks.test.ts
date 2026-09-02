@@ -1086,3 +1086,65 @@ describe("receive — every provider round-trips through mock_request", () => {
 		}
 	})
 })
+
+describe("receive — review fixes", () => {
+	const ctx = { headers: new Headers(), url: new URL("https://example.com/webhooks") }
+
+	it("smtp2go: zone-less timestamps are read as UTC, whatever the host's zone", async () => {
+		const { default: adapter } = await import("./webhooks/smtp2go.js")
+		const [event] = await adapter.normalize(
+			JSON.stringify({
+				event: "delivered",
+				email_id: "e",
+				rcpt: "a@example.com",
+				time: "2030-01-01 10:00:00",
+			}),
+			ctx
+		)
+		expect(event.timestamp?.toISOString()).toBe("2030-01-01T10:00:00.000Z")
+	})
+
+	it("azure: the handler answers the validation code, and sovereign-cloud validation URLs are visited", async () => {
+		const fetch_spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"))
+		try {
+			const { webhook } = await import("./webhooks/handler.js")
+			const handshake = new Request("https://example.com/webhooks?token=s", {
+				method: "POST",
+				headers: { "content-type": "application/json", "aeg-event-type": "SubscriptionValidation" },
+				body: JSON.stringify([
+					{
+						eventType: "Microsoft.EventGrid.SubscriptionValidationEvent",
+						data: {
+							validationCode: "code-123",
+							validationUrl: "https://rp-usgovvirginia.eventgrid.azure.us:553/validate?id=1",
+						},
+					},
+				]),
+			})
+			const response = await webhook(() => {}, { provider: "azure", secret: "s" })(handshake)
+			expect(response.status).toBe(200)
+			expect(await response.json()).toEqual({ validationResponse: "code-123" })
+			expect(fetch_spy).toHaveBeenCalledWith(
+				"https://rp-usgovvirginia.eventgrid.azure.us:553/validate?id=1"
+			)
+		} finally {
+			fetch_spy.mockRestore()
+		}
+	})
+
+	it("a whsec_ secret that isn't base64 is reported as a misconfiguration, not a forgery", async () => {
+		const { request } = await mock_request({ provider: "loops", type: "delivered" })
+		const error = await receive(request, { provider: "loops", secret: "whsec_***" }).catch((e) => e)
+		expect(error).toBeInstanceOf(WebhookVerificationError)
+		expect(error.code).toBe("missing_secret")
+		expect(error.message).toContain("LOOPS_WEBHOOK_SECRET")
+	})
+
+	it("the handler answers a body that was already read with a 400, not a crash", async () => {
+		const { webhook } = await import("./webhooks/handler.js")
+		const { request, secret } = await mock_request({ provider: "postmark", type: "delivered" })
+		await request.text()
+		const response = await webhook(() => {}, { provider: "postmark", secret })(request)
+		expect(response.status).toBe(400)
+	})
+})

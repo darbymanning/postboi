@@ -43,6 +43,9 @@ const DELIVERY = "Microsoft.Communication.EmailDeliveryReportReceived"
 const ENGAGEMENT = "Microsoft.Communication.EmailEngagementTrackingReportReceived"
 const VALIDATION = "Microsoft.EventGrid.SubscriptionValidationEvent"
 
+/** Event Grid's own hosts, public and sovereign clouds alike. */
+const EVENT_GRID_HOSTS = [".eventgrid.azure.net", ".eventgrid.azure.us", ".eventgrid.azure.cn"]
+
 /** Delivery report statuses → event types; `Expanded` (a group fan-out) is not one. */
 const STATUSES: Record<string, WebhookEventType> = {
 	delivered: "delivered",
@@ -61,6 +64,11 @@ function bounce(status: string, data: NonNullable<EventGridEnvelope["data"]>): B
 	}
 }
 
+function envelopes_of(body: string): Array<EventGridEnvelope> {
+	const parsed = parse_json("azure", body)
+	return (Array.isArray(parsed) ? parsed : [parsed]) as Array<EventGridEnvelope>
+}
+
 /**
  * The validation URL of an Event Grid subscription handshake, checked to point at
  * Event Grid so a forged payload can't make us GET anywhere.
@@ -69,9 +77,8 @@ function validation_url(envelope: EventGridEnvelope): string | undefined {
 	if (envelope.eventType !== VALIDATION || !envelope.data?.validationUrl) return undefined
 	try {
 		const url = new URL(envelope.data.validationUrl)
-		if (url.protocol !== "https:" || !url.hostname.endsWith(".eventgrid.azure.net")) {
-			return undefined
-		}
+		if (url.protocol !== "https:") return undefined
+		if (!EVENT_GRID_HOSTS.some((host) => url.hostname.endsWith(host))) return undefined
 		return url.href
 	} catch {
 		return undefined
@@ -82,21 +89,20 @@ function validation_url(envelope: EventGridEnvelope): string | undefined {
  * Azure Communication Services webhook adapter. Event Grid signs nothing itself;
  * verification is the shared-secret pattern (a `?token=…` on the subscription's
  * endpoint URL — Event Grid keeps query strings secret — compared timing-safe). The
- * subscription handshake is completed for you: Event Grid's validation event names a
- * URL to visit within five minutes, and `receive()` visits it and returns no events.
+ * subscription handshake is completed both ways Event Grid allows: `webhook()` answers
+ * the validation event with its code, and `receive()` visits the validation URL the event
+ * names (good for five minutes), so a handler built on either is enough.
  */
 const adapter: WebhookAdapter = {
 	provider: "azure",
 
 	verify(ctx) {
-		shared_secret_verify("azure", ctx, ["aeg-subscription-name"])
+		shared_secret_verify("azure", ctx)
 	},
 
 	async normalize(body) {
-		const parsed = parse_json("azure", body)
-		const envelopes = (Array.isArray(parsed) ? parsed : [parsed]) as Array<EventGridEnvelope>
 		const events: Array<WebhookEvent> = []
-		for (const envelope of envelopes) {
+		for (const envelope of envelopes_of(body)) {
 			const handshake = validation_url(envelope)
 			if (handshake) {
 				await fetch(handshake)
@@ -126,7 +132,8 @@ const adapter: WebhookAdapter = {
 					type,
 					provider: "azure",
 					message_id: data.messageId,
-					// Engagement reports name the message and the sender, not the recipient.
+					// Engagement reports name the message and the sender, never the recipient —
+					// correlate on message_id.
 					email: data.recipient,
 					timestamp: to_date(data.userActionTimeStamp ?? envelope.eventTime),
 					url: type === "clicked" ? data.engagementContext || undefined : undefined,
@@ -136,6 +143,25 @@ const adapter: WebhookAdapter = {
 			}
 		}
 		return events
+	},
+
+	// The synchronous half of the handshake: Event Grid accepts the subscription as
+	// soon as the validation code comes back in the response body.
+	respond(body) {
+		let envelopes: Array<EventGridEnvelope>
+		try {
+			envelopes = envelopes_of(body)
+		} catch {
+			return undefined
+		}
+		const validation = envelopes.find(
+			(e) => e.eventType === VALIDATION && typeof e.data?.validationCode === "string"
+		)
+		if (!validation) return undefined
+		return new Response(JSON.stringify({ validationResponse: validation.data!.validationCode }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		})
 	},
 }
 

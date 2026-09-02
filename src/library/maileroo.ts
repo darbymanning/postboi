@@ -51,7 +51,7 @@ type SendResponse = {
  * `html` and `plain` bodies, every reply-to address, custom `headers`, base64
  * attachments and `scheduled_at` passed through. Maileroo's `tags` are a name→value map,
  * so each tag goes as its own name; `tracking` is one switch for opens and clicks
- * together, on when either flag is. Every answer carries `success`, so a refusal is read
+ * together, on when either flag is and off when both are. Every answer carries `success`, so a refusal is read
  * from the body whatever the status.
  *
  * @example
@@ -90,7 +90,7 @@ export default class Maileroo extends ProviderBase<SendResponse> {
 			attachments: message.attachments
 				? (await this.parse_attachments(message.attachments)).map((a) => ({
 						file_name: a.name,
-						content_type: a.mime_type || "application/octet-stream",
+						content_type: a.mime_type,
 						content: a.content,
 						inline: false,
 					}))
@@ -99,9 +99,7 @@ export default class Maileroo extends ProviderBase<SendResponse> {
 			tags: message.tags?.length
 				? Object.fromEntries(message.tags.map((tag) => [tag, tag]))
 				: undefined,
-			tracking: message.tracking
-				? Boolean(message.tracking.opens || message.tracking.clicks)
-				: undefined,
+			tracking: this.tracking_switch(message.tracking),
 			scheduled_at: message.scheduled_at?.toISOString(),
 		}
 

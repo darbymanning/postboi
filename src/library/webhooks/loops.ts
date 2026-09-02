@@ -137,7 +137,7 @@ export const mock: AdapterModule["mock"] = async ({ type, secret }) => {
 
 	const id = "msg_mock"
 	const timestamp = String(Math.floor(now.getTime() / 1000))
-	const key = secret.startsWith("whsec_") ? base64_decode(secret.slice(6)) : secret
+	const key = base64_decode(secret.replace(/^whsec_/, ""))
 	const signature = base64_encode(await hmac_sha256(key, `${id}.${timestamp}.${body}`))
 	return {
 		body,

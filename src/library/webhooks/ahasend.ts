@@ -5,9 +5,8 @@ import type {
 	BounceDetail,
 	AdapterModule,
 } from "./index.js"
-import { WebhookVerificationError } from "./errors.js"
-import { parse_json, engagement, to_date } from "./shared.js"
-import { hmac_sha256, base64_encode, base64_decode, timing_safe_equal } from "./crypto.js"
+import { parse_json, engagement, to_date, svix_adapter_verify } from "./shared.js"
+import { hmac_sha256, base64_encode, whsec_key_candidates } from "./crypto.js"
 
 /**
  * AhaSend webhook payload — https://ahasend.com/docs/api-reference/webhooks
@@ -50,9 +49,6 @@ const TYPES: Record<string, WebhookEventType> = {
 	"message.clicked": "clicked",
 }
 
-/** Allowed clock skew, in seconds — the standard-webhooks default. */
-const TOLERANCE_S = 300
-
 function bounce(type: string, data: NonNullable<AhasendPayload["data"]>): BounceDetail {
 	if (type === "message.suppressed") {
 		return { category: "suppressed", detail: data.reason ?? data.bounce_reason }
@@ -69,85 +65,19 @@ function bounce(type: string, data: NonNullable<AhasendPayload["data"]>): Bounce
 }
 
 /**
- * The HMAC keys the configured secret could mean. AhaSend says the key is the literal
- * secret, `whsec_` prefix and all — the opposite of the standard-webhooks convention its
- * headers follow — so the literal reading comes first and the conventional ones (prefix
- * stripped, then base64-decoded) are tried too, in case that changes. Each is derived
- * from the one configured value, so accepting any gives away nothing.
- */
-function key_candidates(secret: string): Array<Uint8Array | string> {
-	const candidates: Array<Uint8Array | string> = [secret]
-	if (secret.startsWith("whsec_")) {
-		const stripped = secret.slice("whsec_".length)
-		candidates.push(stripped)
-		try {
-			candidates.push(base64_decode(stripped))
-		} catch {
-			// not base64 — the string readings still stand
-		}
-	}
-	return candidates
-}
-
-/**
- * AhaSend webhook adapter. Verification is the standard-webhooks scheme — HMAC-SHA256 of
- * `{id}.{timestamp}.{body}`, base64, one or more `v1,…` values in `webhook-signature`
- * beside `webhook-id` and `webhook-timestamp` — keyed with the literal secret.
+ * AhaSend webhook adapter. The standard-webhooks scheme — `webhook-id`,
+ * `webhook-timestamp` and `webhook-signature` headers, HMAC-SHA256 of
+ * `{id}.{timestamp}.{body}` — with one twist: AhaSend says the key is the literal secret,
+ * `whsec_` prefix and all, the opposite of the convention its headers follow. So the
+ * shared verifier runs with every reading of the secret — literal first, then prefix
+ * stripped, then base64-decoded — in case that changes; each is derived from the one
+ * configured value, so accepting any gives away nothing.
  */
 const adapter: WebhookAdapter = {
 	provider: "ahasend",
 
-	async verify(ctx) {
-		if (!ctx.secret) {
-			throw new WebhookVerificationError({
-				provider: "ahasend",
-				message:
-					"No webhook secret configured for ahasend. Set AHASEND_WEBHOOK_SECRET to the webhook's secret, or pass { secret }.",
-				code: "missing_secret",
-			})
-		}
-		const id = ctx.headers.get("webhook-id")
-		const timestamp = ctx.headers.get("webhook-timestamp")?.trim()
-		const header = ctx.headers.get("webhook-signature")
-		if (!id || !timestamp || !header) {
-			throw new WebhookVerificationError({
-				provider: "ahasend",
-				message:
-					"ahasend webhook is missing its webhook-id, webhook-timestamp or webhook-signature header",
-				code: "invalid_signature",
-			})
-		}
-		const seconds = Number(timestamp)
-		const now = Math.floor(Date.now() / 1000)
-		if (!Number.isFinite(seconds) || Math.abs(now - seconds) > TOLERANCE_S) {
-			throw new WebhookVerificationError({
-				provider: "ahasend",
-				message: "ahasend webhook timestamp is outside the accepted tolerance (replay protection)",
-				code: "stale_timestamp",
-			})
-		}
-		const signatures = header
-			.split(/\s+/)
-			.map((part) => part.trim())
-			.filter((part) => part.startsWith("v1,"))
-			.map((part) => part.slice(3))
-		const payload = `${id}.${timestamp}.${ctx.body}`
-		const expected: Array<string> = []
-		for (const secret of ctx.secret.split(/[\s,]+/).filter(Boolean)) {
-			for (const key of key_candidates(secret)) {
-				expected.push(base64_encode(await hmac_sha256(key, payload)))
-			}
-		}
-		const ok = signatures.some((signature) =>
-			expected.some((candidate) => timing_safe_equal(signature, candidate))
-		)
-		if (!ok) {
-			throw new WebhookVerificationError({
-				provider: "ahasend",
-				message: "ahasend webhook signature did not match",
-				code: "invalid_signature",
-			})
-		}
+	verify(ctx) {
+		return svix_adapter_verify("ahasend", ctx, "webhook", whsec_key_candidates)
 	},
 
 	normalize(body) {

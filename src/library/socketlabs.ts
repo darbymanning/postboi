@@ -106,7 +106,7 @@ export default class SocketLabs extends ProviderBase<SendResponse> {
 			attachments: message.attachments
 				? (await this.parse_attachments(message.attachments)).map((a) => ({
 						name: a.name,
-						contentType: a.mime_type || "application/octet-stream",
+						contentType: a.mime_type,
 						content: a.content,
 					}))
 				: undefined,

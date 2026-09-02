@@ -1,21 +1,10 @@
-import type {
-	PreparedMessage,
-	ApiKeyOptions,
-	ProviderError,
-	RequestSpec,
-	MailAddress,
-} from "./index.js"
+import type { PreparedMessage, ApiKeyOptions, ProviderError, RequestSpec } from "./index.js"
 import { ProviderBase } from "./index.js"
 
 /** Options for the AhaSend provider constructor. */
 type Options = ApiKeyOptions & {
 	/** The account the API key belongs to — the id in the dashboard URL. */
 	account_id: string
-}
-
-interface Address {
-	email: string
-	name?: string
 }
 
 interface Attachment {
@@ -26,12 +15,12 @@ interface Attachment {
 }
 
 export interface SendParams {
-	from: Address
-	recipients: Array<Address>
+	from: { email: string; name?: string }
+	recipients: Array<{ email: string; name?: string }>
 	subject: string
 	html_content?: string
 	text_content?: string
-	reply_to?: Address
+	reply_to?: { email: string; name?: string }
 	headers?: Record<string, string>
 	attachments?: Array<Attachment>
 	tags?: Array<string>
@@ -45,7 +34,7 @@ type SendResponse = {
 		object: string
 		/** The message id — null when the recipient was refused outright. */
 		id: string | null
-		recipient: Address
+		recipient: { email: string; name?: string }
 		status: string
 		error?: string | null
 	}>
@@ -86,31 +75,27 @@ export default class AhaSend extends ProviderBase<SendResponse> {
 		this.#account_id = account_id
 	}
 
-	#address(a: MailAddress): Address {
-		return a.name ? { email: a.address, name: a.name } : { email: a.address }
-	}
-
 	protected async build_request(message: PreparedMessage): Promise<RequestSpec> {
 		const recipients = [
 			...this.parse_addresses(message.to),
 			...(message.cc ? this.parse_addresses(message.cc) : []),
 			...(message.bcc ? this.parse_addresses(message.bcc) : []),
-		].map((a) => this.#address(a))
+		].map((a) => this.email_name(a))
 
 		const params: SendParams = {
-			from: this.#address(this.parse_email_address(message.from)),
+			from: this.email_name(this.parse_email_address(message.from)),
 			recipients,
 			subject: message.subject,
 			html_content: message.html,
 			text_content: message.text,
 			reply_to: message.reply_to
-				? this.#address(this.parse_addresses(message.reply_to)[0])
+				? this.email_name(this.parse_addresses(message.reply_to)[0])
 				: undefined,
 			headers: message.headers,
 			attachments: message.attachments
 				? (await this.parse_attachments(message.attachments)).map((a) => ({
 						file_name: a.name,
-						content_type: a.mime_type || "application/octet-stream",
+						content_type: a.mime_type,
 						data: a.content,
 						base64: true as const,
 					}))

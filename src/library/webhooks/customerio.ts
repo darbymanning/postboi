@@ -6,7 +6,7 @@ import type {
 	AdapterModule,
 } from "./index.js"
 import { WebhookVerificationError } from "./errors.js"
-import { parse_json, engagement, to_date } from "./shared.js"
+import { parse_json, engagement, to_date, assert_fresh_timestamp } from "./shared.js"
 import { hmac_sha256, hex_encode, timing_safe_equal } from "./crypto.js"
 
 /**
@@ -52,9 +52,6 @@ const METRICS: Record<string, WebhookEventType> = {
 	unsubscribed: "unsubscribed",
 }
 
-/** Allowed clock skew, in seconds. Customer.io documents no window; five minutes is usual. */
-const TOLERANCE_S = 300
-
 function bounce(metric: string, data: NonNullable<CustomerioPayload["data"]>): BounceDetail {
 	return {
 		// `undeliverable` is Customer.io declining to send to an address it already knows is
@@ -90,16 +87,7 @@ const adapter: WebhookAdapter = {
 				code: "invalid_signature",
 			})
 		}
-		const seconds = Number(timestamp)
-		const now = Math.floor(Date.now() / 1000)
-		if (!Number.isFinite(seconds) || Math.abs(now - seconds) > TOLERANCE_S) {
-			throw new WebhookVerificationError({
-				provider: "customerio",
-				message:
-					"customerio webhook timestamp is outside the accepted tolerance (replay protection)",
-				code: "stale_timestamp",
-			})
-		}
+		assert_fresh_timestamp("customerio", timestamp)
 		const expected = hex_encode(await hmac_sha256(ctx.secret, `v0:${timestamp}:${ctx.body}`))
 		if (!timing_safe_equal(signature, expected)) {
 			throw new WebhookVerificationError({

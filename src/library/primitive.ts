@@ -60,7 +60,11 @@ export default class Primitive extends ProviderBase<SendResponse> {
 
 	protected async build_request(message: PreparedMessage): Promise<RequestSpec> {
 		const to = this.parse_addresses(message.to)
-		if (to.length !== 1 || message.cc || message.bcc) {
+		const copied = [
+			...(message.cc ? this.parse_addresses(message.cc) : []),
+			...(message.bcc ? this.parse_addresses(message.bcc) : []),
+		]
+		if (to.length !== 1 || copied.length) {
 			throw new PostboiError({
 				provider: "primitive",
 				code: "single_recipient",
@@ -79,7 +83,7 @@ export default class Primitive extends ProviderBase<SendResponse> {
 				? (await this.parse_attachments(message.attachments)).map((a) => ({
 						filename: a.name,
 						content_base64: a.content,
-						content_type: a.mime_type || "application/octet-stream",
+						content_type: a.mime_type,
 					}))
 				: undefined,
 		}

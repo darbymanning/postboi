@@ -7,7 +7,6 @@ import type {
 } from "./index.js"
 import { ProviderBase, PostboiError } from "./index.js"
 import { base64_decode, base64_encode } from "./encoding.js"
-import { hmac_sha256 } from "./webhooks/crypto.js"
 
 /** Options for the Azure Communication Services provider constructor. */
 type Options = CommonProviderOptions & {
@@ -89,6 +88,19 @@ export default class Azure extends ProviderBase<SendResponse> {
 	protected readonly provider = "azure"
 	#endpoint: URL
 	#access_key: string
+	#signing_key?: Promise<CryptoKey>
+
+	/** The access key imported for HMAC once per instance, not once per send. */
+	#key(): Promise<CryptoKey> {
+		this.#signing_key ??= crypto.subtle.importKey(
+			"raw",
+			base64_decode(this.#access_key),
+			{ name: "HMAC", hash: "SHA-256" },
+			false,
+			["sign"]
+		)
+		return this.#signing_key
+	}
 
 	constructor({ connection_string, endpoint, access_key, ...options }: Options) {
 		super(options)
@@ -129,12 +141,12 @@ export default class Azure extends ProviderBase<SendResponse> {
 			attachments: message.attachments
 				? (await this.parse_attachments(message.attachments)).map((a) => ({
 						name: a.name,
-						contentType: a.mime_type || "application/octet-stream",
+						contentType: a.mime_type,
 						contentInBase64: a.content,
 					}))
 				: undefined,
 		}
-		if (message.tracking?.opens === false && message.tracking?.clicks === false) {
+		if (this.tracking_switch(message.tracking) === false) {
 			params.userEngagementTrackingDisabled = true
 		}
 
@@ -146,7 +158,9 @@ export default class Azure extends ProviderBase<SendResponse> {
 			new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(body)))
 		)
 		const to_sign = `POST\n${url.pathname}${url.search}\n${date};${url.host};${content_hash}`
-		const signature = base64_encode(await hmac_sha256(base64_decode(this.#access_key), to_sign))
+		const signature = base64_encode(
+			new Uint8Array(await crypto.subtle.sign("HMAC", await this.#key(), encoder.encode(to_sign)))
+		)
 
 		return {
 			url: url.href,

@@ -93,7 +93,7 @@ export default class Loops extends ProviderBase<SendResponse> {
 			attachments: message.attachments
 				? (await this.parse_attachments(message.attachments)).map((a) => ({
 						filename: a.name,
-						contentType: a.mime_type || "application/octet-stream",
+						contentType: a.mime_type,
 						data: a.content,
 					}))
 				: undefined,

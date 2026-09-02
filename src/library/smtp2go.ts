@@ -97,7 +97,7 @@ export default class SMTP2GO extends ProviderBase<SendResponse> {
 				? (await this.parse_attachments(message.attachments)).map((a) => ({
 						filename: a.name,
 						fileblob: a.content,
-						mimetype: a.mime_type || "application/octet-stream",
+						mimetype: a.mime_type,
 					}))
 				: undefined,
 			schedule: message.scheduled_at?.toISOString(),

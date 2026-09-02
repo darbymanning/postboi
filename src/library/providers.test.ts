@@ -2310,3 +2310,96 @@ describe("Primitive", () => {
 		expect(error.code).toBe("invalid_from")
 	})
 })
+
+describe("review fixes", () => {
+	it("primitive: an empty cc or bcc is no cc or bcc", async () => {
+		fetch.mockResolvedValue(respond({ json: { success: true, data: { id: "p" } } }))
+		await new Primitive({ api_key: "k", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			cc: [],
+			bcc: [],
+			body: "x",
+		})
+		expect(fetch).toHaveBeenCalledTimes(1)
+	})
+
+	it("one-switch tracking: on when either flag is, off only when both are, otherwise left alone", async () => {
+		fetch.mockResolvedValue(respond({ json: { delivery_id: "d", queued_at: "t" } }))
+		const mail = new CustomerIO({ api_key: "k", default: { from: "from@test.com" } })
+		await mail.send({ to: "to@test.com", body: "x", tracking: { opens: false } })
+		expect(sent_json().tracked).toBeUndefined()
+		await mail.send({ to: "to@test.com", body: "x", tracking: { opens: false, clicks: false } })
+		expect(sent_json().tracked).toBe(false)
+		await mail.send({ to: "to@test.com", body: "x", tracking: { opens: false, clicks: true } })
+		expect(sent_json().tracked).toBe(true)
+
+		fetch.mockResolvedValue(
+			respond({ json: { success: true, message: "ok", data: { reference_id: "r" } } })
+		)
+		await new Maileroo({ api_key: "k", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			body: "x",
+			tracking: { clicks: false },
+		})
+		expect(sent_json().tracking).toBeUndefined()
+	})
+
+	it("name-keyed attachment maps keep two files that share a name", async () => {
+		fetch.mockResolvedValue(respond({ json: { delivery_id: "d", queued_at: "t" } }))
+		await new CustomerIO({ api_key: "k", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			body: "x",
+			attachments: [
+				new File(["one"], "scan.pdf", { type: "application/pdf" }),
+				new File(["two"], "scan.pdf", { type: "application/pdf" }),
+				new File(["three"], "notes", { type: "" }),
+				new File(["four"], "notes", { type: "" }),
+			],
+		})
+		expect(sent_json().attachments).toEqual({
+			"scan.pdf": b64("one"),
+			"scan (2).pdf": b64("two"),
+			notes: b64("three"),
+			"notes (2)": b64("four"),
+		})
+	})
+
+	it("an attachment with no known type goes out as octet-stream everywhere", async () => {
+		fetch.mockResolvedValue(
+			respond({ json: { success: true, message: "ok", data: { reference_id: "r" } } })
+		)
+		await new Maileroo({ api_key: "k", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			body: "x",
+			attachments: new File(["bytes"], "blob", { type: "" }),
+		})
+		expect(sent_json().attachments[0].content_type).toBe("application/octet-stream")
+	})
+
+	it("mime: quotes, backslashes and non-ASCII in a filename never break the header, and long subjects fold", async () => {
+		fetch.mockResolvedValue(respond({ json: { id: "m" } }))
+		const decode = (raw: string) => Buffer.from(raw, "base64url").toString("utf8")
+		await new Gmail({ access_token: "byo", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			subject: "Ünterwegs ".repeat(30).trim(),
+			body: "x",
+			attachments: [
+				new File(["a"], 'Q3 "final".pdf', { type: "application/pdf" }),
+				new File(["b"], "résumé.pdf", { type: "application/pdf" }),
+			],
+		})
+		const raw = decode(sent_json().raw)
+		expect(raw).toContain('filename="Q3 \\"final\\".pdf"')
+		expect(raw).toContain("filename*=UTF-8''r%C3%A9sum%C3%A9.pdf")
+		for (const line of raw.split("\r\n")) expect(line.length).toBeLessThanOrEqual(998)
+		const subject = raw.match(/^Subject: ([\s\S]*?)\r\n(?=\S)/m)![1]
+		for (const word of subject.split("\r\n ")) expect(word.length).toBeLessThanOrEqual(75)
+		const decoded = subject
+			.split(/\s+/)
+			.map((w) =>
+				Buffer.from(w.slice("=?UTF-8?B?".length, -"?=".length), "base64").toString("utf8")
+			)
+			.join("")
+		expect(decoded).toBe("Ünterwegs ".repeat(30).trim())
+	})
+})
