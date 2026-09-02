@@ -546,7 +546,7 @@ Every new channel touches more than a provider file. This is the actual cost:
 
 - `sms/phone.ts` — E.164 normalisation and GSM segment counting, not a libphonenumber port
 - `sms/provider.ts` — `SmsProvider extends Transport`, same three hooks as email
-- The SMS Works, Twilio and AWS SNS, plus an SMS mock
+- The SMS Works, Twilio and AWS SNS, plus an SMS mock; PureSMS followed once the shape was proven
 - `sms()` with env resolution, and `postboi init --sms` asking destination first
 - Docs at `/sms`, in a new **Channels** nav section
 - 45 tests across normalisation, providers, the resolver and dev interception
@@ -674,6 +674,49 @@ as a follow-up if someone wants to skip Firebase.
 
 **Effort: a day, against the 1–2 week estimate** — the estimate assumed fighting the
 encryption, and the RFC vector meant it was either right or obviously wrong.
+
+### Expo / React Native, added later
+
+The "next if mobile pull appears" step above, taken. Two halves, both JavaScript, both on
+the existing npm pipeline — which was the whole argument for doing this one and not the
+native three.
+
+- **`postboi/push/expo`** is the app half: `subscribe()` / `unsubscribe()` /
+  `subscription()` / `usePush` over `expo-notifications`, with the browser helper's names
+  and reasons so a shared settings screen reads the same on both. It hands back
+  `{ token, provider, platform }` — `provider` because a token from one push provider is
+  meaningless to the others, and storing it is how the server picks the sender per device.
+  `{ native: true }` skips Expo's service and returns the raw FCM/APNs token tagged for
+  `postboi/fcm` / `postboi/apns`.
+- **`postboi/expo`** is the server half: Expo's push service, which holds the FCM and APNs
+  credentials itself, so the provider is the first with **no credential at all**
+  (`EXPO_ACCESS_TOKEN` exists only under Enhanced Security). A 200 is a ticket rather than
+  a delivery, so `receipts(ids)` fetches the outcome, and `DeviceNotRegistered` on either
+  normalizes to the expiry `push.expired()` already catches.
+- **The controller grew a driver seam** rather than a second copy: `machine(driver)` in
+  `push/controller.ts` is the toggle state machine over any platform, the browser and the
+  phone each supply five calls, and the choreography (busy state, register-then-rollback,
+  the stale-refresh guard) exists once.
+
+Two things the phone needed that the page didn't, and the plan hadn't listed:
+
+1. **A memory of being registered.** The browser's `PushManager` holds the subscription;
+   the OS holds only permission — granted by default on Android 12 and below, and still
+   granted after "turn off" in the app — so a toggle reading permission as "on" lies both
+   ways. The helper remembers the registration itself (`storage`, AsyncStorage's shape;
+   one launch without it), which also means `current()` never hits the network, and the
+   rotation listener has to tell the echo of its own token fetch from a real rotation.
+2. **Expo is never inferred.** Its only field is optional, so under the inference rule it
+   would count as configured on every machine and the VAPID trio could never infer Web
+   Push again — and `EXPO_ACCESS_TOKEN` is the name expo-server-sdk users already set. So
+   it carries the `ambient` mark, and `POSTBOI_PUSH_PROVIDER=expo` names it, which `init`
+   writes anyway. The registry's "reachable" pin now ignores a destination that needs
+   nothing, since there is no credential for it to take.
+
+Not done, and deliberately: no Expo example app (nothing here runs it), and no support for
+Expo's batch endpoint — sends go one per request through the base class so hooks stay
+per-message, with 429 backoff honouring Expo's `Retry-After`. Native Swift/Kotlin/Flutter
+remain declined for the reasons above.
 
 ---
 
@@ -907,7 +950,14 @@ templates and in-window service messages are free today, but **that ends 1 Octob
 `poll()` arrived for the email providers that push no webhooks (SMTP, Microsoft 365,
 Cloudflare). SMS and WhatsApp need it for a different reason, and **Twilio ships now**:
 `poll({ provider: "twilio" })` returns the same normalized events as every other adapter,
-one row covering both channels.
+one row covering both channels. **Meta's Cloud API ships too, on the other side of the
+line**: it pushes a real webhook, so it is a `receive()` adapter (`webhooks/meta.ts`) —
+`X-Hub-Signature-256` over the raw body with the app secret, plus the `hub.challenge`
+handshake Meta makes before subscribing an endpoint, which `webhook()` answers on a GET
+against `META_WEBHOOK_VERIFY_TOKEN`. Its `statuses` are the same events as Twilio's; its
+inbound `messages` are a STOP → `unsubscribed`, and anything else a person writes →
+`received` with `phone` and `body.text` — the webhook is the only way those reach you,
+unlike Twilio's replies, which sit in the Message resource for whoever reads them.
 
 **Why polling rather than webhooks.** Twilio's status callbacks exist, but the URL is set
 **per message, at send time** — so receiving them means every send having somewhere to
@@ -940,9 +990,10 @@ that has been quiet for that long is re-emitted once.
 - **Amazon SNS SMS** — delivery status goes to **CloudWatch Logs**, not an API that lists
   message states. Polling it would mean a CloudWatch Logs Insights query per window: a
   different shape of adapter, and a different set of IAM permissions to ask for.
-- **Meta WhatsApp Cloud API** — pushes proper webhooks, so it belongs with `receive()`
-  rather than `poll()`. Its verification is Meta's own `X-Hub-Signature-256`; adding it is
-  an adapter in `webhooks/`, not a poller.
+- ~~**Meta WhatsApp Cloud API**~~ — was here as "belongs with `receive()`, not `poll()`";
+  it now is (above). The one piece the `WebhookAdapter` contract lacked was the endpoint
+  handshake, added as an optional `handshake` the adapter uses to read the URL while the
+  module root does the fail-closed comparing — the same split as `verify`.
 
 ## Where this could go — the audience layer
 
@@ -979,6 +1030,28 @@ metered. The commitment underneath the decline — **never charge per contact** 
 unchanged. In-app messaging stays declined. The original reasoning is in this file's history.
 
 **Sequencing:** Phase 4 has shipped, so the audience layer is due — LIFECYCLE.md is the plan.
+
+### Status: the first slice has landed
+
+Items 1 and 3 have a first cut; item 2 is still email-only.
+
+- **Delivery profiles** — a contact carries `phone` (E.164, validated as definitive: a
+  national number is rejected rather than guessed at). One number, not one per channel:
+  SMS and WhatsApp reach the same handset, and a second field would be a second thing to
+  keep in step. Push subscriptions are still the caller's to store — `push()` takes raw
+  subscriptions, as Phase 3 decided, and nothing about a contact has changed that.
+- **Per-channel suppressions** — the account's list is keyed `(channel, address)` now:
+  `email`, `sms` and `whatsapp`. A texted **STOP** reaches it on its own: the Twilio poll
+  adapter reads inbound replies for exactly one thing, an opt-out keyword (`is_opt_out`,
+  exported from the root), and emits `unsubscribed` with the sender's number; the
+  platform's poll bridge writes the suppression for the channel replied over. This is
+  the SMS half of "legally required anyway". Nothing in the platform _sends_ SMS or
+  WhatsApp (Phase 2 stays declined), so today the list is a record the API, CLI and
+  dashboard expose and `send()` callers can honour — not a gate on a hosted send path.
+- **`lists.broadcast()` multi-channel** — unbuilt, and now the obvious next step: the
+  contact has a number, the suppression list knows the channel, and the app already
+  relays email through synced provider credentials, which is the same shape an SMS leg
+  through synced Twilio credentials would take.
 
 ---
 
@@ -1308,6 +1381,11 @@ offers only optional basic auth. That's genuinely weaker, and it stings because
 `webhooks/crypto.ts` already implements HMAC for other providers. Basic auth over HTTPS
 plus the `?token=…` pattern used elsewhere in `webhooks/` is workable, but say so in the
 docs rather than glossing it.
+
+**Since then:** PureSMS shipped as the second UK provider (`postboi/puresms`) once the
+`SmsProvider` shape had carried three providers unchanged. The undocumented error bodies
+are still the caveat: its `parse_error` reads RFC 7807 problem details on the assumption
+the platform is ASP.NET, and a 207 partly-accepted batch is turned into a failure.
 
 **Unverified:** their volume tiers aren't published ("more than that? talk to us"), so
 high-volume rates need a conversation. Not a Phase 1 blocker.

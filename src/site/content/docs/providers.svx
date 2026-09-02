@@ -10,7 +10,7 @@ exposes the same `send()` and `is_error()` methods: swap providers without chang
 calling code.
 
 This page is the **email** roster. The other channels' providers live with their channel:
-[SMS](/sms#providers) (The SMS Works, Twilio, Amazon SNS),
+[SMS](/sms#providers) (The SMS Works, PureSMS, Twilio, Amazon SNS),
 [WhatsApp](/whatsapp#providers) (Twilio, Meta Cloud API), [Push](/push) (Web Push, FCM),
 and the chat platforms — [Slack](/slack), [Discord](/discord), [Teams](/teams),
 [Telegram](/telegram) — each on its own page.
@@ -23,11 +23,22 @@ keep the secrets in the environment.
 
 | Provider       | Import               | Environment variables                                   | Constructor options                  |
 | -------------- | -------------------- | ------------------------------------------------------- | ------------------------------------ |
+| AhaSend        | `postboi/ahasend`    | `AHASEND_API_KEY`, `AHASEND_ACCOUNT_ID`                | `api_key`, `account_id`              |
 | Amazon SES     | `postboi/ses`        | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | `access_key_id`, `secret_access_key`, `region`, `session_token?` |
+| Azure Communication Services | `postboi/azure` | `COMMUNICATION_SERVICES_CONNECTION_STRING`     | `connection_string` (or `endpoint`, `access_key`) |
 | Brevo          | `postboi/brevo`      | `BREVO_API_KEY`                                         | `api_key`                            |
 | Cloudflare     | `postboi/cloudflare` | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`        | `api_key`, `account_id`              |
+| Customer.io    | `postboi/customerio` | `CUSTOMERIO_APP_API_KEY`, `CUSTOMERIO_REGION`          | `api_key`, `region?`                 |
 | Elastic Email  | `postboi/elasticemail` | `ELASTICEMAIL_API_KEY`                               | `api_key`                            |
+| Gmail (Google Workspace) | `postboi/gmail` | `GMAIL_CLIENT_EMAIL`, `GMAIL_PRIVATE_KEY`, `GMAIL_USER` | `client_email`, `private_key`, `user?` (or `access_token`) |
+| Infobip        | `postboi/infobip`    | `INFOBIP_API_KEY`, `INFOBIP_BASE_URL`                  | `api_key`, `base_url`                |
+| Iterable       | `postboi/iterable`   | `ITERABLE_API_KEY`, `ITERABLE_CAMPAIGN_ID`, `ITERABLE_REGION` | `api_key`, `campaign_id`, `region?` |
+| JetEmail       | `postboi/jetemail`   | `JETEMAIL_API_KEY`                                     | `api_key`                            |
+| Lettr          | `postboi/lettr`      | `LETTR_API_KEY`                                        | `api_key`                            |
 | Lettermint     | `postboi/lettermint` | `LETTERMINT_SENDING_TOKEN`, `LETTERMINT_ROUTE`         | `api_key`, `route?`                  |
+| Loops          | `postboi/loops`      | `LOOPS_API_KEY`, `LOOPS_TRANSACTIONAL_ID`              | `api_key`, `transactional_id`        |
+| MailChannels   | `postboi/mailchannels` | `MAILCHANNELS_API_KEY`                               | `api_key`, `dkim?`                   |
+| Maileroo       | `postboi/maileroo`   | `MAILEROO_API_KEY`                                     | `api_key`                            |
 | MailerSend     | `postboi/mailersend` | `MAILERSEND_API_KEY`                                   | `api_key`                            |
 | Mailgun        | `postboi/mailgun`    | `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`                    | `api_key`, `domain`, `region?`       |
 | Mailjet        | `postboi/mailjet`    | `MJ_APIKEY_PUBLIC`, `MJ_APIKEY_PRIVATE`                | `api_key`, `api_secret`              |
@@ -36,11 +47,17 @@ keep the secrets in the environment.
 | Mandrill       | `postboi/mandrill`   | `MANDRILL_API_KEY`                                     | `api_key`                            |
 | Microsoft 365  | `postboi/microsoft365` | `MS365_TENANT_ID`, `MS365_CLIENT_ID`, `MS365_CLIENT_SECRET` | `tenant_id`, `client_id`, `client_secret` |
 | Plunk          | `postboi/plunk`      | `PLUNK_API_KEY`                                        | `api_key`                            |
+| Postal         | `postboi/postal`     | `POSTAL_HOST`, `POSTAL_API_KEY`                        | `host`, `api_key`                    |
 | Postmark       | `postboi/postmark`   | `POSTMARK_SERVER_TOKEN`                                | `api_key`, `message_stream?`         |
+| Primitive      | `postboi/primitive`  | `PRIMITIVE_API_KEY`                                    | `api_key`                            |
 | Resend         | `postboi/resend`     | `RESEND_API_KEY`                                       | `api_key`                            |
 | Scaleway       | `postboi/scaleway`   | `SCALEWAY_SECRET_KEY`, `SCALEWAY_PROJECT_ID`, `SCALEWAY_REGION` | `secret_key`, `project_id`, `region` |
+| SendPulse      | `postboi/sendpulse`  | `SENDPULSE_CLIENT_ID`, `SENDPULSE_CLIENT_SECRET`       | `client_id`, `client_secret`         |
 | SendGrid       | `postboi/sendgrid`   | `SENDGRID_API_KEY`                                     | `api_key`, `region?`                 |
+| Sequenzy       | `postboi/sequenzy`   | `SEQUENZY_API_KEY`, `SEQUENZY_COMPANY_ID`              | `api_key`, `company_id?`             |
+| SMTP2GO        | `postboi/smtp2go`    | `SMTP2GO_API_KEY`, `SMTP2GO_REGION`                    | `api_key`, `region?`                 |
 | SMTP (any)     | `postboi/smtp`       | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE` | `host`, `port?`, `user?`, `pass?`, `secure?` |
+| SocketLabs     | `postboi/socketlabs` | `SOCKETLABS_SERVER_ID`, `SOCKETLABS_API_KEY`           | `server_id`, `api_key`               |
 | SparkPost      | `postboi/sparkpost`  | `SPARKPOST_API_KEY`                                    | `api_key`, `region?`                 |
 | Unosend        | `postboi/unosend`    | `UNOSEND_API_KEY`                                      | `api_key`                            |
 | ZeptoMail      | `postboi/zepto`      | `ZEPTO_TOKEN`                                          | `api_key`                            |
@@ -127,10 +144,39 @@ anywhere. `NODE_ENV=test` throws too, so suites keep asserting the real failure.
 native concept, and quietly ignored where unsupported:
 
 - **headers** → Resend, Postmark, SendGrid, Mailgun (`h:`), Brevo, SparkPost, Mandrill,
-  Plunk, Mailtrap, Scaleway, Cloudflare, SES, Mailjet, Elastic Email, Lettermint, Unosend.
+  Plunk, Mailtrap, Scaleway, Cloudflare, SES, Mailjet, Elastic Email, Lettermint, Unosend,
+  SMTP2GO (`custom_headers`), SocketLabs, Azure, Gmail, MailChannels, Maileroo, AhaSend,
+  Postal, Customer.io, Infobip, JetEmail, Lettr.
 - **tags** → SendGrid (categories), Mailgun (`o:tag`), Brevo, MailerSend, Mandrill,
-  MailPace, SES (`EmailTags`), Resend, Lettermint, Unosend (`{name,value}` pairs). Postmark
-  and Mailtrap use the **first** tag only.
+  MailPace, SES (`EmailTags`), Resend, Lettermint, Unosend (`{name,value}` pairs), AhaSend,
+  Maileroo (a name→value map, each tag as its own name). Postmark, Mailtrap, Postal, Lettr
+  and SocketLabs (as the `mailingId`) use the **first** tag only.
+
+A few of the roster shape the message around their own model rather than the wire:
+
+- **Loops** and **Iterable** only send emails designed in their own editors, so each takes
+  the template to use (`transactional_id` / `campaign_id`) and hands the send over as data
+  variables — `subject`, `html`, `text`, `from` and the recipient's `name` — for that
+  template to place. One recipient per send; a [batch](/bulk) with `data` reaches several.
+- **Primitive** addresses one person per request with no cc or bcc, so several recipients
+  is an error rather than a guess.
+- **AhaSend** has no cc/bcc — every address gets its own copy — so `cc` and `bcc` join
+  the recipient list. **Customer.io** has no cc either; `cc` addresses join its
+  comma-separated `to`, and every send is filed against the person the first recipient
+  identifies.
+- **Azure** sends from the bare `senderAddress` (the display name is set on the domain in
+  Azure) and its tracking is a resource-level switch; the one per-send control is turning
+  it off with `tracking: { opens: false, clicks: false }`.
+- **Gmail** sends as a Google Workspace mailbox through a service account with
+  domain-wide delegation — the `from` address is the mailbox impersonated unless `user`
+  says otherwise — or with an `access_token` you minted yourself.
+- **SendPulse** and **Gmail** exchange their credentials for a short-lived token first;
+  the exchange is cached across instances, so `mail()` doesn't pay it per send.
+
+Sequenzy's send API has no slot for either, nor for a plain-text part: the HTML body is
+the message, and a text-only send goes out as that body. Its `company_id` is only for a
+`seq_user_…` account key that can reach several workspaces; a `seq_live_…` workspace key
+needs nothing more.
 
 The same forwarded-where-supported convention applies to
 [`scheduled_at`](/scheduling), [`tracking`](/tracking) and

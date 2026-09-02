@@ -47,6 +47,8 @@ describe("package exports", () => {
 			"channel_inbox.ts", // channel captures → dev inbox bridge, used by the dev interceptions
 			"captcha.ts", // spam protection, reached via the root export
 			"aws.ts", // SigV4 signing, used by ses.ts (and SNS later)
+			"mime.ts", // RFC 5322 composition, used by smtp.ts and gmail.ts
+			"oauth.ts", // shared token cache + Google service-account JWT, used by gmail.ts, sendpulse.ts and push/
 			"errors.ts", // normalized errors, re-exported from the root
 			"transport.ts", // channel-agnostic provider base, re-exported from the root
 			"register.ts", // generated-types placeholder, reached via the root export
@@ -66,6 +68,7 @@ describe("package exports", () => {
 			"sms/provider.ts", // the SMS base class, reached via each provider
 			"sms/phone.ts", // E.164 + segment helpers, used by sms/provider.ts
 			"sms/send.ts", // the zero-config sms(), re-exported from the root
+			"sms/opt_out.ts", // STOP-keyword detection, reached via the root export and the Twilio poll
 			"chat/types.ts", // pure types, re-exported from the root
 			"chat/provider.ts", // the chat base class, reached via each provider
 			"chat/send.ts", // the platform functions (slack() and friends), re-exported from the root

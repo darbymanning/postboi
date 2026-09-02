@@ -238,8 +238,8 @@ function take_flags(
 interface ContactWire {
 	email: string
 	name?: string
-	data?: Record<string, string>
 	phone?: string
+	data?: Record<string, string>
 	external_id?: string
 	timezone?: string
 	tags?: Array<string>
@@ -363,6 +363,7 @@ async function contacts(args: Array<string>): Promise<void> {
 			}
 		>(`/v1/contacts/${encodeURIComponent(action)}`)
 		console.log(`${bold(contact.email)}${contact.name ? dim(` (${contact.name})`) : ""}`)
+		if (contact.phone) console.log(`  ${dim("phone:")} ${contact.phone}`)
 		if (contact.data && Object.keys(contact.data).length > 0) {
 			console.log(`  ${dim("data:")} ${JSON.stringify(contact.data)}`)
 		}
@@ -1067,29 +1068,64 @@ async function messages(args: Array<string>): Promise<void> {
 	)
 }
 
-async function suppressions(args: Array<string>): Promise<void> {
-	const [action, email] = args
-	if (action === "add") {
-		if (!email) throw new ApiCommandError("Usage: postboi suppressions add <email>")
-		await api("/v1/suppressions", { method: "POST", body: { email } })
-		return console.log(`${green("✓")} suppressed ${bold(email)}`)
+/**
+ * An email or a phone number, as the suppressions commands take it: anything with an
+ * `@` is an address; anything else is a number and is suppressed per channel, SMS
+ * unless `--channel whatsapp` says otherwise.
+ */
+function suppression_target(
+	value: string,
+	channel: string | undefined
+): { body: Record<string, string>; query: string; label: string } {
+	if (value.includes("@")) {
+		return { body: { email: value }, query: `email=${encodeURIComponent(value)}`, label: value }
 	}
-	if (action === "remove") {
-		if (!email) throw new ApiCommandError("Usage: postboi suppressions remove <email>")
-		await api(`/v1/suppressions?email=${encodeURIComponent(email)}`, { method: "DELETE" })
-		return console.log(`${green("✓")} unsuppressed ${bold(email)}`)
+	const on = channel ?? "sms"
+	if (on !== "sms" && on !== "whatsapp") {
+		throw new ApiCommandError("--channel must be sms or whatsapp.")
+	}
+	return {
+		body: { phone: value, channel: on },
+		query: `phone=${encodeURIComponent(value)}&channel=${encodeURIComponent(on)}`,
+		label: `${value} (${on})`,
+	}
+}
+
+async function suppressions(args: Array<string>): Promise<void> {
+	const [action, ...rest_args] = args
+	if (action === "add" || action === "remove") {
+		const { flags, rest } = take_flags(rest_args, ["channel"])
+		const value = rest[0]
+		if (!value) {
+			throw new ApiCommandError(
+				`Usage: postboi suppressions ${action} <email | +phone> [--channel sms|whatsapp]`
+			)
+		}
+		const target = suppression_target(value, flags.channel)
+		if (action === "add") {
+			await api("/v1/suppressions", { method: "POST", body: target.body })
+			return console.log(`${green("✓")} suppressed ${bold(target.label)}`)
+		}
+		await api(`/v1/suppressions?${target.query}`, { method: "DELETE" })
+		return console.log(`${green("✓")} unsuppressed ${bold(target.label)}`)
 	}
 	if (action) {
 		throw new ApiCommandError(`Unknown action: suppressions ${action}. Try add or remove.`)
 	}
 
 	const { suppressions: rows } = await api<{
-		suppressions: Array<{ email: string; reason: string; created_at: string }>
+		suppressions: Array<{
+			channel: string
+			email?: string
+			phone?: string
+			reason: string
+			created_at: string
+		}>
 	}>("/v1/suppressions")
 	if (rows.length === 0) return console.log(dim("No suppressed addresses."))
 	table(
-		["EMAIL", "REASON", "SINCE"],
-		rows.map((s) => [s.email, s.reason, day(s.created_at)])
+		["ADDRESS", "CHANNEL", "REASON", "SINCE"],
+		rows.map((s) => [s.email ?? s.phone ?? "", s.channel, s.reason, day(s.created_at)])
 	)
 }
 

@@ -78,7 +78,9 @@ export function shared_secret_verify(
 export async function svix_adapter_verify(
 	provider: string,
 	ctx: VerifyContext,
-	header_prefix: "svix" | "webhook"
+	header_prefix: "svix" | "webhook",
+	/** How a configured secret becomes HMAC keys, for providers that key the scheme their own way. */
+	derive?: (secret: string) => Array<Uint8Array | string>
 ): Promise<void> {
 	if (!ctx.secret) {
 		throw new WebhookVerificationError({
@@ -103,9 +105,27 @@ export async function svix_adapter_verify(
 	// Any candidate matching is a pass; only if all fail do we report the reason.
 	const candidates = ctx.secret.split(/[\s,]+/).filter(Boolean)
 	const verdicts = await Promise.all(
-		candidates.map((secret) => svix_verify({ secret, id, timestamp, body: ctx.body, signatures }))
+		candidates.map((secret) =>
+			svix_verify({
+				secret,
+				id,
+				timestamp,
+				body: ctx.body,
+				signatures,
+				keys: derive ? derive(secret) : undefined,
+			})
+		)
 	)
 	if (verdicts.includes("ok")) return
+	// A secret that isn't base64 can't have signed anything — say so, rather than
+	// reporting the forgery-shaped answer an attacker would also get.
+	if (verdicts.every((verdict) => verdict === "malformed_secret")) {
+		throw new WebhookVerificationError({
+			provider,
+			message: `${provider.toUpperCase()}_WEBHOOK_SECRET is not a whsec_… secret — the value after the prefix must be base64`,
+			code: "missing_secret",
+		})
+	}
 	// The timestamp check is secret-independent, so a stale timestamp fails every candidate.
 	if (verdicts.every((verdict) => verdict === "stale_timestamp")) {
 		throw new WebhookVerificationError({
@@ -119,6 +139,27 @@ export async function svix_adapter_verify(
 		message: `${provider} webhook signature did not match`,
 		code: "invalid_signature",
 	})
+}
+
+/**
+ * Replay protection for schemes that sign a unix timestamp: throw unless `value` is
+ * within `tolerance_s` (five minutes by default, the standard-webhooks convention) of
+ * the clock.
+ */
+export function assert_fresh_timestamp(
+	provider: string,
+	value: string | undefined,
+	tolerance_s = 300,
+	now_s = Math.floor(Date.now() / 1000)
+): void {
+	const seconds = Number(value)
+	if (!value || !Number.isFinite(seconds) || Math.abs(now_s - seconds) > tolerance_s) {
+		throw new WebhookVerificationError({
+			provider,
+			message: `${provider} webhook timestamp is outside the accepted tolerance (replay protection)`,
+			code: "stale_timestamp",
+		})
+	}
 }
 
 /** Build the `client`/`ip` engagement fields from a raw user-agent and address. */

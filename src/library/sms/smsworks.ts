@@ -108,14 +108,14 @@ export default class SmsWorks extends SmsProvider<SendResponse> {
 	 * anything already sent, which surfaces as a normal `PostboiError`.
 	 */
 	async cancel(id: string): Promise<{ id: string }> {
-		const response = await this.request({
-			url: `${this.#host}/message/${encodeURIComponent(id)}`,
-			method: "DELETE",
-			headers: { Authorization: this.#api_key },
-		})
-		const data = await this.read_json(response)
-		const error = this.error_for(response, data, "cancel")
-		if (error) throw error
+		await this.call(
+			{
+				url: `${this.#host}/message/${encodeURIComponent(id)}`,
+				method: "DELETE",
+				headers: { Authorization: this.#api_key },
+			},
+			"cancel"
+		)
 		return { id }
 	}
 }

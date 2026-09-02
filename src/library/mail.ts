@@ -39,10 +39,35 @@ const LOADERS: Record<string, () => Promise<ProviderConstructor>> = {
 	mandrill: () => import("./mandrill.js").then((m) => m.default as unknown as ProviderConstructor),
 	plunk: () => import("./plunk.js").then((m) => m.default as unknown as ProviderConstructor),
 	mailtrap: () => import("./mailtrap.js").then((m) => m.default as unknown as ProviderConstructor),
+	mailjet: () => import("./mailjet.js").then((m) => m.default as unknown as ProviderConstructor),
+	elasticemail: () =>
+		import("./elasticemail.js").then((m) => m.default as unknown as ProviderConstructor),
 	mailpace: () => import("./mailpace.js").then((m) => m.default as unknown as ProviderConstructor),
 	lettermint: () =>
 		import("./lettermint.js").then((m) => m.default as unknown as ProviderConstructor),
 	unosend: () => import("./unosend.js").then((m) => m.default as unknown as ProviderConstructor),
+	sequenzy: () => import("./sequenzy.js").then((m) => m.default as unknown as ProviderConstructor),
+	loops: () => import("./loops.js").then((m) => m.default as unknown as ProviderConstructor),
+	mailchannels: () =>
+		import("./mailchannels.js").then((m) => m.default as unknown as ProviderConstructor),
+	smtp2go: () => import("./smtp2go.js").then((m) => m.default as unknown as ProviderConstructor),
+	socketlabs: () =>
+		import("./socketlabs.js").then((m) => m.default as unknown as ProviderConstructor),
+	azure: () => import("./azure.js").then((m) => m.default as unknown as ProviderConstructor),
+	gmail: () => import("./gmail.js").then((m) => m.default as unknown as ProviderConstructor),
+	maileroo: () => import("./maileroo.js").then((m) => m.default as unknown as ProviderConstructor),
+	ahasend: () => import("./ahasend.js").then((m) => m.default as unknown as ProviderConstructor),
+	postal: () => import("./postal.js").then((m) => m.default as unknown as ProviderConstructor),
+	customerio: () =>
+		import("./customerio.js").then((m) => m.default as unknown as ProviderConstructor),
+	infobip: () => import("./infobip.js").then((m) => m.default as unknown as ProviderConstructor),
+	sendpulse: () =>
+		import("./sendpulse.js").then((m) => m.default as unknown as ProviderConstructor),
+	iterable: () => import("./iterable.js").then((m) => m.default as unknown as ProviderConstructor),
+	jetemail: () => import("./jetemail.js").then((m) => m.default as unknown as ProviderConstructor),
+	lettr: () => import("./lettr.js").then((m) => m.default as unknown as ProviderConstructor),
+	primitive: () =>
+		import("./primitive.js").then((m) => m.default as unknown as ProviderConstructor),
 	scaleway: () => import("./scaleway.js").then((m) => m.default as unknown as ProviderConstructor),
 	ses: () => import("./ses.js").then((m) => m.default as unknown as ProviderConstructor),
 	microsoft365: () =>

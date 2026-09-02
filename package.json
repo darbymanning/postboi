@@ -1,6 +1,6 @@
 {
 	"name": "postboi",
-	"version": "0.44.0",
+	"version": "0.48.0",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -117,6 +117,74 @@
 			"types": "./dist/unosend.d.ts",
 			"default": "./dist/unosend.js"
 		},
+		"./sequenzy": {
+			"types": "./dist/sequenzy.d.ts",
+			"default": "./dist/sequenzy.js"
+		},
+		"./loops": {
+			"types": "./dist/loops.d.ts",
+			"default": "./dist/loops.js"
+		},
+		"./mailchannels": {
+			"types": "./dist/mailchannels.d.ts",
+			"default": "./dist/mailchannels.js"
+		},
+		"./smtp2go": {
+			"types": "./dist/smtp2go.d.ts",
+			"default": "./dist/smtp2go.js"
+		},
+		"./socketlabs": {
+			"types": "./dist/socketlabs.d.ts",
+			"default": "./dist/socketlabs.js"
+		},
+		"./azure": {
+			"types": "./dist/azure.d.ts",
+			"default": "./dist/azure.js"
+		},
+		"./gmail": {
+			"types": "./dist/gmail.d.ts",
+			"default": "./dist/gmail.js"
+		},
+		"./maileroo": {
+			"types": "./dist/maileroo.d.ts",
+			"default": "./dist/maileroo.js"
+		},
+		"./ahasend": {
+			"types": "./dist/ahasend.d.ts",
+			"default": "./dist/ahasend.js"
+		},
+		"./postal": {
+			"types": "./dist/postal.d.ts",
+			"default": "./dist/postal.js"
+		},
+		"./customerio": {
+			"types": "./dist/customerio.d.ts",
+			"default": "./dist/customerio.js"
+		},
+		"./infobip": {
+			"types": "./dist/infobip.d.ts",
+			"default": "./dist/infobip.js"
+		},
+		"./sendpulse": {
+			"types": "./dist/sendpulse.d.ts",
+			"default": "./dist/sendpulse.js"
+		},
+		"./iterable": {
+			"types": "./dist/iterable.d.ts",
+			"default": "./dist/iterable.js"
+		},
+		"./jetemail": {
+			"types": "./dist/jetemail.d.ts",
+			"default": "./dist/jetemail.js"
+		},
+		"./lettr": {
+			"types": "./dist/lettr.d.ts",
+			"default": "./dist/lettr.js"
+		},
+		"./primitive": {
+			"types": "./dist/primitive.d.ts",
+			"default": "./dist/primitive.js"
+		},
 		"./scaleway": {
 			"types": "./dist/scaleway.d.ts",
 			"default": "./dist/scaleway.js"
@@ -144,6 +212,10 @@
 		"./smsworks": {
 			"types": "./dist/sms/smsworks.d.ts",
 			"default": "./dist/sms/smsworks.js"
+		},
+		"./puresms": {
+			"types": "./dist/sms/puresms.d.ts",
+			"default": "./dist/sms/puresms.js"
 		},
 		"./sns": {
 			"types": "./dist/sms/sns.d.ts",
@@ -193,6 +265,10 @@
 			"types": "./dist/push/hms.d.ts",
 			"default": "./dist/push/hms.js"
 		},
+		"./expo": {
+			"types": "./dist/push/expo.d.ts",
+			"default": "./dist/push/expo.js"
+		},
 		"./push-mock": {
 			"types": "./dist/push/mock.d.ts",
 			"default": "./dist/push/mock.js"
@@ -204,6 +280,10 @@
 		"./push/sw": {
 			"types": "./dist/push/sw.d.ts",
 			"default": "./dist/push/sw.js"
+		},
+		"./push/expo": {
+			"types": "./dist/push/native.d.ts",
+			"default": "./dist/push/native.js"
 		},
 		"./whatsapp-twilio": {
 			"types": "./dist/whatsapp/twilio.d.ts",
@@ -269,6 +349,8 @@
 	"peerDependencies": {
 		"@maizzle/framework": "^6.0.0",
 		"@sveltejs/kit": "^2.0.0",
+		"expo-constants": ">=15",
+		"expo-notifications": ">=0.20",
 		"react": ">=18",
 		"svelte": "^5.7.0",
 		"vue": ">=3.3"
@@ -278,6 +360,12 @@
 			"optional": true
 		},
 		"@sveltejs/kit": {
+			"optional": true
+		},
+		"expo-constants": {
+			"optional": true
+		},
+		"expo-notifications": {
 			"optional": true
 		},
 		"react": {

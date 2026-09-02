@@ -167,6 +167,7 @@ for (const result of results) {
 | Provider | Import | Best for |
 | --- | --- | --- |
 | The SMS Works | `postboi/smsworks` | UK — bills only for delivered messages |
+| PureSMS | `postboi/puresms` | UK — flat-rate pay-as-you-go, hosted in the EU |
 | Twilio | `postboi/twilio` | Global, and automatic RCS upgrade via a Messaging Service |
 | Amazon SNS | `postboi/sns` | Already on AWS |
 
@@ -230,6 +231,50 @@ Worth knowing before you switch it on:
   RCS gets cheaper than cheap UK SMS is around 3 segments.
 - **Which rail delivered** arrives on Twilio's status callbacks, not the send response —
   the message is queued before the routing decision happens.
+
+## Opt-outs
+
+Someone who texts **STOP** back has opted out, and the law in most places says so
+before any provider does. The keyword list is the one every carrier recognises — `STOP`,
+`STOPALL`, `UNSUBSCRIBE`, `CANCEL`, `END`, `QUIT`, and `ARRET` for Canada — and it is a
+whole-message test: `stop.` opts out, `please stop texting me` is a person to reply to.
+
+Three things surface it, so you needn't parse replies yourself:
+
+- **`poll()` on Twilio** reads the same Message resource it reads receipts from, and an
+  inbound reply that is an opt-out keyword comes back as an `unsubscribed` event —
+  `channel` is `"sms"` or `"whatsapp"` (whichever they replied over), and `phone` is
+  their number. Nothing else anyone texts becomes an event; a conversation is not a
+  delivery receipt. See [polling](/webhooks#providers-that-dont-push-poll).
+- **`receive()` on Meta** does the same for
+  [WhatsApp via the Cloud API](/whatsapp#delivery-receipts-and-replies), where the
+  reply arrives as a webhook: a STOP is `unsubscribed`, and anything else they write
+  is `received`.
+- **`is_opt_out(text)`**, from the package root, is the same test on its own — for an
+  inbound webhook you already handle.
+
+```typescript
+import { poll } from "postboi/webhooks"
+import { is_opt_out, mail } from "postboi"
+
+const { events } = await poll({ provider: "twilio", cursor: saved })
+for (const event of events) {
+	if (event.type === "unsubscribed" && event.phone) {
+		await mail.suppressions.add({ phone: event.phone, channel: event.channel })
+	}
+}
+
+is_opt_out("STOP") // true
+is_opt_out("Can you stop by tomorrow?") // false
+```
+
+On the [Postboi provider](/provider#suppressions), the suppression list is per channel
+and a polled STOP lands on it without the loop above — the number is suppressed for
+the channel it replied over, and `mail.suppressions.all({ channel: "sms" })` shows it.
+Twilio's own opt-out handling still applies where it exists (US and Canadian long
+codes block the number at their end); this is how the fact reaches *you*. An
+alphanumeric sender ID can't be replied to, so a STOP never arrives — one more reason
+the [sender](#sender) section suggests a number for anything conversational.
 
 ## Hooks
 

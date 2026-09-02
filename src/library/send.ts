@@ -30,7 +30,7 @@ export interface Recipients {
 	email?: SendOptions["to"]
 	sms?: Array<Phone> | Phone
 	chat?: string
-	/** A Web Push subscription, or an FCM device token. */
+	/** A Web Push subscription, or a device token — FCM, APNs, HMS or Expo. */
 	push?: PushTarget
 	/** A phone number reachable on WhatsApp. */
 	whatsapp?: Phone

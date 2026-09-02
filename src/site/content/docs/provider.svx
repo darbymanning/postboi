@@ -406,10 +406,16 @@ rarely touch contacts directly. When you do, `mail.contacts` is the whole audien
 await mail.contacts.add("ada@example.com", { name: "Ada", data: { plan: "pro" } })
 const ada = await mail.contacts.get("ada@example.com") // contact + its memberships
 await mail.contacts.update("ada@example.com", { data: { plan: "team" } }) // global; last write wins
+await mail.contacts.update("ada@example.com", { phone: "+447788223344" }) // the number SMS and WhatsApp reach
 await mail.contacts.lists("ada@example.com") // which lists is Ada on?
 await mail.contacts.all({ list: "Newsletter", status: "subscribed", search: "ada" }) // page (and follow) the audience
 await mail.contacts.remove("ada@example.com") // drops the contact and all its memberships
 ```
+
+A contact's `phone` is its **delivery profile** beyond email: one mobile number in E.164
+(`+447788223344` — a national number is rejected rather than guessed at), the one an
+[`sms()`](/sms) or [`whatsapp()`](/whatsapp) to that person goes to. Email stays the
+handle; the number is a fact about the contact, searchable alongside the name.
 
 Because `data` is the contact's, setting it through `mail.recipients.add(list, { email, data })`
 writes the **contact's** global `data` — the same values fill `{key}` in a broadcast from any
@@ -702,10 +708,36 @@ Hard bounces, complaints and unsubscribes land on your account's suppression lis
 sends to those addresses are dropped automatically. Inspect and manage it from code:
 
 ```ts
-const rows = await mail.suppressions.all() // [{ email, reason, detail?, created_at }]
+const rows = await mail.suppressions.all() // [{ channel, email | phone, reason, detail?, created_at }]
 await mail.suppressions.add("noisy@example.com") // add by hand
 await mail.suppressions.remove("fixed@example.com") // allow sending again
 ```
+
+The list is **per channel**. An email address is one entry; a phone number is suppressed
+for SMS and for WhatsApp separately, because "stop texting me" and "stop messaging me on
+WhatsApp" are two different things a person can say. A bare string is an email; a
+number goes in as `{ phone }`, SMS unless told otherwise:
+
+```ts
+await mail.suppressions.add({ phone: "+447788223344" }) // SMS
+await mail.suppressions.add({ phone: "+447788223344", channel: "whatsapp" })
+await mail.suppressions.all({ channel: "sms" }) // just the numbers, just that channel
+```
+
+Each row says which it is — narrow on `channel` before reading the address, because an
+email row carries `email` and a text row carries `phone`, never a number in a field
+called `email`:
+
+```ts
+for (const row of await mail.suppressions.all()) {
+	if (row.channel === "email") console.log(row.email, row.reason)
+	else console.log(row.channel, row.phone, row.reason)
+}
+```
+
+A texted **STOP** reaches the list on its own when Twilio delivery receipts are polled
+for the account — see [opt-outs on the SMS page](/sms#opt-outs) — and the same
+`{ phone }` shape adds one by hand from wherever else a reply arrives.
 
 ## Notes
 

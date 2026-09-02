@@ -59,6 +59,9 @@ describe("a config file's options never reach another provider", () => {
 		"POSTBOI_PROVIDER",
 		"POSTBOI_CHAT_PROVIDER",
 		"POSTBOI_PUSH_PROVIDER",
+		"POSTBOI_SMS_PROVIDER",
+		"SMSWORKS_API_KEY",
+		"PURESMS_API_KEY",
 		"RESEND_API_KEY",
 		"SLACK_WEBHOOK_URL",
 		"DISCORD_WEBHOOK_URL",
@@ -117,6 +120,22 @@ describe("a config file's options never reach another provider", () => {
 		expect(error.message).toContain("slack")
 	})
 
+	it("sms: an SMS Works key is not sent to PureSMS", async () => {
+		const { sms } = await import("./sms/send.js")
+		configure({
+			sms: { provider: "smsworks", options: { api_key: "SMSWORKS-JWT-SECRET" } },
+		})
+		process.env.POSTBOI_SMS_PROVIDER = "puresms"
+		const fetch = spy()
+
+		const error = await sms({ to: "+447788223344", from: "P", message: "hi" }).catch((e) => e)
+
+		// Both take a lone `api_key`, so this is the SMS leak the pin below says is reachable.
+		expect(fetch).not.toHaveBeenCalled()
+		expect(error.code).toBe("missing_env")
+		expect(error.message).toContain("smsworks")
+	})
+
 	it("chat: the platform functions are scoped too, not just the generic one", async () => {
 		const { discord } = await import("./chat/send.js")
 		configure({
@@ -171,12 +190,21 @@ describe("a config file's options never reach another provider", () => {
 				for (const dst of list) {
 					if (src.key === dst.key) continue
 					const from = required(src)
-					if ([...required(dst)].every((a) => from.has(a))) out.push(`${src.key} -> ${dst.key}`)
+					const needs = required(dst)
+					// A destination needing nothing (Expo) takes nothing from the bag either, so
+					// there is no credential to leak — reachable, but not exploitable.
+					if (needs.size && [...needs].every((a) => from.has(a)))
+						out.push(`${src.key} -> ${dst.key}`)
 				}
 			return out
 		}
 
-		expect(reachable(registry.SMS_PROVIDERS as never)).toEqual([])
+		// SMS joined the exploitable set when PureSMS arrived: like The SMS Works it takes a
+		// lone `api_key`, so each one's bag satisfies the other. The send above covers it.
+		expect(reachable(registry.SMS_PROVIDERS as never)).toEqual([
+			"smsworks -> puresms",
+			"puresms -> smsworks",
+		])
 		expect(reachable(registry.PUSH_PROVIDERS as never)).toEqual([])
 		expect(reachable(registry.WHATSAPP_PROVIDERS as never)).toEqual([])
 		// The two that are exploitable, so the numbers moving is visible rather than silent.
@@ -305,8 +333,13 @@ describe("provider inference reads intent, not ambience", () => {
 			"CLOUDFLARE_ACCOUNT_ID",
 			"CLOUDFLARE_API_TOKEN",
 			"CLOUDFLARE_QUEUE_ID",
+			// Any box that has ever touched Azure Communication Services.
+			"COMMUNICATION_SERVICES_CONNECTION_STRING",
 			// What every CI notification action sets.
 			"DISCORD_WEBHOOK_URL",
+			// What expo-server-sdk's README reads; optional too, so unmarked it would make
+			// Expo "configured" on every machine.
+			"EXPO_ACCESS_TOKEN",
 			// Mailjet's own SDK default pair.
 			"MJ_APIKEY_PRIVATE",
 			"MJ_APIKEY_PUBLIC",
@@ -338,6 +371,8 @@ describe("provider inference reads intent, not ambience", () => {
 		// a new provider joins it deliberately, in a diff someone reads.
 		const keys = (channel: (typeof CHANNELS)[number]) =>
 			inferable_channel_providers(channel).map((p) => p.key)
+		// Expo is absent: its one field is optional, so unmarked it would count as configured
+		// on every machine — and EXPO_ACCESS_TOKEN is the name expo-server-sdk users set.
 		expect(keys("push")).toEqual(["webpush", "fcm", "apns", "hms"])
 		// Twilio is absent from both: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are the
 		// Twilio SDK's zero-argument defaults, so anyone using Voice or Verify has them set
@@ -346,7 +381,8 @@ describe("provider inference reads intent, not ambience", () => {
 		// `infers: false` means neither channel consults them — but a wrong mark here
 		// would be invisible until some future policy did.
 		expect(keys("whatsapp")).toEqual(["meta"])
-		expect(keys("sms")).toEqual(["smsworks"])
+		// PureSMS joins it for the same reason: PURESMS_API_KEY is set for nothing else.
+		expect(keys("sms")).toEqual(["smsworks", "puresms"])
 		// Chat is down to bluesky. SLACK_WEBHOOK_URL, DISCORD_WEBHOOK_URL, TEAMS_WEBHOOK_URL
 		// and TELEGRAM_BOT_TOKEN are what every CI notification action already sets, so a
 		// build-notification hook would have made send()'s chat leg post application
