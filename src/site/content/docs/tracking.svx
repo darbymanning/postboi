@@ -40,6 +40,12 @@ anything you leave out. The resulting open/click events arrive via
 | ZeptoMail | `track_opens` / `track_clicks` |
 | Lettermint | `settings.track_opens` / `settings.track_clicks` |
 | Unosend | `tracking.open` / `tracking.click` |
+| MailChannels | `tracking_settings.open_tracking` / `click_tracking` |
+| AhaSend | `tracking.open` / `tracking.click` |
+| Infobip | `trackOpens` / `trackClicks` |
+| Maileroo | `tracking` — one switch, on when either flag is |
+| Customer.io | `tracked` — one switch, on when either flag is |
+| Azure | `userEngagementTrackingDisabled` — only the off position; both flags false turns the resource's tracking off for that send |
 
 Providers whose tracking is configured at the **domain level** (Resend) or account level
 ignore the per-send flags. Configure tracking in their dashboard instead. Every other

@@ -121,6 +121,70 @@
 			"types": "./dist/sequenzy.d.ts",
 			"default": "./dist/sequenzy.js"
 		},
+		"./loops": {
+			"types": "./dist/loops.d.ts",
+			"default": "./dist/loops.js"
+		},
+		"./mailchannels": {
+			"types": "./dist/mailchannels.d.ts",
+			"default": "./dist/mailchannels.js"
+		},
+		"./smtp2go": {
+			"types": "./dist/smtp2go.d.ts",
+			"default": "./dist/smtp2go.js"
+		},
+		"./socketlabs": {
+			"types": "./dist/socketlabs.d.ts",
+			"default": "./dist/socketlabs.js"
+		},
+		"./azure": {
+			"types": "./dist/azure.d.ts",
+			"default": "./dist/azure.js"
+		},
+		"./gmail": {
+			"types": "./dist/gmail.d.ts",
+			"default": "./dist/gmail.js"
+		},
+		"./maileroo": {
+			"types": "./dist/maileroo.d.ts",
+			"default": "./dist/maileroo.js"
+		},
+		"./ahasend": {
+			"types": "./dist/ahasend.d.ts",
+			"default": "./dist/ahasend.js"
+		},
+		"./postal": {
+			"types": "./dist/postal.d.ts",
+			"default": "./dist/postal.js"
+		},
+		"./customerio": {
+			"types": "./dist/customerio.d.ts",
+			"default": "./dist/customerio.js"
+		},
+		"./infobip": {
+			"types": "./dist/infobip.d.ts",
+			"default": "./dist/infobip.js"
+		},
+		"./sendpulse": {
+			"types": "./dist/sendpulse.d.ts",
+			"default": "./dist/sendpulse.js"
+		},
+		"./iterable": {
+			"types": "./dist/iterable.d.ts",
+			"default": "./dist/iterable.js"
+		},
+		"./jetemail": {
+			"types": "./dist/jetemail.d.ts",
+			"default": "./dist/jetemail.js"
+		},
+		"./lettr": {
+			"types": "./dist/lettr.d.ts",
+			"default": "./dist/lettr.js"
+		},
+		"./primitive": {
+			"types": "./dist/primitive.d.ts",
+			"default": "./dist/primitive.js"
+		},
 		"./scaleway": {
 			"types": "./dist/scaleway.d.ts",
 			"default": "./dist/scaleway.js"

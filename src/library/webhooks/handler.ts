@@ -11,8 +11,8 @@
  * Frameworks that wrap the request deeper (Hono keeps it at `c.req.raw`) unwrap in
  * place: `app.post("/webhooks", (c) => webhook(handler)(c.req.raw))`.
  */
-import { receive, WebhookVerificationError } from "./index.js"
-import type { ReceiveOptions, WebhookEvent } from "./index.js"
+import { receive, resolve_adapter, WebhookVerificationError } from "./index.js"
+import type { ReceiveOptions, WebhookAdapter, WebhookEvent } from "./index.js"
 import { is_error } from "../errors.js"
 
 /** A web `Request`, or any framework context that carries one — both shapes accepted. */
@@ -51,15 +51,32 @@ function build(
 	return async (carrier) => {
 		const request = carrier instanceof Request ? carrier : carrier.request
 
+		let adapter: WebhookAdapter
+		let body: string
 		let events: Array<WebhookEvent>
 		try {
-			events = await receive(request, options)
+			// The adapter is resolved and the body read here, once, so both are still to
+			// hand for a handshake reply after `receive` has done its work.
+			adapter = await resolve_adapter(options?.provider)
+			body = await request.text()
+			events = await receive(
+				new Request(request.url, { method: request.method, headers: request.headers, body }),
+				{ ...options, provider: adapter }
+			)
 		} catch (error) {
 			if (error instanceof WebhookVerificationError) {
 				return json({ error: error.message }, 401)
 			}
 			const message = is_error(error) ? error.message : String(error)
 			return json({ error: message }, 400)
+		}
+
+		// A verified request that is a handshake rather than an event (SocketLabs echoes a
+		// validation key, Event Grid a validation code) is answered the way the provider
+		// expects.
+		if (events.length === 0 && adapter.respond) {
+			const reply = adapter.respond(body, { headers: request.headers, url: new URL(request.url) })
+			if (reply) return reply
 		}
 
 		try {

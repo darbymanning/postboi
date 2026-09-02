@@ -176,8 +176,13 @@ Providers fall into three camps:
 | Lettermint | Signed (HMAC timestamp+body, 5-minute replay window) | `LETTERMINT_WEBHOOK_SECRET`, the webhook's signing secret |
 | Unosend | Signed (HMAC of body) | `UNOSEND_WEBHOOK_SECRET`, the `whsec_…` signing secret |
 | Sequenzy | Signed (HMAC timestamp+body, 5-minute replay window) | `SEQUENZY_WEBHOOK_SECRET`, the endpoint's `whsec_…` signing secret; several comma-separated during a rotation |
-| Postmark, Brevo, SparkPost, Mailjet, ZeptoMail, Elastic Email, Plunk | Shared secret | `<PROVIDER>_WEBHOOK_SECRET`, a token you make up; put the same value in the webhook URL as `?token=…` (or the provider's auth-header option) |
+| Loops | Signed (standard-webhooks HMAC) | `LOOPS_WEBHOOK_SECRET`, the `whsec_…` signing secret from Settings → Webhooks |
+| AhaSend | Signed (standard-webhooks HMAC, keyed with the literal secret) | `AHASEND_WEBHOOK_SECRET`, the webhook's secret exactly as shown when it was created |
+| Customer.io | Signed (HMAC timestamp+body, 5-minute replay window) | `CUSTOMERIO_WEBHOOK_SECRET`, the reporting webhook's signing key |
+| SocketLabs | Secret key in the body | `SOCKETLABS_WEBHOOK_SECRET`, the endpoint's secret key — set it before pressing Validate, since the `Validation` handshake is verified like any other request and then echoed back by `webhook()` for you |
+| Postmark, Brevo, SparkPost, Mailjet, ZeptoMail, Elastic Email, Plunk, SMTP2GO, Postal, Infobip, SendPulse | Shared secret | `<PROVIDER>_WEBHOOK_SECRET`, a token you make up; put the same value in the webhook URL as `?token=…` (or the provider's auth-header option) |
 | Amazon SES, Scaleway | Shared secret over SNS | `SES_WEBHOOK_SECRET` / `SCALEWAY_WEBHOOK_SECRET` as `?token=…` on the subscription URL; SNS subscription handshakes confirm automatically |
+| Azure Communication Services | Shared secret over Event Grid | `AZURE_WEBHOOK_SECRET` as `?token=…` on the subscription's endpoint URL (Event Grid keeps the query string secret); the subscription validation handshake is completed automatically. Engagement reports name the message but not the recipient, so opens and clicks carry `message_id` and no `email` |
 
 To skip verification deliberately (a local experiment, a payload replay), pass
 `{ verify: false }`: it's always an explicit opt-out, never a fallback.
@@ -185,7 +190,9 @@ To skip verification deliberately (a local experiment, a payload replay), pass
 ## Providers that don't push: `poll()`
 
 SMTP, Microsoft 365 and Cloudflare Email Service don't emit delivery-event webhooks —
-`receive()` throws `webhooks_not_supported` and points here. Twilio is here for a
+`receive()` throws `webhooks_not_supported` and points here. Gmail has no delivery
+events at all, and Iterable, JetEmail, Lettr, MailChannels, Maileroo and Primitive have
+none postboi receives yet, so `receive()` throws the same for them. Twilio is here for a
 different reason: its status callbacks are set per message, at send time, so polling is
 what makes SMS and WhatsApp delivery receipts work with nothing configured and no public
 endpoint. Each still has somewhere the events can be fetched from, and `poll()` fetches
