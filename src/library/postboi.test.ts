@@ -687,6 +687,63 @@ describe("the Postboi provider — account API", () => {
 			expect(sent_json()).toEqual({ add: ["reached"], remove: ["cold"] })
 		})
 
+		it("sequences: the lifecycle calls hit their routes", async () => {
+			const definition = {
+				trigger: { kind: "manual" as const },
+				steps: [{ kind: "email" as const, subject: "Hi", text: "hello" }],
+			}
+			fetch.mockResolvedValue(respond({ json: { id: "seq_1", name: "Welcome", definition } }))
+			await provider().sequences.create("Welcome", definition)
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences")
+			expect(sent_json()).toEqual({ name: "Welcome", definition })
+
+			await provider().sequences.update("Welcome", { definition, expected_version: 2 })
+			expect(sent_init().method).toBe("PATCH")
+			expect(sent_json()).toEqual({ definition, expected_version: 2 })
+			await provider().sequences.enable("Welcome")
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/Welcome/enable")
+			await provider().sequences.pause("seq_1")
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/seq_1/pause")
+			await provider().sequences.delete("seq_1", { purge: true })
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/seq_1?purge=1")
+			expect(sent_init().method).toBe("DELETE")
+
+			fetch.mockResolvedValue(respond({ json: { contact: { email: "a@x.test" }, steps: [] } }))
+			await provider().sequences.simulate("Welcome", { email: "a@x.test", name: "A" })
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/Welcome/simulate")
+			expect(sent_json()).toEqual({ email: "a@x.test", name: "A" })
+			await provider().sequences.test("Welcome", ["a@x.test"])
+			expect(sent_json()).toEqual({ emails: ["a@x.test"], scale: 480 })
+			await provider().sequences.untest("Welcome", { keep: true })
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/Welcome/test?keep=1")
+
+			fetch
+				.mockResolvedValueOnce(respond({ json: { enrollments: [{ id: "enr_1" }], cursor: "c1" } }))
+				.mockResolvedValueOnce(respond({ json: { enrollments: [{ id: "enr_2" }], cursor: null } }))
+			const walks = await provider().sequences.enrollments("Welcome", { status: "active" })
+			expect(walks.map((walk) => walk.id)).toEqual(["enr_1", "enr_2"])
+			expect(fetch.mock.calls.at(-1)![0]).toBe(
+				"https://postboi.app/v1/sequences/Welcome/enrollments?status=active&cursor=c1"
+			)
+
+			fetch.mockResolvedValue(respond({ json: { enrolled: 1, results: [] } }))
+			await provider().sequences.enrol("Welcome", ["a@x.test", "b@x.test"], { plan: "pro" })
+			expect(sent_json()).toEqual({ emails: ["a@x.test", "b@x.test"], context: { plan: "pro" } })
+			await provider().sequences.move("Welcome", "enr_1", "2.then.0")
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/Welcome/enrollments/enr_1/move")
+			fetch.mockResolvedValue(respond({ json: { runs: [{ id: "run_1" }] } }))
+			expect(await provider().sequences.runs("Welcome", "enr_1")).toEqual([{ id: "run_1" }])
+			fetch.mockResolvedValue(respond({ json: { templates: [{ key: "welcome" }] } }))
+			expect(await provider().sequences.templates()).toEqual([{ key: "welcome" }])
+			fetch.mockResolvedValue(respond({ json: { id: "seq_2" } }))
+			await provider().sequences.install("welcome", "Hello")
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/templates/welcome")
+			expect(sent_json()).toEqual({ name: "Hello" })
+			fetch.mockResolvedValue(respond({ json: { enrollments: [] } }))
+			await provider().contacts.sequences("a@x.test")
+			expect(sent_url()).toBe("https://postboi.app/v1/contacts/a%40x.test/sequences")
+		})
+
 		it("contacts.add carries the profile fields; contacts.all a tag", async () => {
 			await provider().contacts.add("ada@test.com", { phone: "+447700900123", external_id: "u1" })
 			expect(sent_json()).toEqual({

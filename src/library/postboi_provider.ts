@@ -11,6 +11,7 @@ import type {
 } from "./index.js"
 import { ProviderBase, PostboiError } from "./index.js"
 import { read_env, env_defaults } from "./env.js"
+import type { SequenceDefinition } from "./sequence.js"
 
 /** Options for the Postboi provider. */
 export type PostboiOptions = CommonProviderOptions & {
@@ -280,6 +281,93 @@ export interface SegmentCounts {
 	matching: number
 	/** Matching contacts subscribed on at least one list — the ones marketing mail may reach. */
 	reachable: number
+}
+
+/** A saved sequence — the definition is the {@link SequenceDefinition} shape from `postboi`. */
+export interface Sequence {
+	id: string
+	name: string
+	status: "draft" | "active" | "paused" | "archived"
+	definition: SequenceDefinition
+	/** Bumps on every definition save — the sync conflict rule. */
+	version: number
+	/** The test run in progress, if any. */
+	test: { emails: Array<string>; scale: number } | null
+	enabled_at: string | null
+	created_at: string
+	updated_at: string
+}
+
+/** One contact's walk through a sequence. */
+export interface Enrollment {
+	id: string
+	sequence_id: string
+	contact_id: string
+	email?: string
+	name?: string | null
+	status: "active" | "waiting" | "completed" | "exited" | "failed"
+	/** Dotted path into the definition, like `2.then.0`. Null once finished. */
+	step: string | null
+	next_step_at: string | null
+	waiting_for: string | null
+	/** Which trigger started it: `event:billing.purchase`, `tag:trial`, `manual`, `api`… */
+	entered_via: string
+	version: number
+	exited_reason: string | null
+	context: Record<string, unknown>
+	created_at: string
+	updated_at: string
+}
+
+/** One step of one walk — the flight recorder's line. */
+export interface SequenceRun {
+	id: string
+	enrollment_id: string
+	step: string
+	step_id: string
+	kind: string
+	outcome: "sent" | "skipped" | "done" | "waited" | "branched" | "exited" | "failed"
+	reason: string | null
+	message_id: string | null
+	at: string
+}
+
+/** What simulate reports per step. */
+export interface SimulatedStep {
+	path: string
+	step_id: string
+	kind: string
+	outcome: SequenceRun["outcome"]
+	reason?: string
+	detail?: Record<string, unknown>
+	/** Where the walk went next, in words. */
+	next: string
+}
+
+/** Per-step counts and walk totals. */
+export interface SequenceStats {
+	enrollments: Record<string, number>
+	steps: Array<{
+		path: string
+		step_id: string
+		kind: string
+		lane?: string
+		depth: number
+		reached: number
+		outcomes: Partial<Record<SequenceRun["outcome"], number>>
+		delivered: number
+		opened: number
+		clicked: number
+		bounced: number
+	}>
+}
+
+/** A shipped template, installable as a draft. */
+export interface SequenceTemplate {
+	key: string
+	name: string
+	blurb: string
+	definition: SequenceDefinition
 }
 
 /** A contact's presence on one list, with its per-list status. */
@@ -742,6 +830,16 @@ export default class Postboi extends ProviderBase<SendResponse> {
 		remove: (email: string): Promise<{ email: string; deleted: boolean }> =>
 			this.#api(`/contacts/${encodeURIComponent(email)}`, { method: "DELETE" }),
 
+		/** Every sequence walk this contact has taken, newest first, with the sequence's name. */
+		sequences: async (
+			email: string
+		): Promise<Array<Enrollment & { sequence_name: string | null }>> => {
+			const data = await this.#api<{
+				enrollments: Array<Enrollment & { sequence_name: string | null }>
+			}>(`/contacts/${encodeURIComponent(email)}/sequences`, { method: "GET" })
+			return data.enrollments
+		},
+
 		/**
 		 * The whole audience, newest first — following pagination for you. Narrow with
 		 * `list` (a name or id), a membership `status`, a `tag`, and/or a case-insensitive
@@ -938,6 +1036,168 @@ export default class Postboi extends ProviderBase<SendResponse> {
 			changes: { add?: Array<string>; remove?: Array<string> }
 		): Promise<{ contacts: number; capped: boolean }> =>
 			this.#api(`/segments/${encodeURIComponent(ref)}/tags`, { body: changes }),
+	}
+
+	/**
+	 * Sequences — automations that walk a contact through steps on their own clock. `ref`
+	 * is an id or a name throughout. A definition is the {@link SequenceDefinition} shape;
+	 * `sequence()` from `postboi` builds one in a file, and `bunx postboi sync` pushes it.
+	 */
+	readonly sequences = {
+		/** Every sequence on the account; archived ones too with `{ archived: true }`. */
+		all: async (options: { archived?: boolean } = {}): Promise<Array<Sequence>> => {
+			const data = await this.#api<{ sequences: Array<Sequence> }>(
+				`/sequences${options.archived ? "?archived=1" : ""}`,
+				{ method: "GET" }
+			)
+			return data.sequences
+		},
+
+		/** One sequence with its walk counts by status. */
+		get: (ref: string): Promise<Sequence & { enrollments: Record<string, number> }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}`, { method: "GET" }),
+
+		/** Save a draft. Enable it separately. */
+		create: (name: string, definition: SequenceDefinition): Promise<Sequence> =>
+			this.#api("/sequences", { body: { name, definition } }),
+
+		/**
+		 * Rename and/or redefine. Pass `expected_version` to refuse overwriting a newer
+		 * save — the API answers 409 `version_conflict` with the current version.
+		 */
+		update: (
+			ref: string,
+			changes: { name?: string; definition?: SequenceDefinition; expected_version?: number }
+		): Promise<Sequence> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}`, { method: "PATCH", body: changes }),
+
+		/** Archive (live walks exit), or `{ purge: true }` to delete the row and its history. */
+		delete: (
+			ref: string,
+			options: { purge?: boolean } = {}
+		): Promise<{ id: string; deleted: boolean }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}${options.purge ? "?purge=1" : ""}`, {
+				method: "DELETE",
+			}),
+
+		/** Switch on. The answer carries `warnings` for channel steps with no synced provider. */
+		enable: (ref: string): Promise<Sequence & { warnings: Array<string> }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/enable`, { body: {} }),
+
+		/** Hold: live walks stay where they are; nothing new enters. */
+		pause: (ref: string): Promise<Sequence> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/pause`, { body: {} }),
+
+		/** Archive: every live walk exits with reason `disabled`. */
+		disable: (ref: string): Promise<Sequence> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/disable`, { body: {} }),
+
+		/**
+		 * Dry-run for one contact — an existing one by email, or a synthetic one — and get
+		 * every step with what it would have done. Nothing is sent or enrolled.
+		 */
+		simulate: (
+			ref: string,
+			who: {
+				email: string
+				name?: string
+				data?: Record<string, unknown>
+				tags?: Array<string>
+				phone?: string
+				timezone?: string
+			}
+		): Promise<{ contact: { email: string; synthetic: boolean }; steps: Array<SimulatedStep> }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/simulate`, { body: who }),
+
+		/** Start a test run: these addresses only, every delay divided by `scale` (60–480). */
+		test: (ref: string, emails: Array<string>, scale = 480): Promise<Sequence> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/test`, { body: { emails, scale } }),
+
+		/** End a test run — pausing, unless `{ keep: true }` says to run for everyone. */
+		untest: (ref: string, options: { keep?: boolean } = {}): Promise<Sequence> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/test${options.keep ? "?keep=1" : ""}`, {
+				method: "DELETE",
+			}),
+
+		/** Per-step counts and walk totals. */
+		stats: (ref: string): Promise<SequenceStats> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/stats`, { method: "GET" }),
+
+		/** The walks of a sequence, newest first — following pagination for you. */
+		enrollments: async (
+			ref: string,
+			options: { status?: Enrollment["status"] } = {}
+		): Promise<Array<Enrollment>> => {
+			const out: Array<Enrollment> = []
+			let cursor: string | undefined
+			do {
+				const params = new URLSearchParams()
+				if (options.status) params.set("status", options.status)
+				if (cursor) params.set("cursor", cursor)
+				const query = params.size ? `?${params}` : ""
+				const page = await this.#api<{ enrollments: Array<Enrollment>; cursor: string | null }>(
+					`/sequences/${encodeURIComponent(ref)}/enrollments${query}`,
+					{ method: "GET" }
+				)
+				out.push(...page.enrollments)
+				cursor = page.cursor ?? undefined
+			} while (cursor)
+			return out
+		},
+
+		/**
+		 * Start a walk by hand for one address or several (up to 100). Each result says
+		 * whether it started or why not.
+		 */
+		enrol: (
+			ref: string,
+			who: string | Array<string>,
+			context?: Record<string, unknown>
+		): Promise<{ enrolled: number; results: Array<Record<string, unknown>> }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/enrollments`, {
+				body: { ...(Array.isArray(who) ? { emails: who } : { email: who }), context },
+			}),
+
+		/** Exit a live walk. */
+		cancel: (ref: string, enrollment_id: string): Promise<{ id: string; cancelled: boolean }> =>
+			this.#api(
+				`/sequences/${encodeURIComponent(ref)}/enrollments/${encodeURIComponent(enrollment_id)}`,
+				{ method: "DELETE" }
+			),
+
+		/** Put a live walk at another step (a path like `2.then.0`), due on the next tick. */
+		move: (ref: string, enrollment_id: string, step: string): Promise<Enrollment> =>
+			this.#api(
+				`/sequences/${encodeURIComponent(ref)}/enrollments/${encodeURIComponent(enrollment_id)}/move`,
+				{ body: { step } }
+			),
+
+		/** After an edit: exit walks whose step moved, move the rest to the new version. */
+		realign: (ref: string): Promise<{ exited: number; kept: number }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/enrollments/realign`, { body: {} }),
+
+		/** One walk's runs, oldest first — every step, its outcome and why. */
+		runs: async (ref: string, enrollment_id: string): Promise<Array<SequenceRun>> => {
+			const data = await this.#api<{ runs: Array<SequenceRun> }>(
+				`/sequences/${encodeURIComponent(ref)}/enrollments/${encodeURIComponent(enrollment_id)}/runs`,
+				{ method: "GET" }
+			)
+			return data.runs
+		},
+
+		/** The templates that ship. */
+		templates: async (): Promise<Array<SequenceTemplate>> => {
+			const data = await this.#api<{ templates: Array<SequenceTemplate> }>("/sequences/templates", {
+				method: "GET",
+			})
+			return data.templates
+		},
+
+		/** Install a shipped template as a draft, under its name or `name`. */
+		install: (key: string, name?: string): Promise<Sequence & { template: string }> =>
+			this.#api(`/sequences/templates/${encodeURIComponent(key)}`, {
+				body: name ? { name } : {},
+			}),
 	}
 
 	/**

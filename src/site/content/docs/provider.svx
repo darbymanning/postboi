@@ -541,6 +541,101 @@ Three definitions worth copying:
 ] }
 ```
 
+## Sequences
+
+A **sequence** is an automation: one trigger, then the steps a contact walks through on
+their own clock — emails, waits, branches, tags, webhooks, a text or a push. The hosted
+engine runs it once a minute; the library's job is to describe it, switch it on, and
+watch it.
+
+The quickest start is a shipped template:
+
+```ts
+await mail.sequences.templates() // welcome, trial_onboarding, dunning, win_back, re_engagement, post_purchase
+const draft = await mail.sequences.install("welcome")
+await mail.sequences.enable(draft.id)
+```
+
+Or write one as code. A `sequences/welcome.ts` file exports what `sequence()` returns, and
+`bunx postboi sync` pushes every such file to the account (the directory is `sequences`
+unless `postboi.config.ts` sets `sequences: "..."`):
+
+```ts
+// sequences/welcome.ts
+import { sequence, sequence_email as email, delay, condition, tag } from "postboi"
+
+export default sequence({
+	name: "Welcome",
+	trigger: { kind: "contact_added" },
+	entry: "one_time",
+	steps: [
+		email({ subject: "Welcome aboard, {name}", html: "<p>Hi {name} — start here: …</p>" }),
+		delay({ days: 2 }),
+		condition(
+			{ match: "all", rules: [{ kind: "engagement", metric: "opened", within_days: 3, happened: true }] },
+			{
+				then: [email({ subject: "Three things people miss", html: "…" })],
+				else: [email({ subject: "Still there, {name}?", html: "…" })],
+			}
+		),
+		tag({ add: ["welcomed"] }),
+	],
+})
+```
+
+A pushed sequence arrives as a **draft**; `mail.sequences.enable("Welcome")` or `bunx
+postboi sequences enable Welcome` switches it on. Every save on the dashboard or from a
+push bumps the sequence's `version`, and `.postboi/sequences.json` remembers the version
+each file was last synced at. A push that would overwrite a newer dashboard save stops
+with a conflict: `bunx postboi sequences pull` takes the dashboard's copy as a file, or
+`bunx postboi sequences push --force` overwrites it. Once synced, `sequence` in the
+generated types narrows to your sequence names.
+
+**Triggers** (one per sequence; several values inside it are ORed): `contact_added`
+(any new contact, or `list_ids` for joining particular lists), `tag_added`,
+`segment_entered`, `event` (with an optional `property` filter), `inbound_webhook`,
+`inactivity` (N days without an event, checked daily), `frequency` (an event N times
+in D days) and `manual`. Updating attributes alone never starts a walk.
+
+**Steps**, each an object with a `kind` (the helpers `sequence_email`, `sequence_sms`,
+`sequence_whatsapp`, `sequence_push`, `sequence_slack`, `delay`, `wait_for_event`,
+`condition`, `branch`, `tag`, `list_step`, `webhook_step` and `exit_step` build them):
+
+| kind             | what it does                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| `email`          | `subject`, `html` and/or `text` in the `{key}` / `{#if}` / `{#each}` grammar, with `contact.*`, `data.*`, `event.*`, `webhook.*` in scope |
+| `sms` `whatsapp` `push` `slack` | through the account's synced provider credentials (`bunx postboi env push`); `provider` picks one when several are configured |
+| `delay`          | `for: { days, hours, minutes }`, or `until: { time, weekday? }` in the contact's timezone, or `until: { attribute, offset?, before? }` for a date in their data |
+| `wait_for_event` | park until `name` happens, or take `on_timeout` after `timeout`                                  |
+| `condition`      | an inline segment definition; `then` / `else` lanes                                              |
+| `branch`         | lanes by condition (last one the fallback) or a random split by `weight`                          |
+| `tag` `list`     | `add` / `remove` tags; `subscribe` / `unsubscribe` a list                                        |
+| `webhook`        | POST the contact and the walk's context; a JSON reply is readable later as `{webhook.<key>.…}`   |
+| `exit`           | the walk ends                                                                                    |
+
+**Who gets sent to.** Marketing steps — email, SMS, WhatsApp, push — skip a contact who
+isn't subscribed on any list, and the walk carries on to the next step; a step with
+`transactional: true` sends anyway. A suppressed address is never sent to by any step. A
+sequence can also carry `only: [emails]` (nothing else enters, whatever the trigger says),
+`entry: "one_time"` or `entry: "matching_field"` with a data key, and `quiet_hours`.
+
+**Before switching on**, simulate: every step reports what it would do for a real contact
+or a synthetic one, and nothing is sent. Then a test run — a few named addresses, every
+wait divided by up to 480 — lets you watch the real thing in minutes:
+
+```ts
+await mail.sequences.simulate("Welcome", { email: "you@example.com", name: "You" })
+await mail.sequences.test("Welcome", ["you@example.com"], 480) // enabled for you only, 2 days → 6 min
+await mail.sequences.enrol("Welcome", "you@example.com")
+await mail.sequences.untest("Welcome", { keep: true }) // now for everyone
+```
+
+Watch it with `mail.sequences.stats(ref)` (per step: reached, each outcome, and for email
+delivered / opened / clicked), `mail.sequences.enrollments(ref, { status })`,
+`mail.sequences.runs(ref, enrollment_id)` (every step of one walk and why), and
+`mail.contacts.sequences(email)`. `cancel`, `move` and `realign` manage live walks;
+`pause`, `enable` and `disable` the sequence itself.
+
 ## Confirmation (double opt-in)
 
 Lists can require **confirmation**: new recipients start `pending` and receive an

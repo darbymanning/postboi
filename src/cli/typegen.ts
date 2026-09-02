@@ -64,7 +64,8 @@ function register_block(
 	domains: Array<PostboiDomain>,
 	templates: Array<string>,
 	variables: Record<string, Array<string>>,
-	keep_from: Array<string>
+	keep_from: Array<string>,
+	sequences: Array<string> = []
 ): string {
 	const blocks: Array<string> = []
 	// Nothing to compute a union from means this run didn't reach the account, not that the
@@ -80,6 +81,14 @@ function register_block(
 			)
 		)
 		blocks.push(variables_member(variables))
+	}
+	if (sequences.length > 0) {
+		blocks.push(
+			member(
+				"sequence",
+				sequences.map((name) => JSON.stringify(name))
+			)
+		)
 	}
 	if (blocks.length === 0) return ""
 	return `declare module "postboi" {
@@ -101,9 +110,10 @@ export function render_types(
 	domains: Array<PostboiDomain>,
 	templates: Array<string> = [],
 	variables: Record<string, Array<string>> = {},
-	keep_from: Array<string> = []
+	keep_from: Array<string> = [],
+	sequences: Array<string> = []
 ): string | null {
-	const register = register_block(send_address, domains, templates, variables, keep_from)
+	const register = register_block(send_address, domains, templates, variables, keep_from, sequences)
 	if (!register) return null
 	return `${HEADER}${register}export declare const captcha_key: string | undefined
 export declare const whatsapp_templates: Record<string, string>
@@ -149,6 +159,24 @@ export function parse_from(source: string): Array<string> {
 		.filter(Boolean)
 }
 
+/** Read back the `sequence:` union, so a run that skipped the push keeps it. */
+export function parse_sequences(source: string): Array<string> {
+	const block = /\n\t\tsequence:\n((?:\t\t\t\| .*\n)+)/.exec(source)
+	if (!block) return []
+	return block[1]
+		.split("\n")
+		.map((line) => line.replace(/^\t\t\t\| /, "").trim())
+		.filter(Boolean)
+		.map((literal) => {
+			try {
+				return JSON.parse(literal) as string
+			} catch {
+				return ""
+			}
+		})
+		.filter(Boolean)
+}
+
 /** Read back what {@link render_runtime} baked. */
 export function parse_runtime(source: string): {
 	captcha_key?: string
@@ -184,15 +212,18 @@ export function write_types(
 	send_address: string | undefined,
 	domains: Array<PostboiDomain>,
 	templates: Array<string> = [],
-	variables: Record<string, Array<string>> = {}
+	variables: Record<string, Array<string>> = {},
+	sequences?: Array<string>
 ): string | null {
 	if (!existsSync(TYPES_TARGET)) return null
+	const current = installed(TYPES_TARGET)
 	const source = render_types(
 		send_address,
 		domains,
 		templates,
 		variables,
-		parse_from(installed(TYPES_TARGET))
+		parse_from(current),
+		sequences ?? parse_sequences(current)
 	)
 	if (!source) return null
 	replace(TYPES_TARGET, source)

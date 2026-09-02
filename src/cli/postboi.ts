@@ -351,6 +351,27 @@ export async function fetch_domains(
  * The account's synced channel credentials, or undefined when unreachable (or on an API
  * that predates them). An empty object is a real answer: nothing synced yet.
  */
+/** The account's sequence names, for the generated `sequence` union. Undefined when unreachable. */
+export async function fetch_sequence_names(
+	base: string,
+	token: string,
+	fetch_fn: FetchLike = fetch
+): Promise<Array<string> | undefined> {
+	try {
+		const response = await fetch_fn(`${base}/v1/sequences`, {
+			headers: { Authorization: `Bearer ${token}` },
+		})
+		if (!response.ok) return undefined
+		const data = (await response.json()) as { sequences?: Array<{ name?: unknown }> }
+		if (!Array.isArray(data.sequences)) return undefined
+		return data.sequences
+			.map((row) => (typeof row.name === "string" ? row.name : ""))
+			.filter(Boolean)
+	} catch {
+		return undefined
+	}
+}
+
 export async function fetch_env_vars(
 	base: string,
 	token: string,

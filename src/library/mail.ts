@@ -286,6 +286,7 @@ type PostboiNamespace =
 	| "contacts"
 	| "events"
 	| "segments"
+	| "sequences"
 	| "notifications"
 	| "suppressions"
 
@@ -331,6 +332,7 @@ export const mail: typeof send_mail & Pick<Postboi, PostboiNamespace> = Object.a
 	contacts: lazy_namespace("contacts"),
 	events: lazy_namespace("events"),
 	segments: lazy_namespace("segments"),
+	sequences: lazy_namespace("sequences"),
 	notifications: lazy_namespace("notifications"),
 	suppressions: lazy_namespace("suppressions"),
 })

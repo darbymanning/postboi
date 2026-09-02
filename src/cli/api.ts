@@ -2,6 +2,17 @@ import { stdout } from "node:process"
 import { ensure_env_loaded, read_env } from "../library/env.js"
 import { cloud_base, open_browser, type PostboiDomain } from "./postboi.js"
 import { bold, cyan, dim, green, red, strip_ansi, yellow } from "./prompts.js"
+import { load_config } from "../library/config.js"
+import { walk_steps, type SequenceDefinition, type SequenceStep } from "../library/sequence.js"
+import {
+	DEFAULT_DIR,
+	load_sequence_files,
+	pull_sequences,
+	push_sequences,
+	read_lockfile,
+	write_lockfile,
+	type SequenceApi,
+} from "./sequence_files.js"
 
 /**
  * The resource commands (`postboi lists`, `postboi domains add …`) — thin wrappers over
@@ -549,6 +560,274 @@ async function segments(args: Array<string>): Promise<void> {
 	)
 }
 
+// ── Sequences ──────────────────────────────────────────────────────────────
+
+interface SequenceWire {
+	id: string
+	name: string
+	status: string
+	version: number
+	definition: SequenceDefinition
+	test: { emails: Array<string>; scale: number } | null
+	updated_at: string
+}
+
+async function sequences(args: Array<string>): Promise<void> {
+	const [action, ...rest] = args
+	const ref = (words: Array<string>) => words.join(" ").trim()
+	const one = (path: string) => `/v1/sequences/${encodeURIComponent(path)}`
+
+	if (action === "create") {
+		const { flags, rest: words } = take_flags(rest, ["definition"])
+		const name = ref(words)
+		if (!name || !flags.definition) {
+			throw new ApiCommandError(
+				'Usage: postboi sequences create <name> --definition \'{"trigger":{…},"steps":[…]}\''
+			)
+		}
+		const row = await api<SequenceWire>("/v1/sequences", {
+			method: "POST",
+			body: { name, definition: json_object_flag("definition", flags.definition) },
+		})
+		return console.log(
+			`${green("✓")} created ${bold(row.name)} as a draft ${dim(`(${row.id}) — postboi sequences enable ${JSON.stringify(row.name)} when it's ready`)}`
+		)
+	}
+
+	if (action === "enable" || action === "pause" || action === "disable") {
+		const name = ref(rest)
+		if (!name) throw new ApiCommandError(`Usage: postboi sequences ${action} <name or id>`)
+		const row = await api<SequenceWire & { warnings?: Array<string> }>(`${one(name)}/${action}`, {
+			method: "POST",
+			body: {},
+		})
+		console.log(`${green("✓")} ${bold(row.name)} is ${row.status}`)
+		for (const warning of row.warnings ?? []) console.log(`  ${yellow("!")} ${warning}`)
+		return
+	}
+
+	if (action === "delete") {
+		const { flags, rest: words } = take_flags(rest, ["purge"])
+		const name = ref(words)
+		if (!name) throw new ApiCommandError("Usage: postboi sequences delete <name or id> [--purge]")
+		const gone = await api<{ id: string; deleted: boolean }>(
+			`${one(name)}${flags.purge !== undefined ? "?purge=1" : ""}`,
+			{ method: "DELETE" }
+		)
+		return console.log(
+			`${green("✓")} ${gone.deleted ? "deleted" : "archived"} ${bold(name)} ${dim(`(${gone.id})`)}`
+		)
+	}
+
+	// `sequences simulate <ref> <email>` — every step and what it would do.
+	if (action === "simulate") {
+		const email = rest[rest.length - 1]
+		const name = ref(rest.slice(0, -1))
+		if (!name || !email?.includes("@")) {
+			throw new ApiCommandError("Usage: postboi sequences simulate <ref> <email>")
+		}
+		const { contact, steps } = await api<{
+			contact: { email: string; synthetic: boolean }
+			steps: Array<{ path: string; kind: string; outcome: string; reason?: string; next: string }>
+		}>(`${one(name)}/simulate`, { method: "POST", body: { email } })
+		console.log(
+			`${bold(name)} for ${contact.email}${contact.synthetic ? dim(" (synthetic — not a contact yet)") : ""}`
+		)
+		return table(
+			["STEP", "KIND", "OUTCOME", "THEN"],
+			steps.map((step) => [
+				step.path,
+				step.kind,
+				`${step.outcome}${step.reason ? dim(` · ${step.reason}`) : ""}`,
+				dim(step.next),
+			])
+		)
+	}
+
+	// `sequences enrol <ref> <email…>`
+	if (action === "enrol" || action === "enroll") {
+		const emails = rest.filter((word) => word.includes("@"))
+		const name = ref(rest.filter((word) => !word.includes("@")))
+		if (!name || emails.length === 0) {
+			throw new ApiCommandError("Usage: postboi sequences enrol <ref> <email…>")
+		}
+		const { results } = await api<{
+			enrolled: number
+			results: Array<{ email?: string; enrolled: boolean; reason?: string }>
+		}>(`${one(name)}/enrollments`, { method: "POST", body: { emails } })
+		for (const result of results) {
+			console.log(
+				result.enrolled
+					? `${green("✓")} ${result.email} enrolled`
+					: `${yellow("–")} ${result.email} not enrolled ${dim(`(${result.reason})`)}`
+			)
+		}
+		return
+	}
+
+	if (action === "templates") {
+		const { templates } = await api<{
+			templates: Array<{ key: string; name: string; blurb: string }>
+		}>("/v1/sequences/templates")
+		return table(
+			["KEY", "NAME", "WHAT IT DOES"],
+			templates.map((t) => [bold(t.key), t.name, dim(t.blurb)])
+		)
+	}
+
+	if (action === "install") {
+		const key = rest[0]
+		if (!key) throw new ApiCommandError("Usage: postboi sequences install <template key>")
+		const row = await api<SequenceWire>(`/v1/sequences/templates/${encodeURIComponent(key)}`, {
+			method: "POST",
+			body: {},
+		})
+		return console.log(`${green("✓")} installed ${bold(row.name)} as a draft ${dim(`(${row.id})`)}`)
+	}
+
+	// `sequences pull [name]` — the account's copy as sequences/<slug>.ts, lock moved forward.
+	if (action === "pull") {
+		const wanted = ref(rest)
+		const { sequences: rows } = await api<{ sequences: Array<SequenceWire> }>("/v1/sequences")
+		const chosen = wanted
+			? rows.filter((row) => row.name.toLowerCase() === wanted.toLowerCase() || row.id === wanted)
+			: rows
+		if (chosen.length === 0) {
+			throw new ApiCommandError(wanted ? `No sequence named ${wanted}.` : "No sequences to pull.")
+		}
+		const dir = await sequences_dir()
+		const { written, lock } = pull_sequences(chosen, read_lockfile(), dir)
+		write_lockfile(lock)
+		for (const file of written) console.log(`${green("✓")} wrote ${bold(file)}`)
+		return
+	}
+
+	// `sequences push [--force]` — what `postboi sync` does for sequences, on its own.
+	if (action === "push") {
+		const { flags } = take_flags(rest, ["force"])
+		await push_sequence_files({ force: flags.force !== undefined })
+		return
+	}
+
+	// A bare `sequences <ref>` shows the sequence, its counts and its steps.
+	if (action) {
+		const name = ref([action, ...rest])
+		const row = await api<SequenceWire & { enrollments: Record<string, number> }>(one(name))
+		console.log(`${bold(row.name)} ${dim(`(${row.id}) · ${row.status} · v${row.version}`)}`)
+		const counts = row.enrollments
+		console.log(
+			`  ${dim("live:")} ${(counts.active ?? 0) + (counts.waiting ?? 0)}  ${dim("completed:")} ${counts.completed ?? 0}  ${dim("exited:")} ${counts.exited ?? 0}  ${dim("failed:")} ${counts.failed ?? 0}`
+		)
+		if (row.test)
+			console.log(`  ${yellow("test run")} ÷${row.test.scale} for ${row.test.emails.join(", ")}`)
+		console.log(`  ${dim("trigger:")} ${JSON.stringify(row.definition.trigger)}`)
+		console.log()
+		return table(
+			["#", "STEP"],
+			walk_steps(row.definition.steps).map((step, index) => [
+				dim(String(index + 1)),
+				step_line(step),
+			])
+		)
+	}
+
+	const { sequences: rows } = await api<{ sequences: Array<SequenceWire> }>("/v1/sequences")
+	if (rows.length === 0) {
+		return console.log(
+			dim(
+				"No sequences yet — postboi sequences templates, or write sequences/welcome.ts and postboi sync"
+			)
+		)
+	}
+	table(
+		["NAME", "STATUS", "VERSION", "UPDATED", "ID"],
+		rows.map((s) => [bold(s.name), s.status, `v${s.version}`, day(s.updated_at), dim(s.id)])
+	)
+}
+
+/** One step as a line for the table. */
+function step_line(step: SequenceStep): string {
+	switch (step.kind) {
+		case "email":
+			return `email “${step.subject}”${step.transactional ? dim(" transactional") : ""}`
+		case "sms":
+		case "slack":
+			return `${step.kind} “${step.text.slice(0, 40)}”`
+		case "whatsapp":
+			return `whatsapp ${step.template}`
+		case "push":
+			return `push “${step.title}”`
+		case "delay":
+			return `wait ${JSON.stringify(step.for ?? step.until)}`
+		case "wait_for_event":
+			return `wait for ${step.name} (timeout ${JSON.stringify(step.timeout)})`
+		case "condition":
+			return "if / else"
+		case "branch":
+			return `branch ${step.branches.map((lane) => lane.name).join(" / ")}`
+		case "tag":
+			return `tag ${[...(step.add ?? []).map((t) => `+${t}`), ...(step.remove ?? []).map((t) => `-${t}`)].join(" ")}`
+		case "list":
+			return `${step.action} ${step.list_id}`
+		case "webhook":
+			return `POST ${step.url}`
+		default:
+			return step.kind
+	}
+}
+
+/** The sequences directory from postboi.config, or the default. */
+async function sequences_dir(): Promise<string> {
+	try {
+		const config = await load_config()
+		return config.sequences ?? DEFAULT_DIR
+	} catch {
+		return DEFAULT_DIR
+	}
+}
+
+/**
+ * Push `sequences/*.ts` to the account — `postboi sync` calls this with a token in hand;
+ * `postboi sequences push` calls it on its own. Says what happened per file.
+ */
+export async function push_sequence_files(options: { force?: boolean } = {}): Promise<void> {
+	const dir = await sequences_dir()
+	const { sequences: files, problems } = await load_sequence_files(dir)
+	for (const problem of problems) console.log(`${yellow("!")} ${problem}`)
+	if (files.length === 0) return
+	const remote: SequenceApi = {
+		list: async () =>
+			(await api<{ sequences: Array<SequenceWire> }>("/v1/sequences?archived=1")).sequences,
+		create: (name, definition) =>
+			api<SequenceWire>("/v1/sequences", { method: "POST", body: { name, definition } }),
+		update: async (id, changes) => {
+			try {
+				return await api<SequenceWire>(`/v1/sequences/${encodeURIComponent(id)}`, {
+					method: "PATCH",
+					body: changes,
+				})
+			} catch (error) {
+				const match = /version (\d+)/.exec(error instanceof Error ? error.message : "")
+				if (match) return { conflict: Number(match[1]) }
+				throw error
+			}
+		},
+	}
+	const { outcomes, lock } = await push_sequences(remote, files, read_lockfile(), options)
+	write_lockfile(lock)
+	for (const outcome of outcomes) {
+		if (outcome.action === "conflict") {
+			console.log(
+				`${yellow("!")} ${bold(outcome.name)} ${dim(`(${outcome.file})`)} is at v${outcome.remote} on the dashboard, newer than the v${outcome.local ?? "?"} this file was pulled at — ${cyan("postboi sequences pull")} to take theirs, or ${cyan("postboi sequences push --force")} to overwrite`
+			)
+		} else if (outcome.action !== "unchanged") {
+			console.log(
+				`${green("✓")} ${outcome.action} ${bold(outcome.name)} ${dim(`v${outcome.version} (${outcome.file})`)}`
+			)
+		}
+	}
+}
+
 // ── Domains ────────────────────────────────────────────────────────────────
 
 interface DomainDetail {
@@ -824,6 +1103,7 @@ const COMMANDS: Record<string, (args: Array<string>) => Promise<void>> = {
 	contacts,
 	events,
 	segments,
+	sequences,
 	domains,
 	webhooks,
 	members,
