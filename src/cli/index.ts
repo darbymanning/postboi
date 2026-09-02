@@ -1567,9 +1567,11 @@ const CHANNEL_INIT = {
 		done: (provider: ChannelProvider) => [
 			'import { push } from "postboi"\n\nawait push({ to: subscription, message: "…" })',
 			// The half people forget: a push target has to be registered before it exists.
-			provider.key === "expo"
-				? "Register in the app with `subscribe()` from postboi/push/expo first."
-				: "Subscribe in the browser with `subscribe()` from postboi/push first.",
+			provider.key === "webpush"
+				? "Subscribe in the browser with `subscribe()` from postboi/push first."
+				: provider.key === "expo"
+					? "Register in the app with `subscribe()` from postboi/push/expo first."
+					: "Register the device token from your app first — `subscribe({ native: true })` from postboi/push/expo does it in an Expo app.",
 		],
 	},
 	whatsapp: {

@@ -12,6 +12,13 @@
  * the registration says which provider it belongs to, because a token from one is
  * meaningless to the others.
  *
+ * One thing the browser has that a phone doesn't: a memory of being subscribed. The
+ * `PushManager` holds the subscription, so `current()` can simply ask it. The OS holds
+ * only *permission* — granted by default on Android 12 and below, and left granted after
+ * someone turns push off inside the app — so "is this device registered?" has to be
+ * remembered here, and that's what `storage` is for. The registration itself is what's
+ * kept, so `current()` answers without a network round-trip.
+ *
  * `expo-notifications` and `expo-constants` are optional peers: this module is only ever
  * imported inside an Expo app, where both already are.
  */
@@ -31,10 +38,10 @@ export interface PushRegistration {
 }
 
 /**
- * Somewhere to remember that the user switched push off — the shape of
+ * Where this device's registration is remembered between launches — the shape of
  * `@react-native-async-storage/async-storage`, which any key-value store adapts to in
- * three lines. Without one, the off switch lasts until the app restarts, because the
- * OS remembers permission but not the choice.
+ * three lines. Without one it's remembered for this launch only, so a toggle comes up
+ * off after a restart until the next `subscribe()`.
  */
 export interface PushStorage {
 	getItem(key: string): Promise<string | null> | string | null
@@ -55,12 +62,7 @@ export interface SubscribeOptions {
 	 * (`extra.eas.projectId`, which `eas init` writes) when not passed.
 	 */
 	project_id?: string
-	/**
-	 * The Android notification channel the permission prompt needs to exist first, and
-	 * the one a send lands in when it names none. Created before asking; a no-op on iOS.
-	 */
-	channel?: { id?: string; name?: string }
-	/** Where the off switch is remembered across launches. See {@link PushStorage}. */
+	/** Where the registration is remembered across launches. See {@link PushStorage}. */
 	storage?: PushStorage
 }
 
@@ -80,22 +82,42 @@ export class PushSubscribeError extends Error {
 	}
 }
 
-/** The storage key the off switch is kept under. */
-const OFF_KEY = "postboi:push"
+/** The storage key the registration is kept under. */
+const KEY = "postboi:push"
 
-/** The off switch when no storage was given: this launch only. */
-let switched_off = false
-
-async function is_off(storage: PushStorage | undefined): Promise<boolean> {
-	if (!storage) return switched_off
-	return (await storage.getItem(OFF_KEY)) === "off"
+/** The memory when no storage was given: this launch only. */
+const memory = new Map<string, string>()
+const memory_storage: PushStorage = {
+	getItem: (key) => memory.get(key) ?? null,
+	setItem: (key, value) => void memory.set(key, value),
+	removeItem: (key) => void memory.delete(key),
 }
 
-async function set_off(storage: PushStorage | undefined, off: boolean): Promise<void> {
-	switched_off = off
-	if (!storage) return
-	if (off) await storage.setItem(OFF_KEY, "off")
-	else await storage.removeItem(OFF_KEY)
+function storage_of(options: SubscribeOptions): PushStorage {
+	return options.storage ?? memory_storage
+}
+
+/** The registration remembered for this device, or null. */
+async function stored(options: SubscribeOptions): Promise<PushRegistration | null> {
+	const raw = await storage_of(options).getItem(KEY)
+	if (!raw) return null
+	try {
+		const parsed = JSON.parse(raw) as Partial<PushRegistration> | null
+		return parsed && typeof parsed.token === "string" && parsed.provider && parsed.platform
+			? (parsed as PushRegistration)
+			: null
+	} catch {
+		return null
+	}
+}
+
+async function remember(
+	options: SubscribeOptions,
+	registration: PushRegistration | null
+): Promise<void> {
+	const storage = storage_of(options)
+	if (registration) await storage.setItem(KEY, JSON.stringify(registration))
+	else await storage.removeItem(KEY)
 }
 
 /**
@@ -113,7 +135,11 @@ function supported(): boolean {
 	return Boolean(platform.ios || platform.android)
 }
 
-/** Read Expo's permission answer as one word — provisional counts as granted. */
+/**
+ * Read Expo's permission answer as one word — provisional counts as granted, and a
+ * prompt backed out of on Android (which reports `denied` but can ask again) as
+ * undetermined, because it can be asked again and "go to Settings" would be wrong.
+ */
 function read_permission(
 	status: Notifications.NotificationPermissionsStatus
 ): "granted" | "denied" | "undetermined" {
@@ -124,7 +150,7 @@ function read_permission(
 		ios === Notifications.IosAuthorizationStatus.EPHEMERAL
 	)
 		return "granted"
-	return status.status === "denied" ? "denied" : "undetermined"
+	return status.status === "denied" && !status.canAskAgain ? "denied" : "undetermined"
 }
 
 /** The current notification permission, without prompting. Reached as `subscribe.permission()`. */
@@ -137,45 +163,63 @@ function platform_of(): "ios" | "android" {
 	return Constants.platform?.ios ? "ios" : "android"
 }
 
-/** The registration a raw device token becomes: the provider follows the platform. */
-function native_registration(token: { type: string; data: string }): PushRegistration {
-	const platform = token.type === "ios" ? "ios" : "android"
-	return { token: token.data, provider: platform === "ios" ? "apns" : "fcm", platform }
-}
-
-/** Mint the token this app registers with — no prompt, and the same answer every time. */
-async function mint(options: SubscribeOptions): Promise<PushRegistration> {
-	if (options.native) return native_registration(await Notifications.getDevicePushTokenAsync())
-	const project_id =
+/** The EAS project an Expo push token is minted for: passed, else what `eas init` wrote. */
+function project_id_of(options: SubscribeOptions): string | undefined {
+	return (
 		options.project_id ??
 		Constants.expoConfig?.extra?.eas?.projectId ??
 		Constants.easConfig?.projectId
-	if (!project_id) {
-		throw new PushSubscribeError(
-			"missing_project",
-			"No EAS project id — an Expo push token is minted for a project. Run `eas init` (it writes extra.eas.projectId to app.json), or pass { project_id }."
-		)
-	}
-	const token = await Notifications.getExpoPushTokenAsync({ projectId: project_id })
-	return { token: token.data, provider: "expo", platform: platform_of() }
+	)
 }
 
 /**
- * The registration this device already holds, or null. Reached as `subscribe.current()`.
+ * The device token the last mint fetched. Both platforms fire `addPushTokenListener` for
+ * every `getDevicePushTokenAsync`, this module's own included, so this is how the
+ * rotation listener tells the echo of its own fetch from a token the OS actually rolled.
+ */
+let last_device_token: string | null = null
+
+/** Mint the token this app registers with — no prompt, and the same answer every time. */
+async function mint(options: SubscribeOptions): Promise<PushRegistration> {
+	let expo_project: string | undefined
+	if (!options.native) {
+		expo_project = project_id_of(options)
+		if (!expo_project) {
+			throw new PushSubscribeError(
+				"missing_project",
+				"No EAS project id — an Expo push token is minted for a project. Run `eas init` (it writes extra.eas.projectId to app.json), or pass { project_id }."
+			)
+		}
+	}
+	// Fetched here rather than left to getExpoPushTokenAsync, so the token the platform
+	// echoes back through the listener is one this module knows it asked for.
+	const device = await Notifications.getDevicePushTokenAsync()
+	last_device_token = device.data
+	const platform = platform_of()
+	if (!expo_project) {
+		return { token: device.data, provider: platform === "ios" ? "apns" : "fcm", platform }
+	}
+	const token = await Notifications.getExpoPushTokenAsync({
+		projectId: expo_project,
+		devicePushToken: device,
+	})
+	return { token: token.data, provider: "expo", platform }
+}
+
+/**
+ * The registration this device holds, or null. Reached as `subscribe.current()`.
  *
- * Granted permission is the phone's memory of "yes"; the off switch is this module's
- * memory of "no, since" — the state a toggle has to render after someone turned push off
- * in the app while the OS permission stayed granted. Never prompts.
+ * What was remembered at the last `subscribe()`, provided the OS still grants
+ * permission — revoked in Settings, the device is unreachable whatever was remembered.
+ * Never prompts, and never touches the network: the registration is kept, not re-minted.
  */
 async function current(options: SubscribeOptions = {}): Promise<PushRegistration | null> {
 	if (!supported()) return null
-	if (await is_off(options.storage)) return null
-	if (read_permission(await Notifications.getPermissionsAsync()) !== "granted") return null
-	try {
-		return await mint(options)
-	} catch {
-		return null
-	}
+	const registration = await stored(options)
+	if (!registration) return null
+	return read_permission(await Notifications.getPermissionsAsync()) === "granted"
+		? registration
+		: null
 }
 
 /** Why a subscribe failed, or null if the error didn't come from here. Reached as `subscribe.reason(error)`. */
@@ -185,11 +229,12 @@ function reason(error: unknown): PushSubscribeError["reason"] | null {
 
 /**
  * Request permission if needed and register, handing back the token to POST to your
- * server. Reuses the token the device already has, so calling it on every launch is safe —
- * and worth doing, because tokens rotate.
+ * server, and remembering it so `current()` can answer. Call it when the user says yes —
+ * or on every launch, in an app that always pushes and has no switch to respect.
  *
- * On Android the notification channel is created first: without one, Android 13+ shows
- * no permission prompt at all, and answers "denied" as if the user had.
+ * On Android the `default` notification channel is created first, at full importance:
+ * without one, Android 13+ shows no permission prompt at all, and it's the channel Expo
+ * delivers to when a send names none.
  *
  * `subscribe.supported()`, `subscribe.permission()` and `subscribe.current()` answer the
  * three questions a settings screen asks before it can render the switch; none prompt.
@@ -199,7 +244,7 @@ function reason(error: unknown): PushSubscribeError["reason"] | null {
  * ```ts
  * import { subscribe } from "postboi/push/expo"
  *
- * const registration = await subscribe()
+ * const registration = await subscribe({ storage: AsyncStorage })
  * await fetch("https://example.com/api/push/register", {
  * 	method: "POST",
  * 	headers: { "Content-Type": "application/json" },
@@ -218,8 +263,8 @@ async function subscribe_now(options: SubscribeOptions = {}): Promise<PushRegist
 	}
 
 	// Before the prompt, on purpose — see above. Idempotent, and a no-op on iOS.
-	await Notifications.setNotificationChannelAsync(options.channel?.id ?? "default", {
-		name: options.channel?.name ?? "Default",
+	await Notifications.setNotificationChannelAsync("default", {
+		name: "Default",
 		importance: Notifications.AndroidImportance.MAX,
 	}).catch(() => {})
 
@@ -250,7 +295,7 @@ async function subscribe_now(options: SubscribeOptions = {}): Promise<PushRegist
 			`Could not get a push token: ${cause instanceof Error ? cause.message : String(cause)}`
 		)
 	}
-	await set_off(options.storage, false)
+	await remember(options, registration)
 	return registration
 }
 
@@ -258,16 +303,18 @@ export const subscribe = Object.assign(subscribe_now, { supported, permission, c
 
 /**
  * Unregister this device, returning the registration that was removed so you can delete
- * your stored copy. Returns null when there was nothing registered. Remembers the choice
- * (in `storage`, when given) so `current()` says null until the next `subscribe()`.
+ * your stored copy. Returns null when there was nothing registered. Forgets the
+ * registration, so `current()` says null until the next `subscribe()` — and does so
+ * whatever the network is doing, or an off that didn't stick would be back on next launch
+ * with the server still holding the token.
  */
 export async function unsubscribe(
 	options: SubscribeOptions = {}
 ): Promise<PushRegistration | null> {
-	const registration = await current(options)
+	const registration = await stored(options)
 	if (!registration) return null
 	await Notifications.unregisterForNotificationsAsync().catch(() => {})
-	await set_off(options.storage, true)
+	await remember(options, null)
 	return registration
 }
 
@@ -287,11 +334,23 @@ export interface SubscriptionOptions extends SubscribeOptions {
 	unregister?: Filing<PushRegistration>
 }
 
-/** Why an enable failed: `subscribe.reason`'s union, plus the register call failing. */
-export type PushReason = PushSubscribeError["reason"] | "register_failed"
-
 /** The toggle's state on a phone. */
 export type PushState = MachineState<PushSubscribeError["reason"]>
+
+/** Why an enable failed: `subscribe.reason`'s union, plus the register call failing. */
+export type PushReason = NonNullable<PushState["reason"]>
+
+/**
+ * A relative URL is fine in a browser and a `TypeError` from React Native's `fetch`,
+ * which the machine would report as a bare `register_failed`. Say so up front instead.
+ */
+function absolute(name: string, target: Filing<PushRegistration> | undefined): void {
+	if (typeof target === "string" && !/^https?:\/\//i.test(target)) {
+		throw new Error(
+			`\`${name}\` must be an absolute URL on a phone — there is no origin to resolve ${JSON.stringify(target)} against.`
+		)
+	}
+}
 
 /**
  * This device's push registration as a state machine — the same one `postboi/push`
@@ -312,6 +371,8 @@ export type PushState = MachineState<PushSubscribeError["reason"]>
  * ```
  */
 export function subscription(options: SubscriptionOptions = {}) {
+	absolute("register", options.register)
+	absolute("unregister", options.unregister)
 	return machine<PushRegistration, PushSubscribeError["reason"]>(
 		{
 			supported,
@@ -321,13 +382,30 @@ export function subscription(options: SubscriptionOptions = {}) {
 			reason,
 			identify: ({ token }) => ({ token }),
 			rotations(listener) {
-				const handle = Notifications.addPushTokenListener((token) => {
-					// The listener hands over the *device* token. Registered natively that
-					// is the registration; registered through Expo, the Expo token that
-					// wraps it has changed too, so it's minted afresh.
-					const next = options.native ? Promise.resolve(native_registration(token)) : mint(options)
-					next.then(listener).catch(() => {})
-				})
+				let handle: { remove(): void }
+				try {
+					handle = Notifications.addPushTokenListener((token) => {
+						// Both platforms fire this for every getDevicePushTokenAsync, this
+						// module's own included — and minting is one of those, so a listener
+						// that re-minted on its own echo would never stop. Only a token that
+						// isn't the one last fetched is a rotation; then the registration is
+						// minted afresh (an Expo token wrapping it has changed too), remembered
+						// in place of the old one, and handed on to be re-filed.
+						if (token.data === last_device_token) return
+						last_device_token = token.data
+						stored(options)
+							.then((existing) => (existing ? mint(options) : null))
+							.then(async (registration) => {
+								if (!registration) return
+								await remember(options, registration)
+								listener(registration)
+							})
+							.catch(() => {})
+					})
+				} catch {
+					// No native module to listen to — nothing rotates here either.
+					return () => {}
+				}
 				return () => handle.remove()
 			},
 		},
@@ -343,7 +421,7 @@ export type PushSubscriptionStore = ReturnType<typeof subscription>
  *
  * @example
  * ```tsx
- * const push = usePush({ register: "https://example.com/push/registrations" })
+ * const push = usePush({ register: "https://example.com/push/registrations", storage: AsyncStorage })
  *
  * <Switch value={push.on} disabled={push.busy || !push.supported} onValueChange={push.toggle} />
  * ```

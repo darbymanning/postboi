@@ -45,6 +45,9 @@ const EXPO_TOKEN = /^Expo(?:nent)?PushToken\[[^\]]+\]$/
 /** The ticket and receipt errors that mean "this device is gone, delete your copy". */
 const DEAD_TOKEN = "DeviceNotRegistered"
 
+/** A request-level refusal — the whole request, not one notification in it. */
+type RequestError = { code?: string; message?: string }
+
 /**
  * Expo's push service — https://docs.expo.dev/push-notifications/sending-notifications/
  *
@@ -106,7 +109,7 @@ export default class Expo extends PushProvider<SendResponse> {
 				provider: this.provider,
 				channel: "push",
 				code: "invalid_target",
-				message: `Expo push tokens look like ExponentPushToken[…]; got ${JSON.stringify(message.to.slice(0, 24))}…. A raw FCM or APNs device token belongs to postboi/fcm or postboi/apns — or register with { native: false } in the app to get an Expo token.`,
+				message: `Expo push tokens look like ExponentPushToken[…]; got ${JSON.stringify(message.to.slice(0, 24))}…. A raw FCM or APNs device token belongs to postboi/fcm or postboi/apns — or drop { native: true } from the app's subscribe() to get an Expo token.`,
 			})
 		}
 
@@ -125,44 +128,48 @@ export default class Expo extends PushProvider<SendResponse> {
 			sound: "default",
 		}
 
-		// The token isn't forwarded to Apple or Google, so it doesn't count toward the limit.
-		const size = new TextEncoder().encode(JSON.stringify(payload)).length
-		if (size > MAX_PAYLOAD_BYTES) {
-			throw new PostboiError({
-				provider: this.provider,
-				channel: "push",
-				code: "payload_too_large",
-				message: `Push payload is ${size} bytes; Expo accepts ${MAX_PAYLOAD_BYTES}. Send an id and fetch the detail in the app.`,
-			})
-		}
+		// The token isn't forwarded to Apple or Google, so it doesn't count toward the limit —
+		// and the payload is serialized once, with the token spliced in front of it.
+		const json = JSON.stringify(payload)
+		this.check_payload(json, MAX_PAYLOAD_BYTES, "Expo accepts")
 
 		return {
 			url: SEND_URL,
 			headers: this.#headers(),
-			body: JSON.stringify({ to: message.to, ...payload }),
+			body: `{"to":${JSON.stringify(message.to)},${json.slice(1)}`,
 		}
 	}
 
-	/** The one ticket a single-message send comes back with. */
+	/**
+	 * The one ticket a single-message send comes back with. Expo mirrors the request's
+	 * shape — one message object gets one ticket object, an array gets an array — and
+	 * this sends the former, but both are read so the answer's shape can never hide it.
+	 */
 	#ticket(data: unknown): Outcome | undefined {
-		const tickets = (data as { data?: Array<Outcome> } | null)?.data
-		return Array.isArray(tickets) ? tickets[0] : undefined
+		const tickets = (data as { data?: Outcome | Array<Outcome> } | null)?.data
+		if (Array.isArray(tickets)) return tickets[0]
+		return tickets && typeof tickets === "object" ? tickets : undefined
 	}
 
 	protected parse_response(_response: Response, data: unknown): SendResponse {
 		return { id: this.#ticket(data)?.id ?? "" }
 	}
 
+	/** The request-level refusal in a response body, if that's what it carries. */
+	#request_error(response: Response, data: unknown): ProviderError | undefined {
+		const errors = (data as { errors?: Array<RequestError> } | null)?.errors
+		const first = Array.isArray(errors) ? errors[0] : undefined
+		if (!first) return undefined
+		return {
+			message: `Expo rejected the request: ${first.message ?? first.code ?? response.status}`,
+			code: first.code,
+		}
+	}
+
 	protected parse_error(response: Response, data: unknown): ProviderError | undefined {
 		// Request-level: the whole batch was refused (rate limit, bad token, wrong project).
-		const errors = (data as { errors?: Array<{ code?: string; message?: string }> } | null)?.errors
-		if (Array.isArray(errors) && errors.length) {
-			const [first] = errors
-			return {
-				message: `Expo rejected the request: ${first.message ?? first.code ?? response.status}`,
-				code: first.code,
-			}
-		}
+		const refused = this.#request_error(response, data)
+		if (refused) return refused
 		// Ticket-level: the request was fine, this notification wasn't. A 200 with an error
 		// ticket is how Expo says so, so the status can't be the answer.
 		const ticket = this.#ticket(data)
@@ -199,45 +206,51 @@ export default class Expo extends PushProvider<SendResponse> {
 	 * is the same check as on a send.
 	 */
 	async receipts(ids: ReadonlyArray<string>): Promise<Record<string, PushReceipt>> {
-		const out: Record<string, PushReceipt> = {}
-		for (let start = 0; start < ids.length; start += MAX_RECEIPTS) {
-			const chunk = ids.slice(start, start + MAX_RECEIPTS)
-			const response = await this.request({
-				url: RECEIPTS_URL,
-				headers: this.#headers(),
-				body: JSON.stringify({ ids: chunk }),
+		const chunks: Array<ReadonlyArray<string>> = []
+		for (let start = 0; start < ids.length; start += MAX_RECEIPTS)
+			chunks.push(ids.slice(start, start + MAX_RECEIPTS))
+		// The chunks are independent and Expo documents no concurrency limit here (its
+		// rate guidance is about sends), so a day's worth goes out together.
+		const pages = await Promise.all(chunks.map((chunk) => this.#receipts_page(chunk)))
+		return Object.assign({}, ...pages)
+	}
+
+	/** One receipts request, at most {@link MAX_RECEIPTS} ids. */
+	async #receipts_page(ids: ReadonlyArray<string>): Promise<Record<string, PushReceipt>> {
+		const response = await this.request({
+			url: RECEIPTS_URL,
+			headers: this.#headers(),
+			body: JSON.stringify({ ids }),
+		})
+		const data = await this.read_json(response)
+		const refused = this.#request_error(response, data)
+		if (!response.ok || refused) {
+			throw new PostboiError({
+				provider: this.provider,
+				channel: "push",
+				status: response.status,
+				code: refused?.code,
+				message: refused?.message ?? `Expo receipts request failed with status ${response.status}`,
+				raw: data,
 			})
-			const data = await this.read_json(response)
-			const errors = (data as { errors?: Array<{ code?: string; message?: string }> } | null)
-				?.errors
-			if (!response.ok || (Array.isArray(errors) && errors.length)) {
-				const [first] = errors ?? []
-				throw new PostboiError({
+		}
+		const out: Record<string, PushReceipt> = {}
+		const receipts = (data as { data?: Record<string, Outcome> } | null)?.data ?? {}
+		for (const [id, receipt] of Object.entries(receipts)) {
+			if (receipt?.status !== "error") {
+				out[id] = { ok: true }
+				continue
+			}
+			const error = this.#outcome_error(receipt)
+			out[id] = {
+				ok: false,
+				error: new PostboiError({
 					provider: this.provider,
 					channel: "push",
-					status: response.status,
-					code: first?.code,
-					message: `Expo receipts request failed: ${first?.message ?? first?.code ?? response.status}`,
-					raw: data,
-				})
-			}
-			const receipts = (data as { data?: Record<string, Outcome> } | null)?.data ?? {}
-			for (const [id, receipt] of Object.entries(receipts)) {
-				if (receipt?.status === "error") {
-					const error = this.#outcome_error(receipt)
-					out[id] = {
-						ok: false,
-						error: new PostboiError({
-							provider: this.provider,
-							channel: "push",
-							message: error.message,
-							code: error.code,
-							raw: receipt,
-						}),
-					}
-				} else {
-					out[id] = { ok: true }
-				}
+					message: error.message,
+					code: error.code,
+					raw: receipt,
+				}),
 			}
 		}
 		return out

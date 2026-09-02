@@ -700,14 +700,18 @@ native three.
 
 Two things the phone needed that the page didn't, and the plan hadn't listed:
 
-1. **An off switch with memory.** The OS remembers permission, not the user's choice —
-   after "turn off" in the app, `granted` is still the answer, and a toggle rendering that
-   lies. `storage` (AsyncStorage's shape) remembers it; without one it lasts a launch.
-2. **Inference needed a floor.** Expo's only field is optional, so under the old rule it
-   counted as configured on every machine and the VAPID trio could never infer Web Push
-   again. `infer_channel_provider` now also wants at least one credential actually set, and
-   `EXPO_ACCESS_TOKEN` alone infers `expo`. The registry's "reachable" pin names the four
-   siblings that trivially reach a credential-free provider, so a real subset stays visible.
+1. **A memory of being registered.** The browser's `PushManager` holds the subscription;
+   the OS holds only permission — granted by default on Android 12 and below, and still
+   granted after "turn off" in the app — so a toggle reading permission as "on" lies both
+   ways. The helper remembers the registration itself (`storage`, AsyncStorage's shape;
+   one launch without it), which also means `current()` never hits the network, and the
+   rotation listener has to tell the echo of its own token fetch from a real rotation.
+2. **Expo is never inferred.** Its only field is optional, so under the inference rule it
+   would count as configured on every machine and the VAPID trio could never infer Web
+   Push again — and `EXPO_ACCESS_TOKEN` is the name expo-server-sdk users already set. So
+   it carries the `ambient` mark, and `POSTBOI_PUSH_PROVIDER=expo` names it, which `init`
+   writes anyway. The registry's "reachable" pin now ignores a destination that needs
+   nothing, since there is no credential for it to take.
 
 Not done, and deliberately: no Expo example app (nothing here runs it), and no support for
 Expo's batch endpoint — sends go one per request through the base class so hooks stay

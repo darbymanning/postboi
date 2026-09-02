@@ -65,31 +65,38 @@ function memory_storage() {
 	}
 }
 
+function granted() {
+	expo.permissions.status = "granted"
+	expo.permissions.granted = true
+}
+
+/** A user who said yes at the prompt: the next request comes back granted. */
+function says_yes() {
+	expo.notifications.requestPermissionsAsync.mockResolvedValueOnce({
+		status: "granted",
+		granted: true,
+		canAskAgain: true,
+	})
+}
+
 beforeEach(async () => {
 	vi.clearAllMocks()
 	expo.listeners.clear()
 	expo.permissions.status = "undetermined"
 	expo.permissions.granted = false
+	expo.permissions.canAskAgain = true
 	delete expo.permissions.ios
 	expo.constants.platform = { ios: {} }
 	expo.constants.executionEnvironment = "standalone"
 	expo.constants.expoConfig = { extra: { eas: { projectId: "proj-1" } } }
-	// The module-level off switch is per process; a fresh subscribe resets it.
-	expo.permissions.status = "granted"
-	expo.permissions.granted = true
-	await subscribe()
-	expo.permissions.status = "undetermined"
-	expo.permissions.granted = false
+	// The module-level memory is per process: forget whatever the last test registered.
+	await unsubscribe()
 	vi.clearAllMocks()
 })
 
 describe("subscribe", () => {
 	it("creates the Android channel, asks, and hands back an Expo token for the project", async () => {
-		expo.notifications.requestPermissionsAsync.mockResolvedValueOnce({
-			status: "granted",
-			granted: true,
-			canAskAgain: true,
-		})
+		says_yes()
 
 		expect(await subscribe()).toEqual(EXPO_REGISTRATION)
 		// The channel comes before the prompt: on Android 13+ there is no prompt without one.
@@ -100,12 +107,16 @@ describe("subscribe", () => {
 			name: "Default",
 			importance: 5,
 		})
-		expect(expo.notifications.getExpoPushTokenAsync).toHaveBeenCalledWith({ projectId: "proj-1" })
+		// The device token is fetched here and handed over, so the platform's echo of that
+		// fetch is one the rotation listener can recognise as its own.
+		expect(expo.notifications.getExpoPushTokenAsync).toHaveBeenCalledWith({
+			projectId: "proj-1",
+			devicePushToken: { type: "ios", data: "a".repeat(64) },
+		})
 	})
 
 	it("doesn't ask again once granted", async () => {
-		expo.permissions.status = "granted"
-		expo.permissions.granted = true
+		granted()
 		await subscribe()
 		expect(expo.notifications.requestPermissionsAsync).not.toHaveBeenCalled()
 	})
@@ -128,6 +139,16 @@ describe("subscribe", () => {
 		const dismissed = await subscribe().catch((e) => e)
 		expect(subscribe.reason(dismissed)).toBe("permission_dismissed")
 
+		// Android reports a backed-out prompt as denied-but-can-ask-again. That's a shrug,
+		// not a wall: "go to Settings" would be the wrong advice.
+		expo.notifications.requestPermissionsAsync.mockResolvedValueOnce({
+			status: "denied",
+			granted: false,
+			canAskAgain: true,
+		})
+		const backed_out = await subscribe().catch((e) => e)
+		expect(subscribe.reason(backed_out)).toBe("permission_dismissed")
+
 		expect(subscribe.reason(new Error("other"))).toBeNull()
 		expect(denied).toBeInstanceOf(PushSubscribeError)
 	})
@@ -141,13 +162,13 @@ describe("subscribe", () => {
 	})
 
 	it("hands back the raw device token, tagged for the provider that sends to it", async () => {
-		expo.permissions.status = "granted"
-		expo.permissions.granted = true
+		granted()
 		expect(await subscribe({ native: true })).toEqual({
 			token: "a".repeat(64),
 			provider: "apns",
 			platform: "ios",
 		})
+		expo.constants.platform = { android: {} }
 		expo.notifications.getDevicePushTokenAsync.mockResolvedValueOnce({
 			type: "android",
 			data: "fcm-token",
@@ -161,18 +182,27 @@ describe("subscribe", () => {
 	})
 
 	it("refuses to mint an Expo token for no project, and says how to get one", async () => {
-		expo.permissions.status = "granted"
-		expo.permissions.granted = true
+		granted()
 		expo.constants.expoConfig = { extra: {} }
 		const error = await subscribe().catch((e) => e)
 		expect(subscribe.reason(error)).toBe("missing_project")
 		expect(String(error)).toContain("eas init")
 		// An explicit id wins, and a native registration never needed one.
 		expect(await subscribe({ project_id: "proj-2" })).toEqual(EXPO_REGISTRATION)
-		expect(expo.notifications.getExpoPushTokenAsync).toHaveBeenLastCalledWith({
-			projectId: "proj-2",
-		})
+		expect(expo.notifications.getExpoPushTokenAsync).toHaveBeenLastCalledWith(
+			expect.objectContaining({ projectId: "proj-2" })
+		)
 		expect(await subscribe({ native: true })).toMatchObject({ provider: "apns" })
+	})
+
+	it("reports a token exchange that fails as failed, not as one of the walls", async () => {
+		granted()
+		expo.notifications.getExpoPushTokenAsync.mockRejectedValueOnce(new Error("offline"))
+		const error = await subscribe().catch((e) => e)
+		expect(subscribe.reason(error)).toBe("failed")
+		expect(String(error)).toContain("offline")
+		// Nothing was remembered for a subscribe that didn't happen.
+		expect(await subscribe.current()).toBeNull()
 	})
 
 	it("is unsupported on the web build and in Expo Go on Android, and says which", async () => {
@@ -196,40 +226,58 @@ describe("subscribe", () => {
 })
 
 describe("current and unsubscribe", () => {
-	it("reports the registration once permission is granted, without prompting", async () => {
+	it("is what the last subscribe registered — not what permission alone would say", async () => {
+		// Android 12 and below grant by default: a fresh install has permission and no
+		// registration, and a toggle that read "granted" as "on" would lie.
+		granted()
 		expect(await subscribe.current()).toBeNull()
-		expo.permissions.status = "granted"
-		expo.permissions.granted = true
+
+		await subscribe()
 		expect(await subscribe.current()).toEqual(EXPO_REGISTRATION)
+		// Reported from memory: no prompt, and no token exchange.
 		expect(expo.notifications.requestPermissionsAsync).not.toHaveBeenCalled()
+		expect(expo.notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(1)
 	})
 
-	it("remembers the off switch — in memory, or in the storage given", async () => {
-		expo.permissions.status = "granted"
-		expo.permissions.granted = true
+	it("is null once permission has been revoked in Settings, whatever was remembered", async () => {
+		granted()
+		await subscribe()
+		expo.permissions.status = "denied"
+		expo.permissions.granted = false
+		expo.permissions.canAskAgain = false
+		expect(await subscribe.current()).toBeNull()
+	})
+
+	it("remembers the registration in the storage given, and forgets it on unsubscribe", async () => {
+		granted()
 		const storage = memory_storage()
+
+		await subscribe({ storage })
+		expect(JSON.parse(storage.store.get("postboi:push")!)).toEqual(EXPO_REGISTRATION)
+		expect(await subscribe.current({ storage })).toEqual(EXPO_REGISTRATION)
+		// A different memory knows nothing about it.
+		expect(await subscribe.current()).toBeNull()
 
 		expect(await unsubscribe({ storage })).toEqual(EXPO_REGISTRATION)
 		expect(expo.notifications.unregisterForNotificationsAsync).toHaveBeenCalled()
-		expect(storage.store.get("postboi:push")).toBe("off")
+		expect(storage.store.has("postboi:push")).toBe(false)
 		// Permission is still granted, but the user said no: that's what a toggle renders.
 		expect(await subscribe.current({ storage })).toBeNull()
 		expect(await unsubscribe({ storage })).toBeNull()
+	})
 
-		// Subscribing again clears it.
-		expect(await subscribe({ storage })).toEqual(EXPO_REGISTRATION)
-		expect(storage.store.has("postboi:push")).toBe(false)
-		expect(await subscribe.current({ storage })).toEqual(EXPO_REGISTRATION)
+	it("ignores a memory it can't read", async () => {
+		const storage = memory_storage()
+		storage.store.set("postboi:push", "not json")
+		expect(await subscribe.current({ storage })).toBeNull()
+		storage.store.set("postboi:push", JSON.stringify({ token: 1 }))
+		expect(await subscribe.current({ storage })).toBeNull()
 	})
 })
 
 describe("subscription", () => {
 	it("enables, files the registration at an absolute URL, and lands on", async () => {
-		expo.notifications.requestPermissionsAsync.mockResolvedValueOnce({
-			status: "granted",
-			granted: true,
-			canAskAgain: true,
-		})
+		says_yes()
 		const fetch = vi.fn(async () => ({ ok: true }))
 		vi.stubGlobal("fetch", fetch)
 
@@ -245,9 +293,16 @@ describe("subscription", () => {
 		vi.unstubAllGlobals()
 	})
 
+	it("refuses a relative register URL up front, rather than as a bare register_failed", () => {
+		expect(() => subscription({ register: "/push/registrations" })).toThrow(/absolute URL/)
+		expect(() => subscription({ unregister: "push" })).toThrow(/absolute URL/)
+		// Functions and absolute URLs are fine.
+		subscription({ register: async () => {}, unregister: "http://localhost:5173/push" })
+	})
+
 	it("unfiles by token on disable", async () => {
-		expo.permissions.status = "granted"
-		expo.permissions.granted = true
+		granted()
+		await subscribe()
 		const fetch = vi.fn(async () => ({ ok: true }))
 		vi.stubGlobal("fetch", fetch)
 
@@ -260,12 +315,13 @@ describe("subscription", () => {
 			body: JSON.stringify({ token: "ExponentPushToken[abc]" }),
 		})
 		expect(push.now()).toMatchObject({ on: false })
+		expect(await subscribe.current()).toBeNull()
 		vi.unstubAllGlobals()
 	})
 
 	it("re-files a token the OS rotates underneath a running app, while something listens", async () => {
-		expo.permissions.status = "granted"
-		expo.permissions.granted = true
+		granted()
+		await subscribe()
 		const filed: Array<unknown> = []
 		const push = subscription({
 			register: async (registration) => void filed.push(registration),
@@ -275,6 +331,13 @@ describe("subscription", () => {
 		await vi.waitFor(() => expect(push.now().on).toBe(true))
 		expect(expo.listeners.size).toBe(1)
 
+		// The platform echoes the token this module itself just fetched: not a rotation.
+		for (const listener of expo.listeners) listener({ type: "ios", data: "a".repeat(64) })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		expect(filed).toHaveLength(0)
+		expect(expo.notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(1)
+
+		// A different device token is one the OS rolled: minted afresh, remembered, filed.
 		expo.notifications.getExpoPushTokenAsync.mockResolvedValueOnce({
 			type: "expo",
 			data: "ExponentPushToken[rotated]",
@@ -282,9 +345,60 @@ describe("subscription", () => {
 		for (const listener of expo.listeners) listener({ type: "ios", data: "b".repeat(64) })
 		await vi.waitFor(() => expect(filed).toHaveLength(1))
 		expect(filed[0]).toMatchObject({ token: "ExponentPushToken[rotated]" })
+		expect(await subscribe.current()).toMatchObject({ token: "ExponentPushToken[rotated]" })
 
 		// Detaching the last listener lets the native listener go too.
 		stop()
 		expect(expo.listeners.size).toBe(0)
+	})
+
+	it("lets a rotation that lands during the first read through once the read says on", async () => {
+		granted()
+		await subscribe()
+		const filed: Array<unknown> = []
+		const push = subscription({
+			register: async (registration) => void filed.push(registration),
+		})
+		// Hold the first read on the permission check, and rotate underneath it.
+		let release!: () => void
+		expo.notifications.getPermissionsAsync.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					release = () => resolve({ ...expo.permissions })
+				})
+		)
+		push.subscribe(() => {})
+		expo.notifications.getExpoPushTokenAsync.mockResolvedValueOnce({
+			type: "expo",
+			data: "ExponentPushToken[rotated]",
+		})
+		for (const listener of expo.listeners) listener({ type: "ios", data: "c".repeat(64) })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		expect(filed).toHaveLength(0)
+
+		release()
+		await vi.waitFor(() => expect(filed).toHaveLength(1))
+	})
+
+	it("re-reads reality when a screen comes back, and listens to nothing where push isn't supported", async () => {
+		granted()
+		await subscribe()
+		const push = subscription({ register: async () => {} })
+		const stop = push.subscribe(() => {})
+		await vi.waitFor(() => expect(push.now().on).toBe(true))
+		stop()
+
+		// Turned off elsewhere while the screen was away.
+		await unsubscribe()
+		push.subscribe(() => {})
+		await vi.waitFor(() => expect(push.now().on).toBe(false))
+
+		expo.constants.platform = { web: {} }
+		expo.listeners.clear()
+		const web = subscription({ register: async () => {} })
+		web.subscribe(() => {})
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		expect(expo.listeners.size).toBe(0)
+		expect(web.now().supported).toBe(false)
 	})
 })

@@ -16,7 +16,8 @@ const respond = (body: unknown, { ok = true, status = 200 } = {}) =>
 		text: async () => JSON.stringify(body),
 	}) as unknown as Response
 
-const ok_ticket = { data: [{ status: "ok", id: "ticket-1" }] }
+// One message in, one ticket object out — Expo only answers with an array to an array.
+const ok_ticket = { data: { status: "ok", id: "ticket-1" } }
 
 function stub(body: unknown, init?: { ok?: boolean; status?: number }) {
 	const fetch = vi.fn().mockResolvedValue(respond(body, init))
@@ -89,6 +90,13 @@ describe("expo", () => {
 		expect(sent(fetch).priority).toBeUndefined()
 	})
 
+	it("reads the ticket in a batch-shaped answer too, and a 200 without one as not Expo's", async () => {
+		stub({ data: [{ status: "ok", id: "ticket-2" }] })
+		expect(await new Expo().send({ to: TOKEN, message: "hi" })).toEqual({ id: "ticket-2" })
+		stub({ hello: "world" })
+		await expect(new Expo().send({ to: TOKEN, message: "hi" })).rejects.toThrow(/no ticket/)
+	})
+
 	it("reads a 200 with an error ticket as the failure it is", async () => {
 		stub({
 			data: [{ status: "error", message: "Message too big", details: { error: "MessageTooBig" } }],
@@ -103,13 +111,11 @@ describe("expo", () => {
 
 	it("normalizes DeviceNotRegistered to the expiry every caller already handles", async () => {
 		stub({
-			data: [
-				{
-					status: "error",
-					message: `"${TOKEN}" is not a registered push notification recipient`,
-					details: { error: "DeviceNotRegistered" },
-				},
-			],
+			data: {
+				status: "error",
+				message: `"${TOKEN}" is not a registered push notification recipient`,
+				details: { error: "DeviceNotRegistered" },
+			},
 		})
 		const error = await new Expo().send({ to: TOKEN, message: "hi" }).catch((e) => e)
 		expect(PushProvider.is_expired(error)).toBe(true)
@@ -212,21 +218,26 @@ describe("zero-config push() with Expo", () => {
 		expect(fetch.mock.calls[0][1].headers.Authorization).toBeUndefined()
 	})
 
-	it("infers expo from an access token alone, and passes it through", async () => {
-		for (const k of ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"])
-			delete process.env[k]
+	it("is never inferred — not from the access token, and not from needing nothing", async () => {
+		// Every Expo field is optional, so unmarked it would count as configured on every
+		// machine and the VAPID trio could never infer Web Push again; and the token's name
+		// is the one expo-server-sdk's README reads, so it's set by people sending Expo push
+		// their own way. Naming the provider is the answer, and `init` writes it anyway.
+		await expect(push({ to: TOKEN, message: "hi" })).rejects.toMatchObject({
+			code: "no_push_provider",
+		})
+		process.env.EXPO_ACCESS_TOKEN = "expo-secret"
+		await expect(push({ to: TOKEN, message: "hi" })).rejects.toMatchObject({
+			code: "no_push_provider",
+		})
+	})
+
+	it("passes the access token through once the provider is named", async () => {
+		process.env.POSTBOI_PUSH_PROVIDER = "expo"
 		process.env.EXPO_ACCESS_TOKEN = "expo-secret"
 		const fetch = stub(ok_ticket)
 		await push({ to: TOKEN, message: "hi" })
 		expect(fetch.mock.calls[0][1].headers.Authorization).toBe("Bearer expo-secret")
-	})
-
-	it("never infers expo from nothing — a credential-free provider is still a choice", async () => {
-		// Every Expo field is optional, so without this rule Expo would count as configured
-		// on every machine, and the VAPID trio could never infer Web Push again.
-		await expect(push({ to: TOKEN, message: "hi" })).rejects.toMatchObject({
-			code: "no_push_provider",
-		})
 	})
 
 	it("honours the config file naming it", async () => {

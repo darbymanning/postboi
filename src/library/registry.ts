@@ -856,11 +856,16 @@ export const PUSH_PROVIDERS = [
 				env: "EXPO_ACCESS_TOKEN",
 				arg: "access_token",
 				// Optional, and the only push credential that is: the push service takes any
-				// request until the project switches on enhanced security. Setting it is
-				// still read as intent — see `infer_channel_provider`.
+				// request until the project switches on enhanced security. Never inferred
+				// from, twice over — with every field optional the provider would otherwise
+				// count as configured on every machine and stop the VAPID trio inferring Web
+				// Push, and the name is the one expo-server-sdk's own README reads, so it is
+				// set by anyone already sending Expo push their own way. POSTBOI_PUSH_PROVIDER
+				// names it, which `init` writes anyway.
 				label: "Access token (only with Enhanced Security for Push Notifications on)",
 				secret: true,
 				default: "",
+				ambient: true,
 			},
 		],
 	},
@@ -972,9 +977,8 @@ export function find_channel_provider(channel: Channel, key: string): ProviderMe
  *   still the way to say which.
  * - Optional fields (anything carrying a `default`) don't count towards a provider being
  *   configured, or every provider with one required field would qualify off a single stray
- *   variable. And at least one credential has to actually be set: a provider whose every
- *   field is optional (Expo, whose access token only exists under enhanced security) is
- *   configured by the token being there, not by needing nothing.
+ *   variable. (A provider whose every field is optional would therefore count as
+ *   configured everywhere, and must carry an `ambient` field — Expo does.)
  * - A provider with any `ambient` field is never inferred. Inference reads credentials as
  *   a statement of intent, which only holds while the env var name belongs to postboi's
  *   world: `VAPID_PRIVATE_KEY` is set by exactly one kind of person, `AWS_ACCESS_KEY_ID`
@@ -993,10 +997,8 @@ export function infer_channel_provider(
 ): string | undefined {
 	// The registry's entries are literal-typed, so a field without `default` doesn't carry
 	// the property at all — read them through the shape they satisfy instead.
-	const configured = inferable_channel_providers(channel).filter(
-		(provider) =>
-			provider.fields.some((field) => has(field.env)) &&
-			provider.fields.every((field) => field.default !== undefined || has(field.env))
+	const configured = inferable_channel_providers(channel).filter((provider) =>
+		provider.fields.every((field) => field.default !== undefined || has(field.env))
 	)
 	return configured.length === 1 ? configured[0].key : undefined
 }

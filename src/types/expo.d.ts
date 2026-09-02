@@ -36,7 +36,11 @@ declare module "expo-notifications" {
 	}
 	export function getPermissionsAsync(): Promise<NotificationPermissionsStatus>
 	export function requestPermissionsAsync(request?: unknown): Promise<NotificationPermissionsStatus>
-	export function getExpoPushTokenAsync(options?: { projectId?: string }): Promise<ExpoPushToken>
+	export function getExpoPushTokenAsync(options?: {
+		projectId?: string
+		/** The device token to register, when already fetched — else it fetches one itself. */
+		devicePushToken?: DevicePushToken
+	}): Promise<ExpoPushToken>
 	export function getDevicePushTokenAsync(): Promise<DevicePushToken>
 	export function unregisterForNotificationsAsync(): Promise<void>
 	export function setNotificationChannelAsync(

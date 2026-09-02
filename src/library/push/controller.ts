@@ -16,10 +16,16 @@
 import { subscribe, unsubscribe } from "./client.js"
 import type { PushSubscriptionJSON } from "./client.js"
 
-/** Why an enable failed: `subscribe.reason`'s union, plus the register call failing. */
-export type PushReason = NonNullable<ReturnType<typeof subscribe.reason>> | "register_failed"
+/** The browser driver's own reasons — the walls `subscribe()` can hit. */
+type BrowserReason = NonNullable<ReturnType<typeof subscribe.reason>>
 
-/** The machine's state, over whichever reasons its driver can produce. */
+/** Why an enable failed: `subscribe.reason`'s union, plus the register call failing. */
+export type PushReason = BrowserReason | "register_failed"
+
+/**
+ * The machine's state, over whichever reasons its driver can produce — plus the one the
+ * machine adds itself, the register call failing.
+ */
 export interface MachineState<TReason extends string> {
 	/** Push exists on this device. Always false during SSR. */
 	supported: boolean
@@ -32,7 +38,7 @@ export interface MachineState<TReason extends string> {
 }
 
 /** The browser's state: Web Push's reasons over the shared machine. */
-export type PushState = MachineState<PushReason>
+export type PushState = MachineState<BrowserReason>
 
 /**
  * What a platform supplies to drive the machine. Every method is the platform's own
@@ -149,10 +155,17 @@ export function machine<TRegistration, TReason extends string>(
 	 */
 	function watch_rotations() {
 		if (!driver.rotations || !options.register || detach_rotations) return
+		// Same rule as refresh(): no platform API is touched where push isn't supported —
+		// a missing native module throws from the listener call itself.
+		if (!driver.supported()) return
 		const register = options.register
 		detach_rotations = driver.rotations((registration) => {
-			if (!state.on) return
-			file(register, registration, "POST", driver.identify).catch(() => {})
+			// A rotation can land while the first read is still in flight; wait for it,
+			// so "not on yet" isn't mistaken for "not on".
+			void first_refresh().then(() => {
+				if (!state.on) return
+				return file(register, registration, "POST", driver.identify).catch(() => {})
+			})
 		})
 	}
 
@@ -239,7 +252,9 @@ export function machine<TRegistration, TReason extends string>(
 		subscribe(listener: (state: MachineState<TReason>) => void): () => void {
 			listeners.add(listener)
 			listener(state)
-			void first_refresh()
+			// The first listener ever gets the initial read; the first listener after a
+			// quiet spell (the screen unmounted, so rotations went unheard) gets a fresh one.
+			void (listeners.size === 1 && first_read ? refresh() : first_refresh())
 			watch_rotations()
 			return () => {
 				listeners.delete(listener)
@@ -279,7 +294,7 @@ export function machine<TRegistration, TReason extends string>(
  * ```
  */
 export function subscription(options: SubscriptionOptions = {}) {
-	return machine<PushSubscriptionJSON, PushReason>(
+	return machine<PushSubscriptionJSON, BrowserReason>(
 		{
 			supported: subscribe.supported,
 			current: subscribe.current,

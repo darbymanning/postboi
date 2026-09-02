@@ -208,7 +208,7 @@ try {
 | Reason | What happened |
 | --- | --- |
 | `permission_denied` | The user said no. The browser will not ask again. |
-| `permission_dismissed` | The prompt was closed without an answer. You can ask again later. |
+| `permission_dismissed` | The prompt was closed without an answer (Android reports a backed-out prompt as denied-but-can-ask-again, and that counts). You can ask again later. |
 | `unsupported` | No Web Push in this browser. `subscribe.supported()` tells you first. |
 | `missing_key` | No `{ key }` and nothing baked — run `bunx postboi sync` with `VAPID_PUBLIC_KEY` set. |
 | `no_service_worker` | No worker at `/sw.js` or `/service-worker.js` (or at the `sw` you passed). |
@@ -543,8 +543,12 @@ await fetch("https://example.com/api/push/register", {
 
 `token` is an `ExponentPushToken[…]` — what `postboi/expo` sends to — and `provider` says
 so, because a token from one push provider is meaningless to the others. Store both.
-**Call it on every launch**: it reuses the token the device has, tokens rotate, and the
-OS asks for permission at most once either way.
+
+When to call it depends on whether the app has a switch. An app that always pushes calls
+`subscribe()` on every launch: it reuses the token the device has, the OS asks at most
+once, and tokens rotate so the server should hear the latest. An app with a switch calls
+it when the user says yes, and on later launches re-posts `subscribe.current()` instead —
+`subscribe()` at launch would quietly undo an opt-out.
 
 Same surface as the browser, with the same names, so a settings screen shared between
 the two apps reads alike:
@@ -553,21 +557,22 @@ the two apps reads alike:
 | --- | --- |
 | `subscribe.supported()` | Is push available here? Not on the web build, not in Expo Go on Android |
 | `subscribe.permission()` | `"granted"`, `"denied"`, `"undetermined"` or `"unsupported"` — async, the OS is asked |
-| `subscribe.current()` | The registration this device holds, or null. Never prompts |
+| `subscribe.current()` | The registration this device holds, or null. Never prompts, never hits the network |
 | `subscribe.reason(error)` | Which wall a subscribe hit, or null for an error that wasn't ours |
 
 `unsubscribe()` unregisters the device and hands back the registration so you know which
 row to delete.
 
-On Android the helper creates the notification channel **before** asking — on Android 13+
-there is no permission prompt without one, and the OS answers "denied" as though the
-user had. Pass `channel: { id, name }` to name it; a send that names no `channelId` lands
-there.
+On Android the helper creates the `default` notification channel **before** asking — on
+Android 13+ there is no permission prompt without one, and the OS answers "denied" as
+though the user had. It's created at full importance, because it's the channel Expo
+delivers to, and the one Expo would otherwise create at default importance the first
+time a notification arrived.
 
 | Reason | What happened |
 | --- | --- |
 | `permission_denied` | The user said no. The OS will not ask again — they change it in Settings. |
-| `permission_dismissed` | The prompt was closed without an answer. You can ask again later. |
+| `permission_dismissed` | The prompt was closed without an answer (Android reports a backed-out prompt as denied-but-can-ask-again, and that counts). You can ask again later. |
 | `unsupported` | The web build (use `postboi/push`), or Expo Go on Android, which lost remote push in SDK 53 — use a development build. |
 | `missing_project` | No EAS project id. `eas init` writes one to `app.json`, or pass `{ project_id }`. |
 | `failed` | Expo couldn't mint a token. |
@@ -595,12 +600,15 @@ const push = usePush({
 ```
 
 Two things differ from the browser. `register` needs an **absolute URL** — a phone has no
-origin to resolve a relative one against. And `storage` is where the off switch is
-remembered: the OS remembers *permission*, but not that someone turned push off in your
-app while it stayed granted, which is exactly the state a toggle has to render after a
-restart. Anything with AsyncStorage's `getItem`/`setItem`/`removeItem` will do; without
-it the switch lasts until the app restarts. `subscription()` is the same machine for
-anything that isn't a component.
+origin to resolve a relative one against, and a relative one is refused up front rather
+than surfacing as a bare `register_failed`. And `storage` is where the registration is
+remembered: a browser's `PushManager` holds its subscription, but the OS holds only
+*permission* — granted by default on Android 12 and below, and left granted after
+someone turns push off in your app — so "is this device registered?" is something the
+helper has to remember for itself, and it's what `current()` answers from without a
+network round-trip. Anything with AsyncStorage's `getItem`/`setItem`/`removeItem` will
+do; without it the memory lasts one launch, and the switch comes up off after a restart.
+`subscription()` is the same machine for anything that isn't a component.
 
 The phone does have one thing the browser page lacks: it hears when the OS rotates the
 token underneath a running app. While something is rendering the toggle, a rotated token
@@ -631,8 +639,9 @@ And that's the setup. Expo's push service holds your FCM and APNs credentials �
 once with `eas credentials`, where the app's build already needs them — and forwards to
 both, so the server carries nothing. The one credential that exists is optional:
 `EXPO_ACCESS_TOKEN`, only once **Enhanced Security for Push Notifications** is switched
-on for the project, and setting it alone is enough for postboi to infer `expo` without
-naming it.
+on for the project. This is the one push provider that has to be named: there is no
+credential to infer it from, and the token's name is the one `expo-server-sdk` users
+already set for their own sends.
 
 ```typescript
 import { push } from "postboi"
