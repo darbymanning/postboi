@@ -573,7 +573,7 @@ export const SMS_PROVIDERS = [
 		name: "PureSMS",
 		import: "postboi/puresms",
 		class: "PureSms",
-		url: "https://puresms.uk/developers",
+		url: "https://new.puresms.app/",
 		regions: ["GB"],
 		note: "UK-native flat-rate pay-as-you-go, hosted in the EU, with signed delivery webhooks",
 		price: "2.8p",

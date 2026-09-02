@@ -29,6 +29,14 @@ describe("prepare", () => {
 		expect(text.last?.segments).toMatchObject({ count: 1, encoding: "gsm7" })
 	})
 
+	it("rejects a recipient list that is empty once parsed", async () => {
+		const text = new MockSms({ default: { from: "POSTBOI" } })
+		for (const to of [[], ", "]) {
+			await expect(text.send({ to, message: "hi" })).rejects.toMatchObject({ code: "no_recipient" })
+		}
+		expect(text.last).toBeUndefined()
+	})
+
 	it("accepts a comma-separated list, an array, and the object form", async () => {
 		const text = new MockSms({ default: { country: "GB" } })
 		await text.send({ to: "07788223344, 07700900123", message: "hi" })
@@ -231,12 +239,12 @@ describe("smsworks", () => {
 
 describe("puresms", () => {
 	it("sends a single message to /sms/send with the key in X-Api-Key", async () => {
-		const fetch = vi.fn().mockResolvedValue(respond({ json: { id: "12345", countryCode: "GB" } }))
+		const fetch = vi.fn().mockResolvedValue(respond({ json: { id: "12345" } }))
 		vi.stubGlobal("fetch", fetch)
 		const text = new PureSms({ api_key: "key", default: { from: "POSTBOI", country: "GB" } })
 		const result = await text.send({ to: "07788223344", message: "hi", tags: ["otp"] })
 
-		expect(result).toEqual({ id: "12345", count: undefined, errors: undefined })
+		expect(result).toEqual({ id: "12345", kind: "message" })
 		const [url, init] = fetch.mock.calls[0]
 		expect(url).toBe("https://connect-api.divergent.cloud/sms/send")
 		expect(init.headers["X-Api-Key"]).toBe("key")
@@ -266,17 +274,42 @@ describe("puresms", () => {
 		expect(body.sendAtUtc).toBe(when.toISOString())
 		expect(body.messages).toHaveLength(2)
 		expect(body.messages[1]).toMatchObject({ recipient: "+447700900123" })
-		expect(result).toMatchObject({ id: "b1", count: 2 })
+		expect(body.messages[1]).not.toHaveProperty("sendAtUtc")
+		expect(result).toEqual({ id: "b1", kind: "batch", count: 2 })
 	})
 
-	it("recognises a problem-details error body", async () => {
+	it("fails a batch that was only partly accepted, keeping what did go out on raw", async () => {
+		// 207 Multi-Status is `ok` to fetch; the errors array is what says a recipient was dropped.
+		const rejected = { index: 1, description: "Invalid recipient" }
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn()
+				.mockResolvedValue(
+					respond({ status: 207, json: { batchId: "b1", messageCount: 1, errors: [rejected] } })
+				)
+		)
+		const text = new PureSms({ api_key: "k", default: { from: "P", country: "GB" } })
+		const error = await text
+			.send({ to: ["07788223344", "07700900123"], message: "hi" })
+			.catch((e: PostboiError) => e)
+		expect(error).toMatchObject({ provider: "puresms", code: "partial_batch", status: 207 })
+		expect(error.message).toContain("Invalid recipient")
+		expect(error.raw).toMatchObject({ batchId: "b1", messageCount: 1 })
+	})
+
+	it("reads problem details, including the per-field validation errors", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue(
 				respond({
 					ok: false,
-					status: 401,
-					json: { title: "Unauthorized", status: 401, detail: "Invalid API key" },
+					status: 400,
+					json: {
+						title: "One or more validation errors occurred.",
+						status: 400,
+						errors: { recipient: ["Recipient must be E.164."] },
+					},
 				})
 			)
 		)
@@ -284,8 +317,8 @@ describe("puresms", () => {
 		await expect(text.send({ to: "+447788223344", message: "hi" })).rejects.toMatchObject({
 			provider: "puresms",
 			channel: "sms",
-			code: 401,
-			message: expect.stringContaining("Invalid API key"),
+			status: 400,
+			message: "One or more validation errors occurred. Recipient must be E.164.",
 		})
 	})
 
@@ -297,5 +330,24 @@ describe("puresms", () => {
 		const [url, init] = fetch.mock.calls[0]
 		expect(url).toBe("https://connect-api.divergent.cloud/sms/send/12345")
 		expect(init.method).toBe("DELETE")
+	})
+
+	it("treats a batch cancel that cancelled nothing as a failure, not a 200", async () => {
+		// The bulk endpoint answers 200 whether or not anything was still pending — the
+		// count is the only thing that says so.
+		const fetch = vi
+			.fn()
+			.mockResolvedValueOnce(respond({ json: { cancelledCount: 2 } }))
+			.mockResolvedValueOnce(
+				respond({ json: { cancelledCount: 0, reason: "Batch has already been sent" } })
+			)
+		vi.stubGlobal("fetch", fetch)
+		const text = new PureSms({ api_key: "k" })
+		await expect(text.cancel("b1", "batch")).resolves.toEqual({ id: "b1" })
+		expect(fetch.mock.calls[0][0]).toBe("https://connect-api.divergent.cloud/sms/send/bulk/b1")
+		await expect(text.cancel("b1", "batch")).rejects.toMatchObject({
+			provider: "puresms",
+			message: "Batch has already been sent",
+		})
 	})
 })

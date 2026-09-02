@@ -1328,6 +1328,11 @@ offers only optional basic auth. That's genuinely weaker, and it stings because
 plus the `?token=…` pattern used elsewhere in `webhooks/` is workable, but say so in the
 docs rather than glossing it.
 
+**Since then:** PureSMS shipped as the second UK provider (`postboi/puresms`) once the
+`SmsProvider` shape had carried three providers unchanged. The undocumented error bodies
+are still the caveat: its `parse_error` reads RFC 7807 problem details on the assumption
+the platform is ASP.NET, and a 207 partly-accepted batch is turned into a failure.
+
 **Unverified:** their volume tiers aren't published ("more than that? talk to us"), so
 high-volume rates need a conversation. Not a Phase 1 blocker.
 

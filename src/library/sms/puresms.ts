@@ -1,6 +1,6 @@
 import { SmsProvider, type PreparedSms, type SmsApiKeyOptions } from "./provider.js"
 import type { RequestSpec } from "../transport.js"
-import type { ProviderError } from "../errors.js"
+import { PostboiError, type ProviderError } from "../errors.js"
 
 /** Options for the PureSMS provider constructor. */
 type Options = SmsApiKeyOptions
@@ -17,8 +17,8 @@ export interface SendParams {
 	clientReference?: string
 }
 
-/** `count` and `errors` only come back from a batch — a partly-rejected one answers 207. */
-type SendResponse = { id: string; count?: number; errors?: Array<unknown> }
+/** `kind` says which endpoint `cancel` needs; `count` only comes back from a batch. */
+type SendResponse = { id: string; kind: "message" | "batch"; count?: number }
 
 /**
  * PureSMS — https://puresms.uk/developers
@@ -36,7 +36,8 @@ type SendResponse = { id: string; count?: number; errors?: Array<unknown> }
  */
 export default class PureSms extends SmsProvider<SendResponse> {
 	protected readonly provider = "puresms"
-	// `sendAtUtc` rides on the same payload, and `cancel` undoes it while still pending.
+	// `sendAtUtc` sits on the message for a single send and on the batch for bulk, and
+	// `cancel` undoes either while it's still pending.
 	protected override readonly supports_scheduling = true
 	#api_key: string
 	#host = "https://connect-api.divergent.cloud"
@@ -46,62 +47,95 @@ export default class PureSms extends SmsProvider<SendResponse> {
 		this.#api_key = api_key
 	}
 
-	#params(message: PreparedSms, recipient: string): SendParams {
+	#headers(json = true) {
+		return { "X-Api-Key": this.#api_key, ...(json && { "Content-Type": "application/json" }) }
+	}
+
+	#params(message: PreparedSms, recipient: string, sendAtUtc?: string): SendParams {
 		return {
 			sender: message.from ?? "",
 			recipient,
 			content: message.message,
+			sendAtUtc,
 			clientReference: message.tags?.[0],
 		}
 	}
 
 	protected build_request(message: PreparedSms): RequestSpec {
-		const headers = { "X-Api-Key": this.#api_key, "Content-Type": "application/json" }
-		const sendAtUtc = message.scheduled_at?.toISOString()
+		const send_at = message.scheduled_at?.toISOString()
 		// One recipient answers with a message id; several go to the bulk endpoint, which
 		// takes fully-rendered messages and schedules the whole batch from the top level.
 		if (message.to.length === 1) {
-			const body = { ...this.#params(message, message.to[0]), sendAtUtc }
-			return { url: `${this.#host}/sms/send`, headers, body: JSON.stringify(body) }
+			const body = this.#params(message, message.to[0], send_at)
+			return { url: `${this.#host}/sms/send`, headers: this.#headers(), body: JSON.stringify(body) }
 		}
 		const messages = message.to.map((to) => this.#params(message, to))
 		return {
 			url: `${this.#host}/sms/send/bulk`,
-			headers,
-			body: JSON.stringify({ sendAtUtc, messages }),
+			headers: this.#headers(),
+			body: JSON.stringify({ sendAtUtc: send_at, messages }),
 		}
 	}
 
 	protected parse_response(_response: Response, data: unknown): SendResponse {
 		const d = data as Record<string, unknown> | null
 		// Ids are int64s serialised as strings; the bulk endpoint calls its one `batchId`.
-		return {
-			id: String(d?.id ?? d?.batchId ?? ""),
-			count: d?.messageCount as number | undefined,
-			errors: d?.errors as Array<unknown> | undefined,
+		if (d?.batchId !== undefined) {
+			return { id: String(d.batchId), kind: "batch", count: d.messageCount as number }
 		}
+		return { id: String(d?.id ?? ""), kind: "message" }
 	}
 
 	protected parse_error(_response: Response, data: unknown): ProviderError | undefined {
 		if (data === null || typeof data !== "object") return undefined
 		const e = data as Record<string, unknown>
-		// Error bodies aren't documented. The platform is ASP.NET, so a rejection arrives as
-		// RFC 7807 problem details ({ title, detail, status }); a success carries an id.
+		// A batch that was only partly accepted answers 207 with the accepted count and one
+		// entry per rejected message. That is `ok` to fetch, and no other provider resolves a
+		// send that dropped a recipient, so it is a failure here too — `raw` keeps the batch
+		// id and the count for a caller that wants to know what did go out.
+		if (Array.isArray(e.errors) && e.errors.length > 0) {
+			const rejected = e.errors.map((r) => JSON.stringify(r)).join("; ")
+			return {
+				message: `puresms rejected ${e.errors.length} message(s): ${rejected}`,
+				code: "partial_batch",
+			}
+		}
 		if ("id" in e || "batchId" in e) return undefined
+		// Error bodies aren't documented. The platform is ASP.NET, so a rejection arrives as
+		// RFC 7807 problem details — { title, detail } — with validation failures keyed by
+		// field under `errors`, which is where the reason actually lives.
 		const message = [e.detail, e.title, e.message].find((m) => typeof m === "string")
-		return message ? { message, code: e.status as number | undefined } : undefined
+		if (!message) return undefined
+		const fields = e.errors && typeof e.errors === "object" ? Object.values(e.errors).flat() : []
+		return { message: [message, ...fields].join(" "), code: e.errorCode as string | undefined }
 	}
 
-	/** Cancel a scheduled message while it's still pending; a batch id cancels the batch. */
+	/**
+	 * Cancel a scheduled send while it's still pending, passing the `kind` `send` returned
+	 * so a batch id goes to the batch endpoint. Anything already sent surfaces as a normal
+	 * `PostboiError`: a single message is refused with a 400, while a batch answers 200 with
+	 * a `cancelledCount` that says how many were still pending, so zero is the failure here.
+	 */
 	async cancel(id: string, kind: "message" | "batch" = "message"): Promise<{ id: string }> {
 		const path = kind === "batch" ? "bulk/" : ""
 		const response = await this.request({
 			url: `${this.#host}/sms/send/${path}${encodeURIComponent(id)}`,
 			method: "DELETE",
-			headers: { "X-Api-Key": this.#api_key },
+			headers: this.#headers(false),
 		})
-		const error = this.error_for(response, await this.read_json(response), "cancel")
+		const data = await this.read_json(response)
+		const error = this.error_for(response, data, "cancel")
 		if (error) throw error
+		const d = data as { cancelledCount?: number; reason?: string } | null
+		if (kind === "batch" && d?.cancelledCount === 0) {
+			throw new PostboiError({
+				provider: this.provider,
+				channel: this.channel,
+				status: response.status,
+				message: d.reason ?? `puresms cancelled nothing in batch ${id}`,
+				raw: data,
+			})
+		}
 		return { id }
 	}
 }
