@@ -11,7 +11,7 @@
  * Frameworks that wrap the request deeper (Hono keeps it at `c.req.raw`) unwrap in
  * place: `app.post("/webhooks", (c) => webhook(handler)(c.req.raw))`.
  */
-import { receive, resolve_adapter, WebhookVerificationError } from "./index.js"
+import { receive, handshake, resolve_adapter, WebhookVerificationError } from "./index.js"
 import type { ReceiveOptions, WebhookAdapter, WebhookEvent } from "./index.js"
 import { is_error } from "../errors.js"
 
@@ -25,13 +25,21 @@ function json(body: unknown, status: number): Response {
 	})
 }
 
+/** What `receive()` and `handshake()` throwing means to the provider: 401 or 400. */
+function failure(error: unknown): Response {
+	if (error instanceof WebhookVerificationError) return json({ error: error.message }, 401)
+	return json({ error: is_error(error) ? error.message : String(error) }, 400)
+}
+
 /**
  * Build a request handler that receives provider delivery-event webhooks: verifies the
  * signature, normalizes the payload, and calls your handler once per event.
  *
  * Responses are what providers expect: `200 {received}` on success, `401` on a failed
  * signature, `400` on an unparseable payload, and `500` when your handler throws — so
- * the provider retries. SNS subscription handshakes (SES, Scaleway) confirm themselves.
+ * the provider retries. SNS subscription handshakes (SES, Scaleway) confirm themselves,
+ * and a provider that checks the endpoint with a GET before subscribing (Meta) gets its
+ * challenge echoed — route `GET` to the same handler for those.
  *
  * @example
  * ```ts
@@ -55,20 +63,30 @@ function build(
 		let body: string
 		let events: Array<WebhookEvent>
 		try {
+			// A provider's unsigned endpoint handshake (Meta's GET) is answered before
+			// anything is read as an event. Any other GET goes on to receive() exactly as it
+			// always did — a custom adapter may be answering its own provider's ping there,
+			// and every stock adapter turns it away with the same 401.
+			const challenge = await handshake(request, options)
+			if (challenge !== undefined) {
+				return new Response(challenge, { status: 200, headers: { "content-type": "text/plain" } })
+			}
 			// The adapter is resolved and the body read here, once, so both are still to
-			// hand for a handshake reply after `receive` has done its work.
+			// hand for a signed handshake reply after `receive` has done its work.
 			adapter = await resolve_adapter(options?.provider)
 			body = await request.text()
+			const bodiless = request.method === "GET" || request.method === "HEAD"
 			events = await receive(
-				new Request(request.url, { method: request.method, headers: request.headers, body }),
+				new Request(request.url, {
+					method: request.method,
+					headers: request.headers,
+					// A web Request refuses a body on GET/HEAD, even an empty one.
+					body: bodiless ? undefined : body,
+				}),
 				{ ...options, provider: adapter }
 			)
 		} catch (error) {
-			if (error instanceof WebhookVerificationError) {
-				return json({ error: error.message }, 401)
-			}
-			const message = is_error(error) ? error.message : String(error)
-			return json({ error: message }, 400)
+			return failure(error)
 		}
 
 		// A verified request that is a handshake rather than an event (SocketLabs echoes a
@@ -146,10 +164,13 @@ function node(
 		}
 
 		// The URL only matters to adapters that sign over it — the host is a stand-in.
+		const method = req.method ?? "POST"
 		const request = new Request(new URL(req.url ?? "/", "http://localhost"), {
-			method: req.method ?? "POST",
+			method,
 			headers,
-			body: body.length ? body : undefined,
+			// A web Request refuses a body on GET/HEAD; node happily delivers one (a probe,
+			// a proxy). Nothing signs over a GET body, so dropping it loses nothing.
+			body: body.length && method !== "GET" && method !== "HEAD" ? body : undefined,
 		})
 
 		const response = await build(handler, options)(request)

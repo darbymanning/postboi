@@ -950,7 +950,14 @@ templates and in-window service messages are free today, but **that ends 1 Octob
 `poll()` arrived for the email providers that push no webhooks (SMTP, Microsoft 365,
 Cloudflare). SMS and WhatsApp need it for a different reason, and **Twilio ships now**:
 `poll({ provider: "twilio" })` returns the same normalized events as every other adapter,
-one row covering both channels.
+one row covering both channels. **Meta's Cloud API ships too, on the other side of the
+line**: it pushes a real webhook, so it is a `receive()` adapter (`webhooks/meta.ts`) —
+`X-Hub-Signature-256` over the raw body with the app secret, plus the `hub.challenge`
+handshake Meta makes before subscribing an endpoint, which `webhook()` answers on a GET
+against `META_WEBHOOK_VERIFY_TOKEN`. Its `statuses` are the same events as Twilio's; its
+inbound `messages` are a STOP → `unsubscribed`, and anything else a person writes →
+`received` with `phone` and `body.text` — the webhook is the only way those reach you,
+unlike Twilio's replies, which sit in the Message resource for whoever reads them.
 
 **Why polling rather than webhooks.** Twilio's status callbacks exist, but the URL is set
 **per message, at send time** — so receiving them means every send having somewhere to
@@ -983,9 +990,10 @@ that has been quiet for that long is re-emitted once.
 - **Amazon SNS SMS** — delivery status goes to **CloudWatch Logs**, not an API that lists
   message states. Polling it would mean a CloudWatch Logs Insights query per window: a
   different shape of adapter, and a different set of IAM permissions to ask for.
-- **Meta WhatsApp Cloud API** — pushes proper webhooks, so it belongs with `receive()`
-  rather than `poll()`. Its verification is Meta's own `X-Hub-Signature-256`; adding it is
-  an adapter in `webhooks/`, not a poller.
+- ~~**Meta WhatsApp Cloud API**~~ — was here as "belongs with `receive()`, not `poll()`";
+  it now is (above). The one piece the `WebhookAdapter` contract lacked was the endpoint
+  handshake, added as an optional `handshake` the adapter uses to read the URL while the
+  module root does the fail-closed comparing — the same split as `verify`.
 
 ## Where this could go — the audience layer
 

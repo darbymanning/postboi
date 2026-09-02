@@ -22,10 +22,11 @@
  */
 import { PostboiError } from "../index.js"
 import type { Channel } from "../errors.js"
-import type { ProviderKey } from "../registry.js"
+import type { ProviderKey, WhatsappProviderKey } from "../registry.js"
 import { load_config } from "../config.js"
 import { ensure_env_loaded, read_env } from "../env.js"
 import { parse_json, sns_envelope, sns_subscribe_url } from "./shared.js"
+import { timing_safe_equal } from "./crypto.js"
 import { WebhookVerificationError } from "./errors.js"
 import type { EmailClient } from "./ua.js"
 
@@ -61,8 +62,9 @@ export type WebhookEventType =
 	 * Mail arriving at your sending address — the one event that isn't about a
 	 * send. `email` is the person who wrote to you, not a recipient, and
 	 * `message_id` is the send being replied to when the provider can tell.
-	 * The Postboi provider, Lettermint and Sequenzy (a tracked reply); providers without
-	 * inbound never emit it.
+	 * The Postboi provider, Lettermint and Sequenzy (a tracked reply); on WhatsApp
+	 * via Meta it is a message to your number, with the person in `phone`. Providers
+	 * without inbound never emit it.
 	 */
 	| "received"
 
@@ -84,7 +86,10 @@ export interface WebhookEvent {
 	provider: string
 	/** The provider's message id — matches the id `send()` returned, where the provider allows. */
 	message_id?: string
-	/** The recipient this event is about — on `received`, the sender who wrote to you. */
+	/**
+	 * The recipient this event is about — on `received`, the sender who wrote to you.
+	 * Unset on `sms` and `whatsapp` events, where the person is in `phone`.
+	 */
 	email?: string
 	/**
 	 * Which channel this event is about. Absent means email — every provider that
@@ -147,6 +152,15 @@ export interface WebhookAdapter {
 	verify(ctx: VerifyContext): void | Promise<void>
 	/** Map the raw body to normalized events (providers may batch several per request). */
 	normalize(body: string, ctx: NormalizeContext): Array<WebhookEvent> | Promise<Array<WebhookEvent>>
+	/**
+	 * Providers that check an endpoint is yours before subscribing it with a bare GET
+	 * (Meta): recognise that request and return the challenge it wants echoed plus the
+	 * token it presented, or `undefined` for a request that isn't one. Nothing is signed
+	 * yet at that point, so {@link handshake} does the comparing — fail-closed and
+	 * timing-safe, like `verify` — and an adapter only has to read the URL. A handshake
+	 * that arrives as a *signed* POST is `respond`'s job instead.
+	 */
+	handshake?(ctx: NormalizeContext): { challenge: string; token?: string } | undefined
 	/**
 	 * The response a request needs in the provider's own words, when it is not an event
 	 * but a handshake — SocketLabs validates an endpoint by expecting its `ValidationKey`
@@ -212,6 +226,9 @@ export const MODULES: Record<string, () => Promise<AdapterModule>> = {
 	plunk: () => import("./plunk.js"),
 	ses: () => import("./ses.js"),
 	scaleway: () => import("./scaleway.js"),
+	// WhatsApp via Meta's Cloud API — keyed like `whatsapp()`'s provider, and the one
+	// non-email provider here: Twilio reports both its channels by `poll()`.
+	meta: () => import("./meta.js"),
 }
 
 /** Options for {@link receive}. */
@@ -220,9 +237,13 @@ export interface ReceiveOptions {
 	 * Which provider the request comes from — a key like `"resend"`, or a custom
 	 * {@link WebhookAdapter}. Defaults to the same resolution `mail()` uses:
 	 * `POSTBOI_PROVIDER`, then `postboi.config.ts`, then a `POSTBOI_TOKEN` → the
-	 * Postboi provider.
+	 * Postboi provider — and, only when none of those names an email provider, the
+	 * WhatsApp provider (`POSTBOI_WHATSAPP_PROVIDER` / `whatsapp.provider`) when it
+	 * pushes webhooks. A project with both names `"meta"` here: the endpoint Meta
+	 * calls is never the one the email provider calls. (Twilio types but polls —
+	 * `poll()` is where its receipts are.)
 	 */
-	provider?: ProviderKey | "postboi" | WebhookAdapter
+	provider?: ProviderKey | WhatsappProviderKey | "postboi" | WebhookAdapter
 	/**
 	 * The signing secret / verification key. Defaults to the provider's
 	 * `<PROVIDER>_WEBHOOK_SECRET` environment variable. For Svix-style providers
@@ -232,26 +253,39 @@ export interface ReceiveOptions {
 	 */
 	secret?: string
 	/**
+	 * The token a provider's endpoint {@link handshake} must present (Meta's verify
+	 * token — a string you choose and type into the app dashboard). Defaults to
+	 * `<PROVIDER>_WEBHOOK_VERIFY_TOKEN`. Separate from `secret` on purpose: it travels
+	 * in a query string, and query strings end up in access logs.
+	 */
+	verify_token?: string
+	/**
 	 * Set false to skip signature verification and only normalize. Verification is
 	 * otherwise required — a missing secret is an error, never a silent pass.
 	 */
 	verify?: boolean
 }
 
-/** Resolve the provider key the same way the zero-config `mail()` does. */
+/**
+ * Resolve the provider key the same way the zero-config `mail()` does. A project with
+ * no email provider at all falls through to its WhatsApp one, if that pushes webhooks
+ * (Meta does; Twilio polls) — so a WhatsApp-only app gets zero-config `receive()` too.
+ */
 export async function resolve_key(): Promise<string> {
 	const config = await load_config()
 	await ensure_env_loaded()
-	const key =
+	const email =
 		read_env("POSTBOI_PROVIDER") ??
 		config.provider ??
 		(read_env("POSTBOI_TOKEN") ? "postboi" : undefined)
+	const whatsapp = read_env("POSTBOI_WHATSAPP_PROVIDER") ?? config.whatsapp?.provider
+	const key = email ?? (whatsapp && whatsapp in MODULES ? whatsapp : undefined)
 	if (!key) {
 		throw new PostboiError({
 			provider: "postboi",
 			code: "no_provider",
 			message:
-				"No provider configured. Run `bunx postboi init`, set POSTBOI_PROVIDER, or pass { provider } to receive().",
+				"No provider configured. Run `bunx postboi init`, set POSTBOI_PROVIDER (or POSTBOI_WHATSAPP_PROVIDER=meta), or pass { provider } to receive().",
 		})
 	}
 	return key
@@ -325,6 +359,58 @@ export async function receive(
 	}
 
 	return adapter.normalize(body, { headers: request.headers, url })
+}
+
+/**
+ * Answer a provider's endpoint handshake — the GET Meta makes once, when the callback
+ * URL is saved, to check the endpoint is yours before it subscribes it. Returns the
+ * challenge to send back as the response body (200, plain text), or `undefined` when
+ * the request isn't a handshake at all: not a GET, a provider that never does one, or a
+ * GET without the handshake's parameters. So a handler can try this first and fall
+ * through to {@link receive}; `webhook()` does exactly that.
+ *
+ * The presented token is compared (timing-safe) with `verify_token` — defaulting to
+ * `<PROVIDER>_WEBHOOK_VERIFY_TOKEN` — and, like signatures, this fails closed: no
+ * configured token throws rather than confirming a stranger's subscription. Throws
+ * {@link WebhookVerificationError} on a mismatch — return a 401 for those.
+ *
+ * `verify: false` does not apply here. It exists to normalize a payload you already
+ * trust (a replay, a local experiment), and a handshake has no payload: echoing any
+ * challenge would let whoever found the URL subscribe it to their own app.
+ */
+export async function handshake(
+	request: Request,
+	options: ReceiveOptions = {}
+): Promise<string | undefined> {
+	// Every handshake we know of rides the query string; a bare GET (a health check, a
+	// browser) is turned away before any adapter is resolved or loaded for it.
+	if (request.method !== "GET") return undefined
+	const url = new URL(request.url)
+	if (!url.search) return undefined
+
+	const adapter = await resolve_adapter(options.provider)
+	if (!adapter.handshake) return undefined
+	const presented = adapter.handshake({ headers: request.headers, url })
+	if (!presented) return undefined
+
+	await ensure_env_loaded()
+	const env = `${adapter.provider.toUpperCase()}_WEBHOOK_VERIFY_TOKEN`
+	const expected = options.verify_token ?? read_env(env) ?? undefined
+	if (!expected) {
+		throw new WebhookVerificationError({
+			provider: adapter.provider,
+			message: `No webhook verify token configured for ${adapter.provider}. Set ${env} to the verify token you gave the provider, or pass { verify_token }.`,
+			code: "missing_secret",
+		})
+	}
+	if (!presented.token || !timing_safe_equal(presented.token, expected)) {
+		throw new WebhookVerificationError({
+			provider: adapter.provider,
+			message: `${adapter.provider} webhook verify token did not match`,
+			code: "invalid_signature",
+		})
+	}
+	return presented.challenge
 }
 
 export { webhook, type RequestCarrier } from "./handler.js"
