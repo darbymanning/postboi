@@ -25,7 +25,7 @@ export interface WebPushSubscription {
 
 /**
  * Where a push notification goes. A Web Push subscription object, or a device token string
- * for FCM/APNs.
+ * for FCM, APNs, HMS or Expo.
  *
  * Note this is a **stored credential, not an address**: unlike an email or a phone number,
  * you cannot know it in advance — the device has to register first and hand it to you.

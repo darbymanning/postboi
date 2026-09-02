@@ -85,6 +85,29 @@ export abstract class PushProvider<TResponse = unknown> extends Transport<TRespo
 	}
 
 	/**
+	 * Refuse a payload the platform would bounce, saying how big it is. Every push
+	 * service caps the notification at a few kilobytes and answers a bare 400 past it,
+	 * which doesn't say which of your notifications was too big — so each provider checks
+	 * first, and this is the one place the check and its advice are written.
+	 */
+	protected check_payload(
+		payload: string,
+		limit: number,
+		holds: string,
+		where: "app" | "service worker" = "app"
+	): void {
+		const size = new TextEncoder().encode(payload).length
+		if (size > limit) {
+			throw new PostboiError({
+				provider: this.provider,
+				channel: "push",
+				code: "payload_too_large",
+				message: `Push payload is ${size} bytes; ${holds} ${limit}. Send an id and fetch the detail in the ${where}.`,
+			})
+		}
+	}
+
+	/**
 	 * Did the push service say this target is dead?
 	 *
 	 * Worth a first-class helper rather than leaving callers to match on status codes:

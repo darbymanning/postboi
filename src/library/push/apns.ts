@@ -175,15 +175,7 @@ export default class APNs extends PushProvider<SendResponse> {
 		}
 
 		const payload = this.payload(message)
-		const size = encoder.encode(payload).length
-		if (size > MAX_PAYLOAD_BYTES) {
-			throw new PostboiError({
-				provider: this.provider,
-				channel: "push",
-				code: "payload_too_large",
-				message: `Push payload is ${size} bytes; APNs accepts ${MAX_PAYLOAD_BYTES}. Send an id and fetch the detail in the app.`,
-			})
-		}
+		this.check_payload(payload, MAX_PAYLOAD_BYTES, "APNs accepts")
 
 		return {
 			url: `${this.#host}/3/device/${message.to}`,
