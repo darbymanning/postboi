@@ -509,6 +509,270 @@ export const PROVIDERS = [
 		],
 	},
 	{
+		key: "loops",
+		name: "Loops",
+		import: "postboi/loops",
+		class: "Loops",
+		url: "https://app.loops.so/settings?page=api",
+		fields: [
+			{ env: "LOOPS_API_KEY", arg: "api_key", label: "API key", secret: true },
+			{
+				env: "LOOPS_TRANSACTIONAL_ID",
+				arg: "transactional_id",
+				label: "Transactional email id (from the Transactional page)",
+			},
+			{
+				env: "LOOPS_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook signing secret (whsec_…, optional)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
+		key: "mailchannels",
+		name: "MailChannels",
+		import: "postboi/mailchannels",
+		class: "MailChannels",
+		url: "https://console.mailchannels.net",
+		fields: [{ env: "MAILCHANNELS_API_KEY", arg: "api_key", label: "API key", secret: true }],
+	},
+	{
+		key: "smtp2go",
+		name: "SMTP2GO",
+		import: "postboi/smtp2go",
+		class: "SMTP2GO",
+		url: "https://app.smtp2go.com/settings/apikeys/",
+		fields: [
+			{ env: "SMTP2GO_API_KEY", arg: "api_key", label: "API key (api-…)", secret: true },
+			{
+				env: "SMTP2GO_REGION",
+				arg: "region",
+				label: "Region (us, eu or au; optional)",
+				default: "",
+			},
+			{
+				env: "SMTP2GO_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook token (optional; also add ?token=… to the webhook URL)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
+		key: "socketlabs",
+		name: "SocketLabs",
+		import: "postboi/socketlabs",
+		class: "SocketLabs",
+		url: "https://cp.socketlabs.com",
+		fields: [
+			{ env: "SOCKETLABS_SERVER_ID", arg: "server_id", label: "Server id" },
+			{ env: "SOCKETLABS_API_KEY", arg: "api_key", label: "Injection API key", secret: true },
+			{
+				env: "SOCKETLABS_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Event webhook secret key (optional)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
+		key: "azure",
+		name: "Azure Communication Services",
+		import: "postboi/azure",
+		class: "Azure",
+		url: "https://portal.azure.com",
+		fields: [
+			{
+				env: "COMMUNICATION_SERVICES_CONNECTION_STRING",
+				arg: "connection_string",
+				label: "Connection string (endpoint=…;accesskey=…)",
+				secret: true,
+				ambient: true,
+			},
+			{
+				env: "AZURE_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Event Grid webhook token (optional; also add ?token=… to the endpoint URL)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
+		key: "gmail",
+		name: "Gmail (Google Workspace)",
+		import: "postboi/gmail",
+		class: "Gmail",
+		url: "https://console.cloud.google.com/iam-admin/serviceaccounts",
+		fields: [
+			{ env: "GMAIL_CLIENT_EMAIL", arg: "client_email", label: "Service account email" },
+			{
+				env: "GMAIL_PRIVATE_KEY",
+				arg: "private_key",
+				label: "Service account private key (PEM)",
+				secret: true,
+			},
+			{
+				env: "GMAIL_USER",
+				arg: "user",
+				label: "Mailbox to send as (optional; defaults to the from address)",
+				default: "",
+			},
+		],
+	},
+	{
+		key: "maileroo",
+		name: "Maileroo",
+		import: "postboi/maileroo",
+		class: "Maileroo",
+		url: "https://app.maileroo.com",
+		fields: [{ env: "MAILEROO_API_KEY", arg: "api_key", label: "API key", secret: true }],
+	},
+	{
+		key: "ahasend",
+		name: "AhaSend",
+		import: "postboi/ahasend",
+		class: "AhaSend",
+		url: "https://dash.ahasend.com",
+		fields: [
+			{ env: "AHASEND_API_KEY", arg: "api_key", label: "API key (aha-sk-…)", secret: true },
+			{ env: "AHASEND_ACCOUNT_ID", arg: "account_id", label: "Account id" },
+			{
+				env: "AHASEND_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook secret (optional)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
+		key: "postal",
+		name: "Postal",
+		import: "postboi/postal",
+		class: "Postal",
+		url: "https://docs.postalserver.io",
+		fields: [
+			{
+				env: "POSTAL_HOST",
+				arg: "host",
+				label: "Your Postal installation (https://postal.example.com)",
+			},
+			{ env: "POSTAL_API_KEY", arg: "api_key", label: "Mail server API key", secret: true },
+			{
+				env: "POSTAL_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook token (optional; also add ?token=… to the webhook URL)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
+		key: "customerio",
+		name: "Customer.io",
+		import: "postboi/customerio",
+		class: "CustomerIO",
+		url: "https://fly.customer.io/settings/api_credentials?keyType=app",
+		fields: [
+			{ env: "CUSTOMERIO_APP_API_KEY", arg: "api_key", label: "App API key", secret: true },
+			{
+				env: "CUSTOMERIO_REGION",
+				arg: "region",
+				label: "Region (us or eu; optional)",
+				default: "",
+			},
+			{
+				env: "CUSTOMERIO_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Reporting webhook signing key (optional)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
+		key: "infobip",
+		name: "Infobip",
+		import: "postboi/infobip",
+		class: "Infobip",
+		url: "https://portal.infobip.com/dev/api-keys",
+		fields: [
+			{ env: "INFOBIP_API_KEY", arg: "api_key", label: "API key", secret: true },
+			{ env: "INFOBIP_BASE_URL", arg: "base_url", label: "API base URL (xxxxx.api.infobip.com)" },
+			{
+				env: "INFOBIP_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Delivery report token (optional; also add ?token=… to the notify URL)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
+		key: "sendpulse",
+		name: "SendPulse",
+		import: "postboi/sendpulse",
+		class: "SendPulse",
+		url: "https://login.sendpulse.com/settings/#api",
+		fields: [
+			{ env: "SENDPULSE_CLIENT_ID", arg: "client_id", label: "REST API id" },
+			{
+				env: "SENDPULSE_CLIENT_SECRET",
+				arg: "client_secret",
+				label: "REST API secret",
+				secret: true,
+			},
+			{
+				env: "SENDPULSE_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook token (optional; also add ?token=… to the webhook URL)",
+				secret: true,
+				default: "",
+			},
+		],
+	},
+	{
+		key: "iterable",
+		name: "Iterable",
+		import: "postboi/iterable",
+		class: "Iterable",
+		url: "https://app.iterable.com/settings/apiKeys",
+		fields: [
+			{ env: "ITERABLE_API_KEY", arg: "api_key", label: "API key", secret: true },
+			{ env: "ITERABLE_CAMPAIGN_ID", arg: "campaign_id", label: "Triggered campaign id" },
+			{ env: "ITERABLE_REGION", arg: "region", label: "Region (us or eu; optional)", default: "" },
+		],
+	},
+	{
+		key: "jetemail",
+		name: "JetEmail",
+		import: "postboi/jetemail",
+		class: "JetEmail",
+		url: "https://app.jetemail.com",
+		fields: [{ env: "JETEMAIL_API_KEY", arg: "api_key", label: "API key", secret: true }],
+	},
+	{
+		key: "lettr",
+		name: "Lettr",
+		import: "postboi/lettr",
+		class: "Lettr",
+		url: "https://app.lettr.com",
+		fields: [{ env: "LETTR_API_KEY", arg: "api_key", label: "API key", secret: true }],
+	},
+	{
+		key: "primitive",
+		name: "Primitive",
+		import: "postboi/primitive",
+		class: "Primitive",
+		url: "https://app.primitive.dev",
+		fields: [{ env: "PRIMITIVE_API_KEY", arg: "api_key", label: "API key", secret: true }],
+	},
+	{
 		key: "zepto",
 		name: "ZeptoMail",
 		import: "postboi/zepto",
@@ -576,6 +840,18 @@ export const SMS_PROVIDERS = [
 				default: "",
 			},
 		],
+	},
+	{
+		key: "puresms",
+		name: "PureSMS",
+		import: "postboi/puresms",
+		class: "PureSms",
+		url: "https://new.puresms.app/",
+		regions: ["GB"],
+		note: "UK-native flat-rate pay-as-you-go, hosted in the EU, with signed delivery webhooks",
+		price: "2.8p",
+		verified: "2026-09-01",
+		fields: [{ env: "PURESMS_API_KEY", arg: "api_key", label: "API key", secret: true }],
 	},
 	{
 		key: "twilio",
@@ -853,6 +1129,31 @@ export const PUSH_PROVIDERS = [
 			{ env: "HMS_APP_SECRET", arg: "app_secret", label: "App secret", secret: true },
 		],
 	},
+	{
+		key: "expo",
+		name: "Expo",
+		import: "postboi/expo",
+		class: "Expo",
+		url: "https://expo.dev/accounts/[account]/settings/access-tokens",
+		note: "Expo and React Native apps, both platforms — Expo holds the FCM and APNs credentials, so the server needs none",
+		fields: [
+			{
+				env: "EXPO_ACCESS_TOKEN",
+				arg: "access_token",
+				// Optional, and the only push credential that is: the push service takes any
+				// request until the project switches on enhanced security. Never inferred
+				// from, twice over — with every field optional the provider would otherwise
+				// count as configured on every machine and stop the VAPID trio inferring Web
+				// Push, and the name is the one expo-server-sdk's own README reads, so it is
+				// set by anyone already sending Expo push their own way. POSTBOI_PUSH_PROVIDER
+				// names it, which `init` writes anyway.
+				label: "Access token (only with Enhanced Security for Push Notifications on)",
+				secret: true,
+				default: "",
+				ambient: true,
+			},
+		],
+	},
 ] as const satisfies ReadonlyArray<NotedProviderMeta>
 
 /** A known push provider key, e.g. `"webpush"`. */
@@ -919,6 +1220,25 @@ export const WHATSAPP_PROVIDERS = [
 				label: "WhatsApp Business Account id (optional; types your template names)",
 				default: "",
 			},
+			// Read by receive() (webhooks/meta.ts), not the send constructor, like the email
+			// providers' webhook_secret fields. Named META_* rather than WHATSAPP_* because
+			// both are the app's: the app secret signs every Meta product's webhooks.
+			{
+				env: "META_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label:
+					"App secret (optional; signs delivery webhooks — Basic Settings in the app dashboard)",
+				secret: true,
+				default: "",
+			},
+			{
+				env: "META_WEBHOOK_VERIFY_TOKEN",
+				arg: "webhook_verify_token",
+				label:
+					"Webhook verify token (optional; a string you choose, also typed into the webhook form)",
+				secret: true,
+				default: "",
+			},
 		],
 	},
 ] as const satisfies ReadonlyArray<NotedProviderMeta>
@@ -961,7 +1281,8 @@ export function find_channel_provider(channel: Channel, key: string): ProviderMe
  *   still the way to say which.
  * - Optional fields (anything carrying a `default`) don't count towards a provider being
  *   configured, or every provider with one required field would qualify off a single stray
- *   variable.
+ *   variable. (A provider whose every field is optional would therefore count as
+ *   configured everywhere, and must carry an `ambient` field — Expo does.)
  * - A provider with any `ambient` field is never inferred. Inference reads credentials as
  *   a statement of intent, which only holds while the env var name belongs to postboi's
  *   world: `VAPID_PRIVATE_KEY` is set by exactly one kind of person, `AWS_ACCESS_KEY_ID`

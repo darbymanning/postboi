@@ -144,8 +144,20 @@ export abstract class SmsProvider<TResponse = unknown> extends Transport<TRespon
 			}
 		}
 
+		const recipients = this.parse_phones(to, country)
+		// `[]` and `", "` are truthy, and would otherwise reach a provider as a request with
+		// nobody on it — a billable call for a batch endpoint, a confusing 4xx for the rest.
+		if (recipients.length === 0) {
+			throw new PostboiError({
+				provider: this.provider,
+				channel: "sms",
+				code: "no_recipient",
+				message: "No recipient number provided (to or default.to).",
+			})
+		}
+
 		return {
-			to: this.parse_phones(to, country),
+			to: recipients,
 			from,
 			message: options.message,
 			scheduled_at,

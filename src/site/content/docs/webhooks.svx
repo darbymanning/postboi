@@ -125,7 +125,7 @@ the same way:
 export const POST = webhook(async (event) => {
 	if (event.type === 'received') {
 		await open_ticket({
-			from: event.email,
+			from: event.email ?? event.phone, // a number when they wrote over WhatsApp
 			subject: event.subject,
 			body: event.body?.text ?? event.body?.html,
 			about: event.message_id, // the send being answered, if any
@@ -134,7 +134,10 @@ export const POST = webhook(async (event) => {
 })
 ```
 
-Postboi-provider only — providers without inbound mail never emit it.
+On WhatsApp via [Meta's Cloud API](/whatsapp#delivery-receipts-and-replies) it is a
+message to your number: `phone` is the person, `body.text` is what they said, and
+`message_id` is the send they replied to when they used WhatsApp's reply. Providers
+without inbound never emit it.
 
 ## Text messages
 
@@ -190,20 +193,61 @@ Providers fall into three camps:
 | Lettermint | Signed (HMAC timestamp+body, 5-minute replay window) | `LETTERMINT_WEBHOOK_SECRET`, the webhook's signing secret |
 | Unosend | Signed (HMAC of body) | `UNOSEND_WEBHOOK_SECRET`, the `whsec_…` signing secret |
 | Sequenzy | Signed (HMAC timestamp+body, 5-minute replay window) | `SEQUENZY_WEBHOOK_SECRET`, the endpoint's `whsec_…` signing secret; several comma-separated during a rotation |
-| Postmark, Brevo, SparkPost, Mailjet, ZeptoMail, Elastic Email, Plunk | Shared secret | `<PROVIDER>_WEBHOOK_SECRET`, a token you make up; put the same value in the webhook URL as `?token=…` (or the provider's auth-header option) |
+| Meta (WhatsApp Cloud API) | Signed (`X-Hub-Signature-256`, HMAC of body) | `META_WEBHOOK_SECRET`, the app secret from the app's Basic Settings — plus `META_WEBHOOK_VERIFY_TOKEN` for the [handshake](#metas-endpoint-handshake) |
+| Loops | Signed (standard-webhooks HMAC) | `LOOPS_WEBHOOK_SECRET`, the `whsec_…` signing secret from Settings → Webhooks |
+| AhaSend | Signed (standard-webhooks HMAC, keyed with the literal secret) | `AHASEND_WEBHOOK_SECRET`, the webhook's secret exactly as shown when it was created |
+| Customer.io | Signed (HMAC timestamp+body, 5-minute replay window) | `CUSTOMERIO_WEBHOOK_SECRET`, the reporting webhook's signing key |
+| SocketLabs | Secret key in the body | `SOCKETLABS_WEBHOOK_SECRET`, the endpoint's secret key — set it before pressing Validate, since the `Validation` handshake is verified like any other request and then echoed back by `webhook()` for you |
+| Postmark, Brevo, SparkPost, Mailjet, ZeptoMail, Elastic Email, Plunk, SMTP2GO, Postal, Infobip, SendPulse | Shared secret | `<PROVIDER>_WEBHOOK_SECRET`, a token you make up; put the same value in the webhook URL as `?token=…` (or the provider's auth-header option) |
 | The SMS Works (SMS) | Shared secret | `SMSWORKS_WEBHOOK_SECRET`, a token you make up, as `?token=…` on the delivery-report URL (Delivery Reports → Webhook Configuration) — or the basic-auth password on a reply-number webhook |
 | Amazon SES, Scaleway | Shared secret over SNS | `SES_WEBHOOK_SECRET` / `SCALEWAY_WEBHOOK_SECRET` as `?token=…` on the subscription URL; SNS subscription handshakes confirm automatically |
+| Azure Communication Services | Shared secret over Event Grid | `AZURE_WEBHOOK_SECRET` as `?token=…` on the subscription's endpoint URL (Event Grid keeps the query string secret); the subscription validation handshake is completed automatically. Engagement reports name the message but not the recipient, so opens and clicks carry `message_id` and no `email` |
 
 To skip verification deliberately (a local experiment, a payload replay), pass
 `{ verify: false }`: it's always an explicit opt-out, never a fallback.
 
+### Meta's endpoint handshake
+
+Meta checks an endpoint is yours before it subscribes it: saving the callback URL in
+the app dashboard sends a `GET` with `hub.mode=subscribe`, the **verify token** you
+typed into the same form, and a `hub.challenge` it expects back as the response body.
+`webhook()` answers that on a `GET` — route both methods to the same handler — and
+compares the token with `META_WEBHOOK_VERIFY_TOKEN` (or `{ verify_token }`), timing-safe
+and fail-closed like everything else here: no configured token is a 401, never a
+stranger's subscription confirmed. `{ verify: false }` doesn't reach it, for the same
+reason — a handshake has no payload to trust, only a URL anyone could have found.
+
+```typescript
+// SvelteKit src/routes/webhooks/whatsapp/+server.ts · Next.js route.ts
+const handle = webhook(async (event) => { … }, { provider: 'meta' })
+export { handle as GET, handle as POST }
+
+// Express: app.all('/webhooks/whatsapp', webhook.node(handler, { provider: 'meta' }))
+// Hono:    app.on(['GET', 'POST'], '/webhooks/whatsapp', (c) => handle(c.req.raw))
+```
+
+Name the provider: the zero-config default is your *email* provider, and the endpoint
+Meta calls is never the one your email provider calls. (A project with no email
+provider at all does fall through to `POSTBOI_WHATSAPP_PROVIDER=meta`, so a
+WhatsApp-only app needs nothing here.)
+
+Calling `receive()` yourself? `handshake(request, options)` from the same module is
+the piece `webhook()` uses: it returns the challenge to echo (send it as `200`, plain
+text), or `undefined` for a request that isn't a handshake, and throws
+`WebhookVerificationError` on a bad token. The verify token is separate from the app
+secret on purpose — it travels in a query string, and query strings end up in access
+logs.
+
 ## Providers that don't push: `poll()`
 
 SMTP, Microsoft 365 and Cloudflare Email Service don't emit delivery-event webhooks —
-`receive()` throws `webhooks_not_supported` and points here. Twilio is here for a
+`receive()` throws `webhooks_not_supported` and points here. Gmail has no delivery
+events at all, and Iterable, JetEmail, Lettr, MailChannels, Maileroo and Primitive have
+none postboi receives yet, so `receive()` throws the same for them. Twilio is here for a
 different reason: its status callbacks are set per message, at send time, so polling is
 what makes SMS and WhatsApp delivery receipts work with nothing configured and no public
-endpoint. Each still has somewhere the events can be fetched from, and `poll()` fetches
+endpoint. (Meta's Cloud API pushes a real webhook, so WhatsApp via Meta is `receive()`
+above.) Each still has somewhere the events can be fetched from, and `poll()` fetches
 what's new since the last call, returning the same normalized events plus an opaque
 cursor to persist:
 
@@ -246,6 +290,10 @@ await my_handler(mock_event('opened', { email: 'user@example.com' }))
 const { request, secret } = await mock_request({ provider: 'resend', type: 'clicked' })
 const events = await receive(request, { provider: 'resend', secret })
 // events[0].url === "https://example.com/pricing"
+
+// WhatsApp via Meta, a person writing back to your number:
+const wa = await mock_request({ provider: 'meta', type: 'received' })
+// (await receive(wa.request, { provider: 'meta', secret: wa.secret }))[0].body.text
 
 // Text-message providers put the number in `phone`:
 const sms = await mock_request({ provider: 'smsworks', type: 'failed' })

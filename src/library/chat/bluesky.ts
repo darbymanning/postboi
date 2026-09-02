@@ -132,14 +132,14 @@ export default class Bluesky extends ChatProvider<SendResponse> {
 	}
 
 	async #create_session(): Promise<Session> {
-		const response = await this.request({
-			url: `${this.#service}/xrpc/com.atproto.server.createSession`,
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ identifier: this.#identifier, password: this.#app_password }),
-		})
-		const data = await this.read_json(response)
-		const error = this.error_for(response, data, "login")
-		if (error) throw error
+		const data = await this.call(
+			{
+				url: `${this.#service}/xrpc/com.atproto.server.createSession`,
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ identifier: this.#identifier, password: this.#app_password }),
+			},
+			"login"
+		)
 
 		const session = (data ?? {}) as { did?: string; accessJwt?: string }
 		if (!session.did || !session.accessJwt) {

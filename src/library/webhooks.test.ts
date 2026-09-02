@@ -6,11 +6,13 @@ import {
 	WebhookVerificationError,
 	mock_event,
 	mock_request,
+	handshake,
 } from "$library/webhooks/index.js"
 import {
 	svix_verify,
 	timing_safe_equal,
 	hmac_sha256,
+	hex_encode,
 	base64_encode,
 	base64_decode,
 	verify_ecdsa_p256_sha256,
@@ -632,6 +634,290 @@ describe("receive — sequenzy", () => {
 	})
 })
 
+describe("receive — the new roster", () => {
+	const ctx = { headers: new Headers(), url: new URL("https://example.com/webhooks") }
+
+	it("loops: verifies standard-webhooks signatures and maps bounce kinds", async () => {
+		const { request, secret } = await mock_request({ provider: "loops", type: "bounced" })
+		expect(secret.startsWith("whsec_")).toBe(true)
+		const [event] = await receive(request, { provider: "loops", secret })
+		expect(event.bounce).toEqual({ category: "hard", detail: "User unknown" })
+		const { default: adapter } = await import("./webhooks/loops.js")
+		const soft = JSON.stringify({
+			eventName: "email.softBounced",
+			eventTime: 1734425918,
+			email: { id: "e1", subject: "S" },
+			contactIdentity: { email: "a@example.com" },
+		})
+		expect((await adapter.normalize(soft, ctx))[0]).toMatchObject({
+			type: "bounced",
+			message_id: "e1",
+			email: "a@example.com",
+			bounce: { category: "soft" },
+		})
+		const sent = JSON.stringify({
+			eventName: "campaign.email.sent",
+			email: {},
+			contactIdentity: {},
+		})
+		expect((await adapter.normalize(sent, ctx))[0].type).toBe("sent")
+		const contact = JSON.stringify({ eventName: "contact.created", contactIdentity: {} })
+		expect(await adapter.normalize(contact, ctx)).toEqual([])
+	})
+
+	it("smtp2go: reads form-encoded deliveries too, and classifies bounces", async () => {
+		const { default: adapter } = await import("./webhooks/smtp2go.js")
+		const form = new URLSearchParams({
+			event: "bounce",
+			email_id: "e1",
+			rcpt: "a@example.com",
+			bounce: "soft",
+			message: "452 mailbox full",
+		}).toString()
+		expect((await adapter.normalize(form, ctx))[0]).toMatchObject({
+			type: "bounced",
+			message_id: "e1",
+			email: "a@example.com",
+			bounce: { category: "soft", detail: "452 mailbox full" },
+		})
+		const sms = JSON.stringify({ event: "sms_delivered", email_id: "x" })
+		expect(await adapter.normalize(sms, ctx)).toEqual([])
+		const reject = JSON.stringify({ event: "reject", email_id: "e2", rcpt: "b@example.com" })
+		expect((await adapter.normalize(reject, ctx))[0].type).toBe("failed")
+	})
+
+	it("socketlabs: checks the secret key in the body and answers the validation handshake", async () => {
+		const { request, secret } = await mock_request({ provider: "socketlabs", type: "clicked" })
+		const [event] = await receive(request, { provider: "socketlabs", secret })
+		expect(event.url).toBe("https://example.com/pricing")
+		expect(event.client?.name).toBeTruthy()
+
+		const { default: adapter } = await import("./webhooks/socketlabs.js")
+		const unsubscribe = JSON.stringify({
+			Type: "Tracking",
+			TrackingType: 2,
+			Address: "a@example.com",
+		})
+		expect((await adapter.normalize(unsubscribe, ctx))[0].type).toBe("unsubscribed")
+		const failed = JSON.stringify({
+			Type: "Failed",
+			Address: "a@example.com",
+			FailureType: "Temporary",
+			Reason: "421 try later",
+		})
+		expect((await adapter.normalize(failed, ctx))[0].bounce).toEqual({
+			category: "soft",
+			detail: "421 try later",
+		})
+
+		const { webhook } = await import("./webhooks/handler.js")
+		const validation = new Request("https://example.com/webhooks", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ Type: "Validation", ValidationKey: "vk_123", SecretKey: secret }),
+		})
+		const seen: Array<unknown> = []
+		const response = await webhook((event) => void seen.push(event), {
+			provider: "socketlabs",
+			secret,
+		})(validation)
+		expect(response.status).toBe(200)
+		expect(await response.json()).toEqual({ ValidationKey: "vk_123" })
+		expect(seen).toEqual([])
+	})
+
+	it("azure: completes the Event Grid handshake and maps engagement reports", async () => {
+		const fetch_spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"))
+		try {
+			const { default: adapter } = await import("./webhooks/azure.js")
+			const handshake = JSON.stringify([
+				{
+					eventType: "Microsoft.EventGrid.SubscriptionValidationEvent",
+					data: {
+						validationCode: "code",
+						validationUrl:
+							"https://rp-westus.eventgrid.azure.net:553/eventsubscriptions/x/validate?id=1",
+					},
+				},
+			])
+			expect(await adapter.normalize(handshake, ctx)).toEqual([])
+			expect(fetch_spy).toHaveBeenCalledWith(
+				"https://rp-westus.eventgrid.azure.net:553/eventsubscriptions/x/validate?id=1"
+			)
+			// A forged handshake pointing anywhere else is ignored, not visited.
+			const forged = JSON.stringify([
+				{
+					eventType: "Microsoft.EventGrid.SubscriptionValidationEvent",
+					data: { validationUrl: "https://evil.example.com/steal" },
+				},
+			])
+			expect(await adapter.normalize(forged, ctx)).toEqual([])
+			expect(fetch_spy).toHaveBeenCalledTimes(1)
+		} finally {
+			fetch_spy.mockRestore()
+		}
+
+		const { request, secret } = await mock_request({ provider: "azure", type: "clicked" })
+		const [clicked] = await receive(request, { provider: "azure", secret })
+		expect(clicked).toMatchObject({
+			type: "clicked",
+			message_id: "8540c0de-899f-5cce-acb5-3ec493af3800",
+			url: "https://example.com/pricing",
+		})
+		expect(clicked.client?.name).toBeTruthy()
+
+		const { default: adapter } = await import("./webhooks/azure.js")
+		const suppressed = JSON.stringify([
+			{
+				eventType: "Microsoft.Communication.EmailDeliveryReportReceived",
+				data: { recipient: "a@example.com", messageId: "m", status: "Suppressed" },
+			},
+			{
+				eventType: "Microsoft.Communication.EmailDeliveryReportReceived",
+				data: { recipient: "a@example.com", messageId: "m", status: "Expanded" },
+			},
+		])
+		const events = await adapter.normalize(suppressed, ctx)
+		expect(events).toHaveLength(1)
+		expect(events[0].bounce?.category).toBe("suppressed")
+	})
+
+	it("postal: keys on the Message-ID header and reads bounces from the original message", async () => {
+		const { request, secret } = await mock_request({ provider: "postal", type: "bounced" })
+		const [event] = await receive(request, { provider: "postal", secret })
+		expect(event.message_id).toBe("6f4e8d4e-mock@rp.postal.example.com")
+		expect(event.tags).toEqual(["welcome"])
+		expect(event.bounce?.detail).toContain("Undeliverable")
+		const { default: adapter } = await import("./webhooks/postal.js")
+		const dns = JSON.stringify({ event: "DomainDNSError", payload: { domain: "x" } })
+		expect(await adapter.normalize(dns, ctx)).toEqual([])
+		const held = JSON.stringify({
+			event: "MessageHeld",
+			timestamp: 1700000000,
+			payload: { message: { message_id: "m", to: "a@example.com" }, status: "Held" },
+		})
+		expect((await adapter.normalize(held, ctx))[0].type).toBe("failed")
+	})
+
+	it("customerio: rejects a stale timestamp and ignores other channels", async () => {
+		const { request, secret } = await mock_request({ provider: "customerio", type: "delivered" })
+		const body = await request.text()
+		const { hmac_sha256, hex_encode } = await import("./webhooks/crypto.js")
+		const stale = String(Math.floor(Date.now() / 1000) - 3600)
+		const replay = new Request(request.url, {
+			method: "POST",
+			headers: {
+				"x-cio-timestamp": stale,
+				"x-cio-signature": hex_encode(await hmac_sha256(secret, `v0:${stale}:${body}`)),
+			},
+			body,
+		})
+		const error = await receive(replay, { provider: "customerio", secret }).catch((e) => e)
+		expect(error).toBeInstanceOf(WebhookVerificationError)
+		expect(error.code).toBe("stale_timestamp")
+
+		const { default: adapter } = await import("./webhooks/customerio.js")
+		const push = JSON.stringify({ object_type: "push", metric: "delivered", data: {} })
+		expect(await adapter.normalize(push, ctx)).toEqual([])
+		const undeliverable = JSON.stringify({
+			object_type: "email",
+			metric: "undeliverable",
+			data: { delivery_id: "d", identifiers: { email: "a@example.com" }, reason: "suppressed" },
+		})
+		expect((await adapter.normalize(undeliverable, ctx))[0]).toMatchObject({
+			type: "bounced",
+			email: "a@example.com",
+			bounce: { category: "suppressed", detail: "suppressed" },
+		})
+	})
+
+	it("ahasend: signs with the literal secret, and accepts the conventional readings too", async () => {
+		const { default: adapter } = await import("./webhooks/ahasend.js")
+		const { hmac_sha256, base64_encode } = await import("./webhooks/crypto.js")
+		const body = JSON.stringify({ type: "message.delivered", data: { recipient: "a@example.com" } })
+		const timestamp = String(Math.floor(Date.now() / 1000))
+		const raw = new Uint8Array(24).fill(9)
+		const secret = `whsec_${base64_encode(raw)}`
+		for (const key of [secret, secret.slice(6), raw] as Array<string | Uint8Array>) {
+			const signature = base64_encode(await hmac_sha256(key, `id.${timestamp}.${body}`))
+			await expect(
+				adapter.verify({
+					body,
+					headers: new Headers({
+						"webhook-id": "id",
+						"webhook-timestamp": timestamp,
+						"webhook-signature": `v1,${signature}`,
+					}),
+					url: ctx.url,
+					secret,
+				})
+			).resolves.toBeUndefined()
+		}
+		const suppressed = JSON.stringify({
+			type: "message.suppressed",
+			data: { recipient: "a@example.com", message_id_header: "m", reason: "on suppression list" },
+		})
+		expect((await adapter.normalize(suppressed, ctx))[0].bounce).toEqual({
+			category: "suppressed",
+			detail: "on suppression list",
+		})
+		const deferred = JSON.stringify({ type: "message.transient_error", data: {} })
+		expect((await adapter.normalize(deferred, ctx))[0].type).toBe("delayed")
+		const domain = JSON.stringify({ type: "domain.dns_error", data: {} })
+		expect(await adapter.normalize(domain, ctx)).toEqual([])
+	})
+
+	it("infobip: reads one report per result and keeps the permanent flag", async () => {
+		const { request, secret } = await mock_request({ provider: "infobip", type: "bounced" })
+		const [event] = await receive(request, { provider: "infobip", secret })
+		expect(event.bounce).toEqual({ category: "hard", detail: "Unknown Subscriber" })
+		const { default: adapter } = await import("./webhooks/infobip.js")
+		const mixed = JSON.stringify({
+			results: [
+				{ messageId: "1", to: "a@example.com", status: { groupName: "DELIVERED" } },
+				{ messageId: "2", to: "b@example.com", status: { groupName: "EXPIRED" } },
+				{ messageId: "3", to: "+447700900000", channel: "SMS", status: { groupName: "DELIVERED" } },
+			],
+		})
+		const events = await adapter.normalize(mixed, ctx)
+		expect(events.map((e) => e.type)).toEqual(["delivered", "failed"])
+	})
+
+	it("sendpulse: reads a batch, and the bounce events that name the address differently", async () => {
+		const { default: adapter } = await import("./webhooks/sendpulse.js")
+		const batch = JSON.stringify([
+			{
+				event: "delivered",
+				timestamp: 1490953933,
+				message_id: 1149317311,
+				recipient: "a@example.com",
+			},
+			{
+				event: "hard_bounces",
+				timestamp: 1658998170,
+				task_id: 17076325,
+				email: "b@example.com",
+				smtp_server_response_code: 550,
+				smtp_server_response_subcode: "5.1.1",
+				smtp_server_response: "Recipient address rejected",
+			},
+			{ event: "resubscribed", recipient: "c@example.com" },
+		])
+		const events = await adapter.normalize(batch, ctx)
+		expect(events).toHaveLength(2)
+		expect(events[0]).toMatchObject({
+			type: "delivered",
+			message_id: "1149317311",
+			email: "a@example.com",
+		})
+		expect(events[1]).toMatchObject({
+			type: "bounced",
+			email: "b@example.com",
+			bounce: { category: "hard", detail: "550 5.1.1 Recipient address rejected" },
+		})
+	})
+})
+
 describe("mock_event", () => {
 	it("builds a normalized event with sensible defaults and overrides", () => {
 		const event = mock_event("clicked", { email: "user@example.com" })
@@ -661,6 +947,17 @@ describe("receive — every provider round-trips through mock_request", () => {
 		["lettermint", ["delivered", "opened", "clicked", "bounced"]],
 		["unosend", ["delivered", "opened", "clicked", "bounced"]],
 		["sequenzy", ["delivered", "opened", "clicked", "bounced"]],
+		["loops", ["delivered", "opened", "clicked", "bounced"]],
+		["smtp2go", ["delivered", "opened", "clicked", "bounced"]],
+		["socketlabs", ["delivered", "opened", "clicked", "bounced"]],
+		// Event Grid's engagement reports name the message and sender, never the recipient.
+		["azure", ["delivered", "bounced"]],
+		["postal", ["delivered", "opened", "clicked", "bounced"]],
+		["customerio", ["delivered", "opened", "clicked", "bounced"]],
+		["ahasend", ["delivered", "opened", "clicked", "bounced"]],
+		// Infobip's delivery reports carry no engagement.
+		["infobip", ["delivered", "bounced"]],
+		["sendpulse", ["delivered", "opened", "clicked", "bounced"]],
 		["zepto", ["delivered", "opened", "clicked", "bounced"]],
 		["elasticemail", ["delivered", "opened", "clicked", "bounced"]],
 		// Plunk's documented payload is minimal — no click URL surfaced.
@@ -714,6 +1011,10 @@ describe("receive — every provider round-trips through mock_request", () => {
 			"lettermint",
 			"unosend",
 			"sequenzy",
+			"loops",
+			"customerio",
+			"ahasend",
+			"socketlabs",
 		]) {
 			const { request } = await mock_request({ provider, type: "delivered" })
 			const error = await receive(request, {
@@ -725,7 +1026,19 @@ describe("receive — every provider round-trips through mock_request", () => {
 	})
 
 	it("shared-secret providers reject a wrong token", async () => {
-		for (const provider of ["postmark", "brevo", "mailjet", "ses", "elasticemail", "smsworks"]) {
+		for (const provider of [
+			"postmark",
+			"brevo",
+			"mailjet",
+			"ses",
+			"elasticemail",
+			"smtp2go",
+			"azure",
+			"postal",
+			"infobip",
+			"sendpulse",
+			"smsworks",
+		]) {
 			const { request } = await mock_request({ provider, type: "delivered" })
 			const error = await receive(request, {
 				provider: provider as never,
@@ -895,6 +1208,27 @@ describe("receive — smsworks (SMS delivery reports and replies)", () => {
 		expect(await receive(reply, { provider: "smsworks", secret })).toEqual([])
 	})
 
+	it("is the default when no email provider is configured but the SMS one pushes", async () => {
+		const saved = { ...process.env }
+		delete process.env.POSTBOI_PROVIDER
+		delete process.env.POSTBOI_TOKEN
+		delete process.env.POSTBOI_WHATSAPP_PROVIDER
+		process.env.POSTBOI_SMS_PROVIDER = "smsworks"
+		try {
+			const { request, secret } = await mock_request({ provider: "smsworks", type: "delivered" })
+			const [event] = await receive(request, { secret })
+			expect(event).toMatchObject({ provider: "smsworks", type: "delivered", channel: "sms" })
+			// Twilio polls, so naming it is not naming a webhook provider.
+			process.env.POSTBOI_SMS_PROVIDER = "twilio"
+			const again = await mock_request({ provider: "smsworks", type: "delivered", secret })
+			const error = await receive(again.request, { secret }).catch((e) => e)
+			expect(error).toMatchObject({ code: "no_provider" })
+		} finally {
+			for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]
+			Object.assign(process.env, saved)
+		}
+	})
+
 	it("accepts the token as a basic-auth password, the option their reply webhooks offer", async () => {
 		const secret = "smsworks-token"
 		const request = new Request("https://example.com/webhooks", {
@@ -904,5 +1238,335 @@ describe("receive — smsworks (SMS delivery reports and replies)", () => {
 		})
 		const events = await receive(request, { provider: "smsworks", secret })
 		expect(events[0]).toMatchObject({ type: "delivered", phone: "+447700900123" })
+	})
+})
+
+describe("receive — meta (WhatsApp Cloud API)", () => {
+	/** Sign a payload the way Meta does: sha256=<hex HMAC of the raw body, app secret>. */
+	async function signed(payload: unknown, secret: string): Promise<Request> {
+		const body = JSON.stringify(payload)
+		const hex = hex_encode(await hmac_sha256(secret, body))
+		return new Request("https://example.com/webhooks/whatsapp", {
+			method: "POST",
+			headers: { "x-hub-signature-256": `sha256=${hex}` },
+			body,
+		})
+	}
+
+	function envelope(
+		value: Record<string, unknown>,
+		field = "messages",
+		object = "whatsapp_business_account"
+	) {
+		return {
+			object,
+			entry: [{ id: "200000000000002", changes: [{ field, value }] }],
+		}
+	}
+
+	it("verifies X-Hub-Signature-256 and normalizes a receipt end to end", async () => {
+		const { request, secret } = await mock_request({ provider: "meta", type: "delivered" })
+		expect(request.headers.get("x-hub-signature-256")).toMatch(/^sha256=[0-9a-f]{64}$/)
+
+		const events = await receive(request, { provider: "meta", secret })
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({
+			type: "delivered",
+			provider: "meta",
+			channel: "whatsapp",
+			phone: "+15557770006",
+			message_id: "wamid.mock",
+		})
+		expect(events[0].timestamp).toBeInstanceOf(Date)
+		// A handler reading `email` must never be handed a phone number.
+		expect(events[0].email).toBeUndefined()
+	})
+
+	it("reads the read receipt as the open it is, and a failure with Meta's words", async () => {
+		const read = await mock_request({ provider: "meta", type: "opened" })
+		const [opened] = await receive(read.request, { provider: "meta", secret: read.secret })
+		expect(opened).toMatchObject({ type: "opened", channel: "whatsapp", phone: "+15557770006" })
+
+		const failed = await mock_request({ provider: "meta", type: "failed" })
+		const [failure] = await receive(failed.request, { provider: "meta", secret: failed.secret })
+		expect(failure.type).toBe("failed")
+		// No bounce classification for a text message — the code and the reason are the detail.
+		expect(failure.bounce?.category).toBe("unknown")
+		expect(failure.bounce?.detail).toMatch(/^131047 Message failed to send/)
+	})
+
+	it("turns a texted STOP into an unsubscribe for the number that sent it", async () => {
+		const { request, secret } = await mock_request({ provider: "meta", type: "unsubscribed" })
+		const [event] = await receive(request, { provider: "meta", secret })
+		expect(event).toMatchObject({
+			type: "unsubscribed",
+			channel: "whatsapp",
+			phone: "+15557770006",
+			message_id: "wamid.mock-inbound",
+		})
+		expect(event.body).toBeUndefined()
+	})
+
+	it("carries anything else a person writes as received, about the send they answered", async () => {
+		const { request, secret } = await mock_request({ provider: "meta", type: "received" })
+		const [event] = await receive(request, { provider: "meta", secret })
+		expect(event).toMatchObject({
+			type: "received",
+			channel: "whatsapp",
+			phone: "+15557770006",
+			// The reply's context names your message; that is the id worth carrying.
+			message_id: "wamid.mock",
+			body: { text: "Thanks — that works for me." },
+		})
+	})
+
+	it("emits one event per status and per message in a batched delivery", async () => {
+		const secret = "app-secret"
+		const request = await signed(
+			envelope({
+				messaging_product: "whatsapp",
+				metadata: { display_phone_number: "15551110001", phone_number_id: "1" },
+				statuses: [
+					{ id: "a", status: "sent", timestamp: "1756720000", recipient_id: "15557770006" },
+					{ id: "b", status: "delivered", timestamp: "1756720001", recipient_id: "15557770006" },
+					{ id: "c", status: "read", timestamp: "1756720002", recipient_id: "15557770006" },
+					{
+						id: "d",
+						status: "failed",
+						timestamp: "1756720003",
+						recipient_id: "15557770007",
+						errors: [{ code: 131026, title: "Message undeliverable" }],
+					},
+					// Not things that happened to the send, in the vocabulary's terms.
+					{ id: "e", status: "deleted", timestamp: "1756720004", recipient_id: "15557770006" },
+					{ id: "f", status: "warning", timestamp: "1756720005", recipient_id: "15557770006" },
+				],
+				messages: [
+					{
+						from: "15557770006",
+						id: "g",
+						timestamp: "1756720006",
+						type: "text",
+						text: { body: "hi" },
+					},
+					// A reply that didn't use WhatsApp's reply carries its own id.
+					{
+						from: "15557770008",
+						id: "h",
+						timestamp: "1756720007",
+						type: "image",
+						image: { id: "m" },
+					},
+					{ from: "15557770006", id: "i", timestamp: "1756720008", type: "reaction", reaction: {} },
+					{
+						from: "15557770006",
+						id: "j",
+						timestamp: "1756720009",
+						type: "text",
+						text: { body: "stop." },
+					},
+					{
+						from: "15557770006",
+						id: "k",
+						timestamp: "1756720010",
+						type: "button",
+						button: { text: "Unsubscribe", payload: "Unsubscribe" },
+					},
+					// An interactive button or list row they tapped is words too.
+					{
+						from: "15557770006",
+						id: "l",
+						timestamp: "1756720011",
+						type: "interactive",
+						interactive: { type: "button_reply", button_reply: { id: "opt-out", title: "Stop" } },
+					},
+					{
+						from: "15557770006",
+						id: "m",
+						timestamp: "1756720012",
+						type: "interactive",
+						interactive: { type: "list_reply", list_reply: { id: "size-l", title: "Large" } },
+					},
+					// Quoting their own earlier message is not a reply to a send of yours.
+					{
+						from: "15557770006",
+						id: "n",
+						timestamp: "1756720013",
+						type: "text",
+						text: { body: "still waiting" },
+						context: { from: "15557770006", id: "g" },
+					},
+					{
+						from: "15557770006",
+						id: "o",
+						timestamp: "1756720014",
+						type: "text",
+						text: { body: "yes please" },
+						context: { from: "15551110001", id: "wamid.sent" },
+					},
+				],
+			}),
+			secret
+		)
+		const events = await receive(request, { provider: "meta", secret })
+		expect(events.map((event) => [event.message_id, event.type])).toEqual([
+			["a", "sent"],
+			["b", "delivered"],
+			["c", "opened"],
+			["d", "failed"],
+			["g", "received"],
+			["h", "received"],
+			["j", "unsubscribed"],
+			["k", "unsubscribed"],
+			["l", "unsubscribed"],
+			["m", "received"],
+			["n", "received"],
+			["wamid.sent", "received"],
+		])
+		expect(events[9]).toMatchObject({ body: { text: "Large" } })
+		expect(events[3].bounce).toEqual({
+			category: "unknown",
+			detail: "131026 Message undeliverable",
+		})
+		expect(events[3].phone).toBe("+15557770007")
+		expect(events[3].timestamp?.toISOString()).toBe("2025-09-01T09:46:43.000Z")
+		// A picture is a message from a person, with nothing to quote.
+		expect(events[5]).toMatchObject({ phone: "+15557770008", body: undefined })
+		for (const event of events) expect(event.channel).toBe("whatsapp")
+	})
+
+	it("ignores other Meta products and other fields on the account", async () => {
+		const secret = "app-secret"
+		const other_product = await signed(
+			envelope({ statuses: [{ id: "a", status: "sent" }] }, "messages", "page"),
+			secret
+		)
+		expect(await receive(other_product, { provider: "meta", secret })).toEqual([])
+
+		const template_review = await signed(
+			envelope({ event: "APPROVED", message_template_id: 1 }, "message_template_status_update"),
+			secret
+		)
+		expect(await receive(template_review, { provider: "meta", secret })).toEqual([])
+	})
+
+	it("rejects a wrong app secret, a missing signature, and no secret at all", async () => {
+		const { request } = await mock_request({ provider: "meta", type: "delivered" })
+		const wrong = await receive(request.clone(), { provider: "meta", secret: "not-it" }).catch(
+			(e) => e
+		)
+		expect(wrong).toBeInstanceOf(WebhookVerificationError)
+		expect(wrong.code).toBe("invalid_signature")
+
+		const unsigned = new Request(request.url, {
+			method: "POST",
+			body: await request.clone().text(),
+		})
+		const missing = await receive(unsigned, { provider: "meta", secret: "app-secret" }).catch(
+			(e) => e
+		)
+		expect(missing).toBeInstanceOf(WebhookVerificationError)
+		expect(missing.code).toBe("invalid_signature")
+
+		delete process.env.META_WEBHOOK_SECRET
+		const none = await receive(request, { provider: "meta" }).catch((e) => e)
+		expect(none).toBeInstanceOf(WebhookVerificationError)
+		expect(none.code).toBe("missing_secret")
+	})
+
+	it("reads the verify token from META_WEBHOOK_VERIFY_TOKEN when none is passed", async () => {
+		process.env.META_WEBHOOK_VERIFY_TOKEN = "from-env"
+		try {
+			const url =
+				"https://example.com/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=from-env&hub.challenge=42"
+			expect(await handshake(new Request(url), { provider: "meta" })).toBe("42")
+		} finally {
+			delete process.env.META_WEBHOOK_VERIFY_TOKEN
+		}
+	})
+
+	it("is the default when no email provider is configured but the WhatsApp one pushes", async () => {
+		const saved = { ...process.env }
+		delete process.env.POSTBOI_PROVIDER
+		delete process.env.POSTBOI_TOKEN
+		process.env.POSTBOI_WHATSAPP_PROVIDER = "meta"
+		try {
+			const { request, secret } = await mock_request({ provider: "meta", type: "opened" })
+			const [event] = await receive(request, { secret })
+			expect(event).toMatchObject({ provider: "meta", type: "opened", channel: "whatsapp" })
+		} finally {
+			for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]
+			Object.assign(process.env, saved)
+		}
+	})
+
+	it("mock_event knows a text-message event is about a number", () => {
+		const event = mock_event("received", { channel: "whatsapp" })
+		expect(event).toMatchObject({ channel: "whatsapp", phone: "+15557770006" })
+		expect(event.email).toBeUndefined()
+		expect(event.subject).toBeUndefined()
+		expect(event.body?.text).toBeDefined()
+	})
+})
+
+describe("receive — review fixes", () => {
+	const ctx = { headers: new Headers(), url: new URL("https://example.com/webhooks") }
+
+	it("smtp2go: zone-less timestamps are read as UTC, whatever the host's zone", async () => {
+		const { default: adapter } = await import("./webhooks/smtp2go.js")
+		const [event] = await adapter.normalize(
+			JSON.stringify({
+				event: "delivered",
+				email_id: "e",
+				rcpt: "a@example.com",
+				time: "2030-01-01 10:00:00",
+			}),
+			ctx
+		)
+		expect(event.timestamp?.toISOString()).toBe("2030-01-01T10:00:00.000Z")
+	})
+
+	it("azure: the handler answers the validation code, and sovereign-cloud validation URLs are visited", async () => {
+		const fetch_spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"))
+		try {
+			const { webhook } = await import("./webhooks/handler.js")
+			const handshake = new Request("https://example.com/webhooks?token=s", {
+				method: "POST",
+				headers: { "content-type": "application/json", "aeg-event-type": "SubscriptionValidation" },
+				body: JSON.stringify([
+					{
+						eventType: "Microsoft.EventGrid.SubscriptionValidationEvent",
+						data: {
+							validationCode: "code-123",
+							validationUrl: "https://rp-usgovvirginia.eventgrid.azure.us:553/validate?id=1",
+						},
+					},
+				]),
+			})
+			const response = await webhook(() => {}, { provider: "azure", secret: "s" })(handshake)
+			expect(response.status).toBe(200)
+			expect(await response.json()).toEqual({ validationResponse: "code-123" })
+			expect(fetch_spy).toHaveBeenCalledWith(
+				"https://rp-usgovvirginia.eventgrid.azure.us:553/validate?id=1"
+			)
+		} finally {
+			fetch_spy.mockRestore()
+		}
+	})
+
+	it("a whsec_ secret that isn't base64 is reported as a misconfiguration, not a forgery", async () => {
+		const { request } = await mock_request({ provider: "loops", type: "delivered" })
+		const error = await receive(request, { provider: "loops", secret: "whsec_***" }).catch((e) => e)
+		expect(error).toBeInstanceOf(WebhookVerificationError)
+		expect(error.code).toBe("missing_secret")
+		expect(error.message).toContain("LOOPS_WEBHOOK_SECRET")
+	})
+
+	it("the handler answers a body that was already read with a 400, not a crash", async () => {
+		const { webhook } = await import("./webhooks/handler.js")
+		const { request, secret } = await mock_request({ provider: "postmark", type: "delivered" })
+		await request.text()
+		const response = await webhook(() => {}, { provider: "postmark", secret })(request)
+		expect(response.status).toBe(400)
 	})
 })

@@ -391,18 +391,18 @@ export default class Postboi extends ProviderBase<SendResponse> {
 	/** Call a `/v1` path with bearer auth, an optional JSON body, and normalized errors. */
 	async #api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
 		const token = this.#require_token()
-		const response = await this.request({
-			url: `${this.#host}/v1${path}`,
-			method: init.method,
-			headers: {
-				Authorization: `Bearer ${token}`,
-				...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+		const data = await this.call(
+			{
+				url: `${this.#host}/v1${path}`,
+				method: init.method,
+				headers: {
+					Authorization: `Bearer ${token}`,
+					...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+				},
+				body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
 			},
-			body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-		})
-		const data = await this.read_json(response)
-		const error = this.error_for(response, data, path)
-		if (error) throw error
+			path
+		)
 		return data as T
 	}
 
