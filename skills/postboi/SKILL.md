@@ -238,6 +238,20 @@ betterAuth({ plugins: [postboi()] }) // auth.signed_up, auth.email_verified, aut
 
 Or connect the source and write no code: **Stripe, Paddle, Lemon Squeezy, Polar, Clerk, Supabase, Shopify, WooCommerce, PostHog**, plus a generic inbound hook for anything that can POST JSON (send it one request, then map the payload's fields). They write the same vocabulary — `billing.*` (`payment_failed`, `payment_recovered`, `subscription_started`, `purchase`, …), `auth.*`, `commerce.*` — so a sequence written against `billing.payment_recovered` works whichever processor the money moved through. `/raw/lifecycle`
 
+## MCP (agents)
+
+```bash
+bunx postboi mcp          # stdio, uses POSTBOI_TOKEN
+```
+
+Or the hosted one: `https://postboi.app/mcp`, streamable HTTP, `Authorization: Bearer <API key>`. Both serve the same tools — the local command is a proxy to the hosted server, so there is no second tool list to fall behind.
+
+Tools are **generated from the API's OpenAPI description**, so every endpoint is a tool. On top: `simulate_sequence` (walk a definition, saved or not, for one contact — sends nothing), `preview_email` (client compatibility, Gmail clipping, links, SPF/DKIM/DMARC — sends nothing, costs nothing) and `explain_enrollment` (why one contact didn't get the email).
+
+**Keys carry scopes** — `read`, `write`, `send`, `admin`. A key for an agent wants `read,write`: enough to create contacts, segments and sequence drafts and simulate them, not enough to send, enable a sequence or delete. Tools the key can't call aren't listed at all, so an empty `send` tool means ask a person, not retry. `admin` implies everything, `write` implies `read`, `send` implies nothing. Out of scope answers **403 `insufficient_scope`**, not 401.
+
+A generated or agent-written sequence is always a **draft**: write it, `simulate_sequence` it, show the simulation, let a person enable it. `https://postboi.app/agents.md` is the operating manual, including what always needs a human (sending, enabling, deleting, and anything that decides who can reach the account).
+
 ## Scheduling, tracking, bulk
 
 - `scheduled_at: { days: 1, hours: 5 } | Date | ISO string` — provider-side; only Postboi, Resend, Brevo, Mailgun and SendGrid support it, **others send immediately**. `cancel(id)` where supported; unsupported providers throw `cancel_not_supported`, never a silent no-op. `/raw/scheduling`
@@ -382,4 +396,5 @@ Order matters — the old provider keeps sending until the new domain verifies.
 | Email linting                         | `analyze`, `check_links` from `postboi/inspect`                                                                                                                                                                                                                                          |
 | Contact timeline                      | `mail.events.track` / `.record` from `postboi`                                                                                                                                                                                                                                           |
 | Auth-layer lifecycle plugins          | `postboi` from `postboi/better-auth` · `track`, `identify` from `postboi/convex` · `postboi`, `auth` from `postboi/lunora`                                                                                                                                                               |
+| MCP for agents                        | `bunx postboi mcp` (stdio) · `https://postboi.app/mcp` (hosted) · `https://postboi.app/agents.md`                                                                                                                                                                                        |
 | Spam helpers                          | `is_spam`, `SkipSendError` from `postboi`                                                                                                                                                                                                                                                |

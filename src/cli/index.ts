@@ -107,6 +107,7 @@ import { detect_domains, hostname_of, type DomainHint } from "./domain_hint.js"
 import { api_command, push_sequence_files } from "./api.js"
 import { dev_command } from "./dev.js"
 import { inspect_command } from "./inspect.js"
+import { mcp_command } from "./mcp.js"
 import { ensure_env_loaded, read_env } from "../library/env.js"
 
 const CONFIG_FILES = [
@@ -145,6 +146,8 @@ ${bold("Usage")}
   ${dim("                          (Vite projects already serve it at /__postboi)")}
   ${cyan("bunx postboi inspect")}  Lint an email's HTML — client compatibility, clipping, dead links
   ${dim("                          · <file.html> · --links --subject <s> --json (exit 1 on warnings)")}
+  ${cyan("bunx postboi mcp")}      MCP server over stdio, for agents ${dim("· --url=<base>")}
+  ${dim("                          (the hosted one is https://postboi.app/mcp — see /agents.md)")}
 
 ${bold("Account")} ${dim("(Postboi provider — full reference: https://api.postboi.app)")}
   ${cyan("bunx postboi whoami")}          The account behind your token
@@ -1976,6 +1979,7 @@ async function main(): Promise<void> {
 	if (command === "env") return env_command(argv.slice(3))
 	if (command === "dev") return dev_command(argv.slice(3))
 	if (command === "inspect") return inspect_command(argv.slice(3))
+	if (command === "mcp") return mcp_command(argv.slice(3))
 	if (command && (await api_command(command, argv.slice(3)))) return
 	help()
 	if (command && command !== "-h" && command !== "--help") {
