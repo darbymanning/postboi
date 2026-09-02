@@ -355,13 +355,13 @@ Order matters — the old provider keeps sending until the new domain verifies.
 
 1. `init` + `whoami`.
 2. `domains add` the sending domain. The DKIM CNAMEs coexist with the old provider's records, so this is zero-downtime. `domains check` until verified.
-3. **Import suppressions before anything sends** — export bounces/complaints/unsubscribes from the old provider, then `suppressions add` each (a loop is fine, one address per call).
-4. Import recipients. Bare emails: `recipients <list> add …`. With names/custom data, or in bulk (up to 10,000 per call), POST the API:
+3. **From Mailchimp, Kit, Loops or Brevo, steps 3 and 4 are one command.** `bunx postboi import --from kit --list Newsletter` reads the source's API **on this machine** with the user's own key (`--key`, or `KIT_API_KEY` / `MAILCHIMP_API_KEY` / `LOOPS_API_KEY` / `BREVO_API_KEY` in the environment) and never sends that key to Postboi. It walks every page, maps names, custom fields and tags, and writes each page's **suppressions before that page's contacts** — unsubscribed, bounced and complained addresses land as suppressions rather than as recipients. `--dry-run` reads the source and writes nothing, which is the way to check the mapping first. Mailchimp also needs `--source-list <audience id>`. Re-running is harmless: adding an address again never flips a membership. Then skip to step 5.
+4. Otherwise, by hand. **Import suppressions before anything sends** — export bounces/complaints/unsubscribes from the old provider, then `suppressions add` each (a loop is fine, one address per call). Then the recipients: bare emails with `recipients <list> add …`; with names, custom data or tags, or in bulk (up to 10,000 per call), POST the API:
 
    ```bash
    curl -X POST "https://api.postboi.app/v1/lists/Newsletter/recipients?status=subscribed" \
    	-H "Authorization: Bearer $POSTBOI_TOKEN" -H "Content-Type: application/json" \
-   	-d '[{ "email": "a@b.co", "name": "Ada", "data": { "plan": "pro" } }]'
+   	-d '[{ "email": "a@b.co", "name": "Ada", "data": { "plan": "pro" }, "tags": ["vip"] }]'
    ```
 
    **Critical on double-opt-in lists:** pass `?status=subscribed` (or per-row `"status": "subscribed"`) for already-confirmed subscribers — those rows get **no** confirmation email. Omitting it re-confirms the entire imported base.

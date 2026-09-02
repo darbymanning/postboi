@@ -108,6 +108,7 @@ import { api_command, push_sequence_files } from "./api.js"
 import { dev_command } from "./dev.js"
 import { inspect_command } from "./inspect.js"
 import { mcp_command } from "./mcp.js"
+import { import_command } from "./import.js"
 import { ensure_env_loaded, read_env } from "../library/env.js"
 
 const CONFIG_FILES = [
@@ -148,6 +149,9 @@ ${bold("Usage")}
   ${dim("                          · <file.html> · --links --subject <s> --json (exit 1 on warnings)")}
   ${cyan("bunx postboi mcp")}      MCP server over stdio, for agents ${dim("· --url=<base>")}
   ${dim("                          (the hosted one is https://postboi.app/mcp — see /agents.md)")}
+  ${cyan("bunx postboi import")}   Move an audience off another ESP ${dim("· --from mailchimp|kit|loops|brevo")}
+  ${dim("                          · --key <key> --list <name> --dry-run")}
+  ${dim("                          (runs here — your old ESP's key never reaches Postboi)")}
 
 ${bold("Account")} ${dim("(Postboi provider — full reference: https://api.postboi.app)")}
   ${cyan("bunx postboi whoami")}          The account behind your token
@@ -1980,6 +1984,7 @@ async function main(): Promise<void> {
 	if (command === "dev") return dev_command(argv.slice(3))
 	if (command === "inspect") return inspect_command(argv.slice(3))
 	if (command === "mcp") return mcp_command(argv.slice(3))
+	if (command === "import") return import_command(argv.slice(3))
 	if (command && (await api_command(command, argv.slice(3)))) return
 	help()
 	if (command && command !== "-h" && command !== "--help") {

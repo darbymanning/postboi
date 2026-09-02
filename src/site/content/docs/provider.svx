@@ -742,6 +742,32 @@ A texted **STOP** reaches the list on its own when Twilio delivery receipts are 
 for the account — see [opt-outs on the SMS page](/sms#opt-outs) — and the same
 `{ phone }` shape adds one by hand from wherever else a reply arrives.
 
+## Moving in from another ESP
+
+`postboi import` walks another provider's audience across. It runs **on your machine**:
+the source key is read from a flag or your environment, used to call that provider's own
+API directly, and never sent to Postboi. That is the whole reason it is a CLI command
+rather than a hosted importer with a "paste your Mailchimp key" box.
+
+```bash
+bunx postboi import --from kit --list Newsletter          # KIT_API_KEY from the environment
+bunx postboi import --from loops --key … --dry-run        # read everything, write nothing
+bunx postboi import --from mailchimp --source-list a1b2c3 # Mailchimp needs its audience id
+bunx postboi import --from brevo --list "Product news"
+```
+
+Names, custom fields and tags come across; unsubscribed, bounced and complained
+addresses land as **suppressions** rather than as recipients. Each page's suppressions
+are written before that page's contacts, so there is never a window in which a send
+could reach somebody the old provider had already been told not to mail.
+
+Already-confirmed subscribers arrive `subscribed`, so a double-opt-in list doesn't mail
+your whole imported base asking them to confirm again. Re-running is harmless: adding an
+address that is already on the list never changes its status.
+
+`--dry-run` reads the source and writes nothing, which is how to check the mapping
+before committing to it.
+
 ## Notes
 
 - `scheduled_at` schedules a send up to 30 days ahead. Scheduled messages appear in the
