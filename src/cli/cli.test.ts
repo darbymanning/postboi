@@ -777,6 +777,29 @@ describe("cloud domains & generated from types", () => {
 		})
 	})
 
+	it("fetch_domains carries a verified domain's DNS health, ignoring anything else", async () => {
+		// `status` says what happened the day it verified; `dns_status` says whether
+		// the records it verified on are still published. Only the two known values
+		// survive — a future one must not read as drift.
+		const account = await fetch_domains("https://x", "t", async () =>
+			json({
+				send_address: "a@b.c",
+				domains: [
+					{ domain: "ok.com", status: "verified", dns_status: "ok" },
+					{ domain: "gone.com", status: "verified", dns_status: "drifted" },
+					{ domain: "future.com", status: "verified", dns_status: "quantum" },
+					{ domain: "old-provider.com", status: "verified" },
+				],
+			})
+		)
+		expect(account?.domains.map((d) => d.dns_status)).toEqual([
+			"ok",
+			"drifted",
+			undefined,
+			undefined,
+		])
+	})
+
 	it("fetch_domains picks up the publishable captcha key", async () => {
 		const account = await fetch_domains("https://x", "t", async () =>
 			json({ send_address: "a@b.c", domains: [], captcha_key: "pk_123" })

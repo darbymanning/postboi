@@ -305,31 +305,61 @@ async function contacts(args: Array<string>): Promise<void> {
 
 // ── Domains ────────────────────────────────────────────────────────────────
 
+interface DnsRecord {
+	type: string
+	name: string
+	value: string
+	priority?: number
+}
+
 interface DomainDetail {
 	id: string
 	domain: string
 	status: string
-	records: Array<{ type: string; name: string; value: string; priority?: number }>
+	records: Array<DnsRecord>
 	setup?: { provider: string; connect_url?: string; covers_dmarc?: boolean; manage_url?: string }
+	/**
+	 * Whether a verified domain's records are *still* published. Absent on older
+	 * providers and until the first check has answered — see the app's
+	 * domain_health. `verified` is a fact about the past; this is the present one.
+	 */
+	dns?: {
+		status: "ok" | "drifted"
+		missing: Array<{ code: string; label: string }>
+		records: Array<DnsRecord>
+	}
+}
+
+/** Type / name / value, the one way records are printed. */
+function print_records(heading: string, records: Array<DnsRecord>): void {
+	if (records.length === 0) return
+	console.log(`\n${bold(heading)}\n`)
+	table(
+		["TYPE", "NAME", "VALUE"],
+		records.map((r) => [
+			r.type,
+			r.name,
+			r.priority !== undefined ? `${r.priority} ${r.value}` : r.value,
+		])
+	)
 }
 
 /** The records table + registrar shortcut a pending domain needs. */
 function print_domain_setup(detail: DomainDetail): void {
 	if (detail.status === "verified") {
-		return console.log(`${green("✓")} ${bold(detail.domain)} is verified`)
+		// Verified is not the end of the story: records get dropped at registrars,
+		// and a bare "✓ verified" over a domain whose DKIM has gone is the exact
+		// silence this check exists to break.
+		if (detail.dns?.status !== "drifted") {
+			return console.log(`${green("✓")} ${bold(detail.domain)} is verified`)
+		}
+		console.log(`${red("✗")} ${bold(detail.domain)} is verified, but its DNS records are missing\n`)
+		for (const issue of detail.dns.missing) console.log(`  ${dim("·")} ${issue.label}`)
+		print_records("Re-add these DNS records:", detail.dns.records)
+		return console.log(`\n${dim("Then:")} ${cyan(`bunx postboi domains check ${detail.domain}`)}`)
 	}
 	console.log(`${yellow("⌛")} ${bold(detail.domain)} is ${detail.status}`)
-	if (detail.records.length > 0) {
-		console.log(`\n${bold("Publish these DNS records:")}\n`)
-		table(
-			["TYPE", "NAME", "VALUE"],
-			detail.records.map((r) => [
-				r.type,
-				r.name,
-				r.priority !== undefined ? `${r.priority} ${r.value}` : r.value,
-			])
-		)
-	}
+	print_records("Publish these DNS records:", detail.records)
 	const setup = detail.setup
 	if (setup?.connect_url) {
 		const dmarc = setup.covers_dmarc ? " (DMARC included)" : ""
@@ -377,13 +407,22 @@ async function domains(args: Array<string>): Promise<void> {
 	if (identity.domains.length === 0) {
 		return console.log(dim("No custom domains yet — postboi domains add <domain>"))
 	}
+	// A verified domain whose records have since gone reads as "verified" everywhere
+	// else; here is one of the two places a person actually looks at the list.
 	table(
 		["DOMAIN", "STATUS"],
 		identity.domains.map((d) => [
 			d.domain,
-			d.status === "verified" ? green(d.status) : yellow(d.status),
+			d.dns_status === "drifted"
+				? red("dns records missing")
+				: d.status === "verified"
+					? green(d.status)
+					: yellow(d.status),
 		])
 	)
+	if (identity.domains.some((d) => d.dns_status === "drifted")) {
+		console.log(`\n${dim("Records to re-add:")} ${cyan("bunx postboi domains check <domain>")}`)
+	}
 	if (identity.domains.some((d) => d.status !== "verified")) {
 		console.log(
 			`\n${dim("Pending? See its records:")} ${cyan("bunx postboi domains check <domain>")}`

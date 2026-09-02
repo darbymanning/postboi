@@ -289,6 +289,12 @@ export async function poll_connect(
 export interface PostboiDomain {
 	domain: string
 	status: string
+	/**
+	 * Whether a verified domain's DNS records are *still* published. Absent on older
+	 * providers and until a check has answered — `status` is a fact about the day it
+	 * was verified, this one is about today.
+	 */
+	dns_status?: "ok" | "drifted"
 }
 
 /** The account's sending identity, as reported by `GET /v1/domains`. */
@@ -336,6 +342,8 @@ export async function fetch_domains(
 				.map((d) => ({
 					domain: d.domain as string,
 					status: typeof d.status === "string" ? d.status : "pending",
+					dns_status:
+						d.dns_status === "drifted" || d.dns_status === "ok" ? d.dns_status : undefined,
 				})),
 			captcha_key: typeof data.captcha_key === "string" ? data.captcha_key : undefined,
 			webhook_secrets: Array.isArray(data.webhook_secrets)
