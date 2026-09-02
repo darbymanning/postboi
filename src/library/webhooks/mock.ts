@@ -14,7 +14,7 @@ import { parse_user_agent } from "./ua.js"
 import { generate_svix_secret, generate_token } from "./crypto.js"
 
 /** Providers whose mock requests are signed with the Svix `whsec_…` scheme. */
-const SVIX_PROVIDERS = new Set(["resend", "postboi"])
+const SVIX_PROVIDERS = new Set(["resend", "postboi", "loops"])
 
 /**
  * A synthetic normalized event — the fastest way to unit-test handler logic.

@@ -16,6 +16,24 @@ import MailPace from "$library/mailpace.js"
 import Lettermint from "$library/lettermint.js"
 import Unosend from "$library/unosend.js"
 import Sequenzy from "$library/sequenzy.js"
+import Loops from "$library/loops.js"
+import MailChannels from "$library/mailchannels.js"
+import SMTP2GO from "$library/smtp2go.js"
+import SocketLabs from "$library/socketlabs.js"
+import Azure from "$library/azure.js"
+import Gmail from "$library/gmail.js"
+import Maileroo from "$library/maileroo.js"
+import AhaSend from "$library/ahasend.js"
+import Postal from "$library/postal.js"
+import CustomerIO from "$library/customerio.js"
+import Infobip from "$library/infobip.js"
+import SendPulse from "$library/sendpulse.js"
+import Iterable from "$library/iterable.js"
+import JetEmail from "$library/jetemail.js"
+import Lettr from "$library/lettr.js"
+import Primitive from "$library/primitive.js"
+import { clear_token_cache } from "$library/push/oauth.js"
+import { createHash, generateKeyPairSync } from "node:crypto"
 import Scaleway from "$library/scaleway.js"
 import SES from "$library/ses.js"
 import Microsoft365 from "$library/microsoft365.js"
@@ -1202,5 +1220,1186 @@ describe("scheduled_at provider formats", () => {
 		}).send({ to: "to@test.com", body: "x", scheduled_at: when })
 		const form = sent_init().body as FormData
 		expect(form.get("o:deliverytime")).toBe(when.toUTCString())
+	})
+})
+
+describe("Loops", () => {
+	const mail = () => new Loops({ api_key: "loops_key", transactional_id: "clx_tpl" })
+
+	it("hands the send over as data variables for the transactional template", async () => {
+		fetch.mockResolvedValue(respond({ json: { success: true } }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			from: "Acme <from@test.com>",
+			subject: "Hi {name}",
+			body: "<p>x</p>",
+			text: "x",
+			idempotency_key: "idem-1",
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://app.loops.so/api/v1/transactional")
+		expect(sent_init().headers).toMatchObject({
+			Authorization: "Bearer loops_key",
+			"Idempotency-Key": "idem-1",
+		})
+		const body = sent_json()
+		expect(body.transactionalId).toBe("clx_tpl")
+		expect(body.email).toBe("to@test.com")
+		expect(body.dataVariables).toEqual({
+			subject: "Hi {name}",
+			from: "Acme <from@test.com>",
+			html: "<p>x</p>",
+			text: "x",
+			name: "To",
+		})
+		expect(body.attachments).toEqual([
+			{ filename: "doc.pdf", contentType: "application/pdf", data: b64("filedata") },
+		])
+		expect(result).toEqual({ success: true })
+	})
+
+	it("needs no from, and refuses several recipients rather than guessing", async () => {
+		fetch.mockResolvedValue(respond({ json: { success: true } }))
+		await mail().send({ to: "to@test.com", subject: "Hi", body: "x" })
+		expect(sent_json().dataVariables.from).toBeUndefined()
+
+		const error = await caught(mail().send({ to: ["a@test.com", "b@test.com"], body: "x" }))
+		expect(error.code).toBe("single_recipient")
+		expect(fetch).toHaveBeenCalledTimes(1)
+	})
+
+	it("reads Loops' error envelope", async () => {
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 400,
+				json: {
+					success: false,
+					message: "Missing required data variable(s): confirmationUrl",
+					error: { path: "dataVariables", message: "Missing required data variable(s)" },
+				},
+			})
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("loops")
+		expect(error.message).toBe("Missing required data variable(s): confirmationUrl")
+		expect(error.code).toBe("dataVariables")
+	})
+})
+
+describe("MailChannels", () => {
+	const mail = () => new MailChannels({ api_key: "mc_key", default: { from: "from@test.com" } })
+
+	it("maps a send to one personalization with both content parts", async () => {
+		fetch.mockResolvedValue(respond({ status: 202, json: { request_id: "req_1" } }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			bcc: "bcc@test.com",
+			reply_to: "Support <reply@test.com>",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			tracking: { opens: true, clicks: false },
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://api.mailchannels.net/tx/v1/send")
+		expect(sent_init().headers).toMatchObject({ "X-Api-Key": "mc_key" })
+		const body = sent_json()
+		expect(body.personalizations).toEqual([
+			{
+				to: [{ email: "to@test.com", name: "To" }],
+				cc: [{ email: "cc@test.com" }],
+				bcc: [{ email: "bcc@test.com" }],
+			},
+		])
+		expect(body.from).toEqual({ email: "from@test.com" })
+		expect(body.reply_to).toEqual({ email: "reply@test.com", name: "Support" })
+		expect(body.content).toEqual([
+			{ type: "text/plain", value: "x" },
+			{ type: "text/html", value: "<p>x</p>" },
+		])
+		expect(body.headers).toEqual({ "X-Campaign": "spring" })
+		expect(body.tracking_settings).toEqual({
+			open_tracking: { enable: true },
+			click_tracking: { enable: false },
+		})
+		expect(body.attachments).toEqual([
+			{ filename: "doc.pdf", content: b64("filedata"), type: "application/pdf" },
+		])
+		expect(result).toEqual({ request_id: "req_1" })
+	})
+
+	it("signs with a DKIM key when given one, and reads the errors array", async () => {
+		fetch.mockResolvedValue(respond({ status: 202, json: {} }))
+		await new MailChannels({
+			api_key: "mc_key",
+			dkim: { domain: "test.com", selector: "mc", private_key: "PEM" },
+			default: { from: "from@test.com" },
+		}).send({ to: "to@test.com", body: "x" })
+		expect(sent_json().personalizations[0]).toMatchObject({
+			dkim_domain: "test.com",
+			dkim_selector: "mc",
+			dkim_private_key: "PEM",
+		})
+
+		fetch.mockResolvedValue(
+			respond({ ok: false, status: 400, json: { errors: ["from address is invalid"] } })
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("mailchannels")
+		expect(error.message).toBe("from address is invalid")
+	})
+})
+
+describe("SMTP2GO", () => {
+	const mail = () => new SMTP2GO({ api_key: "api-key", default: { from: "From <from@test.com>" } })
+	const accepted = {
+		request_id: "req_1",
+		data: { succeeded: 1, failed: 0, failures: [], email_id: "1a2b3c" },
+	}
+
+	it("maps a send to the v3 endpoint, reply-to as a custom header", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			reply_to: "reply@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			scheduled_at: "2030-01-01T10:00:00Z",
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://api.smtp2go.com/v3/email/send")
+		expect(sent_init().headers).toMatchObject({ "X-Smtp2go-Api-Key": "api-key" })
+		const body = sent_json()
+		expect(body.sender).toBe("From <from@test.com>")
+		expect(body.to).toEqual(["To <to@test.com>"])
+		expect(body.cc).toEqual(["cc@test.com"])
+		expect(body.html_body).toBe("<p>x</p>")
+		expect(body.text_body).toBe("x")
+		expect(body.custom_headers).toEqual([
+			{ header: "X-Campaign", value: "spring" },
+			{ header: "Reply-To", value: "reply@test.com" },
+		])
+		expect(body.attachments).toEqual([
+			{ filename: "doc.pdf", fileblob: b64("filedata"), mimetype: "application/pdf" },
+		])
+		expect(body.schedule).toBe("2030-01-01T10:00:00.000Z")
+		expect(result).toEqual(accepted)
+	})
+
+	it("pins a region, and reads both error shapes", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		await new SMTP2GO({ api_key: "k", region: "eu", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			body: "x",
+		})
+		expect(sent_url()).toBe("https://eu-api.smtp2go.com/v3/email/send")
+
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 400,
+				json: {
+					request_id: "r",
+					data: { error: "Invalid API key", error_code: "E_ApiResponseCodes.API_KEY_INVALID" },
+				},
+			})
+		)
+		let error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("smtp2go")
+		expect(error.message).toBe("Invalid API key")
+		expect(error.code).toBe("E_ApiResponseCodes.API_KEY_INVALID")
+
+		fetch.mockResolvedValue(
+			respond({
+				json: { data: { succeeded: 0, failed: 1, failures: ["to@test.com: suppressed"] } },
+			})
+		)
+		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.message).toBe("to@test.com: suppressed")
+	})
+})
+
+describe("SocketLabs", () => {
+	const mail = () =>
+		new SocketLabs({ server_id: "12345", api_key: "sl_key", default: { from: "from@test.com" } })
+	const accepted = { ErrorCode: "Success", TransactionReceipt: "rcpt_1", MessageResults: [] }
+
+	it("injects one message with the credentials in the body", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			bcc: "bcc@test.com",
+			reply_to: ["Support <reply@test.com>", "extra@test.com"],
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			tags: ["welcome", "second"],
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://inject.socketlabs.com/api/v1/email")
+		const body = sent_json()
+		expect(body.serverId).toBe(12345)
+		expect(body.apiKey).toBe("sl_key")
+		expect(body.messages).toHaveLength(1)
+		const one = body.messages[0]
+		expect(one.from).toEqual({ emailAddress: "from@test.com" })
+		expect(one.to).toEqual([{ emailAddress: "to@test.com", friendlyName: "To" }])
+		expect(one.bcc).toEqual([{ emailAddress: "bcc@test.com" }])
+		expect(one.replyTo).toEqual({ emailAddress: "reply@test.com", friendlyName: "Support" })
+		expect(one.htmlBody).toBe("<p>x</p>")
+		expect(one.textBody).toBe("x")
+		expect(one.customHeaders).toEqual([{ name: "X-Campaign", value: "spring" }])
+		expect(one.mailingId).toBe("welcome")
+		expect(one.attachments).toEqual([
+			{ name: "doc.pdf", contentType: "application/pdf", content: b64("filedata") },
+		])
+		expect(result).toEqual(accepted)
+	})
+
+	it("treats any ErrorCode but Success as a refusal, even on a 200", async () => {
+		fetch.mockResolvedValue(
+			respond({
+				json: {
+					ErrorCode: "Warning",
+					MessageResults: [{ Index: 0, ErrorCode: "InvalidFromAddress", AddressResults: [] }],
+				},
+			})
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("socketlabs")
+		expect(error.code).toBe("Warning")
+		expect(error.message).toContain("InvalidFromAddress")
+	})
+})
+
+describe("Azure Communication Services", () => {
+	const key = Buffer.from("azure-access-key-bytes-0123456789").toString("base64")
+	const mail = () =>
+		new Azure({
+			connection_string: `endpoint=https://acme.communication.azure.com/;accesskey=${key}`,
+			default: { from: "DoNotReply@test.com" },
+		})
+
+	it("signs the request the way the Azure SDKs do and maps the message", async () => {
+		fetch.mockResolvedValue(respond({ status: 202, json: { id: "op_1", status: "Running" } }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			reply_to: ["Support <reply@test.com>", "extra@test.com"],
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			tracking: { opens: false, clicks: false },
+			idempotency_key: "8540c0de-899f-5cce-acb5-3ec493af3800",
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe(
+			"https://acme.communication.azure.com/emails:send?api-version=2023-03-31"
+		)
+		const init = sent_init()
+		const body = JSON.parse(init.body as string)
+		expect(body).toEqual({
+			senderAddress: "DoNotReply@test.com",
+			content: { subject: "Hi", plainText: "x", html: "<p>x</p>" },
+			recipients: {
+				to: [{ address: "to@test.com", displayName: "To" }],
+				cc: [{ address: "cc@test.com" }],
+			},
+			replyTo: [
+				{ address: "reply@test.com", displayName: "Support" },
+				{ address: "extra@test.com" },
+			],
+			headers: { "X-Campaign": "spring" },
+			attachments: [
+				{ name: "doc.pdf", contentType: "application/pdf", contentInBase64: b64("filedata") },
+			],
+			userEngagementTrackingDisabled: true,
+		})
+		const hash = createHash("sha256")
+			.update(init.body as string)
+			.digest("base64")
+		expect(init.headers["x-ms-content-sha256"]).toBe(hash)
+		expect(init.headers["x-ms-date"]).toMatch(/GMT$/)
+		expect(init.headers["Operation-Id"]).toBe("8540c0de-899f-5cce-acb5-3ec493af3800")
+		expect(init.headers.Authorization).toMatch(
+			/^HMAC-SHA256 SignedHeaders=x-ms-date;host;x-ms-content-sha256&Signature=[A-Za-z0-9+/=]+$/
+		)
+		expect(result).toEqual({ id: "op_1", status: "Running" })
+	})
+
+	it("takes endpoint + access_key too, refuses neither, and reads the error envelope", async () => {
+		fetch.mockResolvedValue(respond({ status: 202, json: { id: "op_2", status: "Running" } }))
+		await new Azure({
+			endpoint: "https://acme.communication.azure.com",
+			access_key: key,
+			default: { from: "DoNotReply@test.com" },
+		}).send({ to: "to@test.com", body: "x" })
+		expect(sent_json().userEngagementTrackingDisabled).toBeUndefined()
+
+		expect(() => new Azure({ default: { from: "x@test.com" } })).toThrow(PostboiError)
+
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 401,
+				json: { error: { code: "Denied", message: "Access key is invalid" } },
+			})
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("azure")
+		expect(error.message).toBe("Access key is invalid")
+		expect(error.code).toBe("Denied")
+	})
+})
+
+describe("Gmail", () => {
+	const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 })
+	const pem = privateKey.export({ type: "pkcs8", format: "pem" }) as string
+
+	beforeEach(() => clear_token_cache())
+
+	const decode = (raw: string) =>
+		Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")
+
+	it("mints a delegated token for the from mailbox, then sends the MIME as raw", async () => {
+		fetch
+			.mockResolvedValueOnce(respond({ json: { access_token: "ya29.token", expires_in: 3600 } }))
+			.mockResolvedValueOnce(respond({ json: { id: "msg_1", threadId: "thr_1" } }))
+		const result = await new Gmail({
+			client_email: "svc@project.iam.gserviceaccount.com",
+			private_key: pem.replace(/\n/g, "\\n"),
+			default: { from: "Acme <from@test.com>" },
+		}).send({
+			to: { address: "to@test.com", name: "To" },
+			bcc: "bcc@test.com",
+			reply_to: "reply@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			attachments: attachment(),
+		})
+		expect(fetch).toHaveBeenCalledTimes(2)
+		const [token_url, token_init] = fetch.mock.calls[0] as [string, RequestInit]
+		expect(token_url).toBe("https://oauth2.googleapis.com/token")
+		const params = token_init.body as URLSearchParams
+		expect(params.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:jwt-bearer")
+		const claims = JSON.parse(decode(params.get("assertion")!.split(".")[1]))
+		expect(claims).toMatchObject({
+			iss: "svc@project.iam.gserviceaccount.com",
+			sub: "from@test.com",
+			scope: "https://www.googleapis.com/auth/gmail.send",
+			aud: "https://oauth2.googleapis.com/token",
+		})
+
+		expect(sent_url()).toBe("https://gmail.googleapis.com/gmail/v1/users/me/messages/send")
+		expect(sent_init().headers).toMatchObject({ Authorization: "Bearer ya29.token" })
+		const raw = decode(sent_json().raw)
+		expect(raw).toContain("From: Acme <from@test.com>")
+		expect(raw).toContain("To: To <to@test.com>")
+		expect(raw).toContain("Bcc: bcc@test.com")
+		expect(raw).toContain("Reply-To: reply@test.com")
+		expect(raw).toContain("Subject: Hi")
+		expect(raw).toContain("X-Campaign: spring")
+		expect(raw).toContain("multipart/mixed")
+		expect(raw).toContain('filename="doc.pdf"')
+		expect(result).toEqual({ id: "msg_1", threadId: "thr_1" })
+	})
+
+	it("reuses the token across sends, and takes a ready access_token instead", async () => {
+		fetch
+			.mockResolvedValueOnce(respond({ json: { access_token: "ya29.token", expires_in: 3600 } }))
+			.mockResolvedValue(respond({ json: { id: "msg" } }))
+		const mail = new Gmail({
+			client_email: "svc@p.iam.gserviceaccount.com",
+			private_key: pem,
+			user: "shared@test.com",
+			default: { from: "from@test.com" },
+		})
+		await mail.send({ to: "a@test.com", body: "x" })
+		await mail.send({ to: "b@test.com", body: "x" })
+		expect(fetch).toHaveBeenCalledTimes(3)
+		const claims = JSON.parse(
+			decode((fetch.mock.calls[0][1].body as URLSearchParams).get("assertion")!.split(".")[1])
+		)
+		expect(claims.sub).toBe("shared@test.com")
+
+		fetch.mockReset()
+		fetch.mockResolvedValue(respond({ json: { id: "msg_2" } }))
+		await new Gmail({ access_token: "byo", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			body: "x",
+		})
+		expect(fetch).toHaveBeenCalledTimes(1)
+		expect(sent_init().headers).toMatchObject({ Authorization: "Bearer byo" })
+
+		expect(() => new Gmail({ default: { from: "from@test.com" } })).toThrow(PostboiError)
+	})
+
+	it("reads Google's error envelope", async () => {
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 403,
+				json: {
+					error: { code: 403, message: "Insufficient Permission", status: "PERMISSION_DENIED" },
+				},
+			})
+		)
+		const error = await caught(
+			new Gmail({ access_token: "byo", default: { from: "from@test.com" } }).send({
+				to: "to@test.com",
+				body: "x",
+			})
+		)
+		expect(error.provider).toBe("gmail")
+		expect(error.message).toBe("Insufficient Permission")
+		expect(error.code).toBe("PERMISSION_DENIED")
+	})
+})
+
+describe("Maileroo", () => {
+	const mail = () => new Maileroo({ api_key: "mr_key", default: { from: "from@test.com" } })
+	const accepted = { success: true, message: "Email queued", data: { reference_id: "ref_1" } }
+
+	it("maps a send to the v2 endpoint", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			reply_to: "reply@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			tags: ["welcome"],
+			tracking: { opens: true },
+			scheduled_at: "2030-01-01T10:00:00Z",
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://smtp.maileroo.com/api/v2/emails")
+		expect(sent_init().headers).toMatchObject({ Authorization: "Bearer mr_key" })
+		const body = sent_json()
+		expect(body.from).toEqual({ address: "from@test.com" })
+		expect(body.to).toEqual([{ address: "to@test.com", display_name: "To" }])
+		expect(body.reply_to).toEqual([{ address: "reply@test.com" }])
+		expect(body.html).toBe("<p>x</p>")
+		expect(body.plain).toBe("x")
+		expect(body.headers).toEqual({ "X-Campaign": "spring" })
+		expect(body.tags).toEqual({ welcome: "welcome" })
+		expect(body.tracking).toBe(true)
+		expect(body.scheduled_at).toBe("2030-01-01T10:00:00.000Z")
+		expect(body.attachments).toEqual([
+			{
+				file_name: "doc.pdf",
+				content_type: "application/pdf",
+				content: b64("filedata"),
+				inline: false,
+			},
+		])
+		expect(result).toEqual(accepted)
+	})
+
+	it("reads a refusal from the body, whatever the status", async () => {
+		fetch.mockResolvedValue(respond({ json: { success: false, message: "Domain not verified" } }))
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("maileroo")
+		expect(error.message).toBe("Domain not verified")
+	})
+})
+
+describe("AhaSend", () => {
+	const mail = () =>
+		new AhaSend({ api_key: "aha-sk", account_id: "acct_1", default: { from: "from@test.com" } })
+	const accepted = {
+		object: "list",
+		data: [
+			{
+				object: "message",
+				id: "id@test.com",
+				recipient: { email: "to@test.com" },
+				status: "queued",
+			},
+		],
+	}
+
+	it("folds cc and bcc into recipients and maps the rest", async () => {
+		fetch.mockResolvedValue(respond({ status: 202, json: accepted }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			bcc: "bcc@test.com",
+			reply_to: "Support <reply@test.com>",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			tags: ["welcome"],
+			tracking: { opens: true, clicks: false },
+			scheduled_at: "2030-01-01T10:00:00Z",
+			idempotency_key: "idem-1",
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://api.ahasend.com/v2/accounts/acct_1/messages")
+		expect(sent_init().headers).toMatchObject({
+			Authorization: "Bearer aha-sk",
+			"Idempotency-Key": "idem-1",
+		})
+		const body = sent_json()
+		expect(body.from).toEqual({ email: "from@test.com" })
+		expect(body.recipients).toEqual([
+			{ email: "to@test.com", name: "To" },
+			{ email: "cc@test.com" },
+			{ email: "bcc@test.com" },
+		])
+		expect(body.reply_to).toEqual({ email: "reply@test.com", name: "Support" })
+		expect(body.html_content).toBe("<p>x</p>")
+		expect(body.text_content).toBe("x")
+		expect(body.tags).toEqual(["welcome"])
+		expect(body.tracking).toEqual({ open: true, click: false })
+		expect(body.schedule).toEqual({ first_attempt: "2030-01-01T10:00:00.000Z" })
+		expect(body.attachments).toEqual([
+			{
+				file_name: "doc.pdf",
+				content_type: "application/pdf",
+				data: b64("filedata"),
+				base64: true,
+			},
+		])
+		expect(result).toEqual(accepted)
+	})
+
+	it("reads a request refusal, and a 202 that refused every recipient", async () => {
+		fetch.mockResolvedValue(respond({ ok: false, status: 401, json: { message: "Unauthorized" } }))
+		let error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("ahasend")
+		expect(error.message).toBe("Unauthorized")
+
+		fetch.mockResolvedValue(
+			respond({
+				status: 202,
+				json: {
+					object: "list",
+					data: [
+						{
+							id: null,
+							recipient: { email: "to@test.com" },
+							status: "error",
+							error: "recipient suppressed",
+						},
+					],
+				},
+			})
+		)
+		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.message).toBe("recipient suppressed")
+	})
+})
+
+describe("Postal", () => {
+	const mail = () =>
+		new Postal({ host: "postal.test.com", api_key: "srv_key", default: { from: "from@test.com" } })
+	const accepted = {
+		status: "success",
+		time: 0.02,
+		flags: {},
+		data: {
+			message_id: "abc@rp.postal.test.com",
+			messages: { "to@test.com": { id: 1, token: "tok" } },
+		},
+	}
+
+	it("maps a send to the installation's send endpoint", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			reply_to: "reply@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			tags: ["welcome", "second"],
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://postal.test.com/api/v1/send/message")
+		expect(sent_init().headers).toMatchObject({ "X-Server-API-Key": "srv_key" })
+		const body = sent_json()
+		expect(body.to).toEqual(["To <to@test.com>"])
+		expect(body.cc).toEqual(["cc@test.com"])
+		expect(body.from).toBe("from@test.com")
+		expect(body.reply_to).toBe("reply@test.com")
+		expect(body.html_body).toBe("<p>x</p>")
+		expect(body.plain_body).toBe("x")
+		expect(body.tag).toBe("welcome")
+		expect(body.headers).toEqual({ "X-Campaign": "spring" })
+		expect(body.attachments).toEqual([
+			{ name: "doc.pdf", content_type: "application/pdf", data: b64("filedata") },
+		])
+		expect(result).toEqual(accepted)
+	})
+
+	it("accepts a full URL as host, and reads a 200 whose status isn't success", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		await new Postal({
+			host: "https://postal.test.com/",
+			api_key: "k",
+			default: { from: "from@test.com" },
+		}).send({ to: "to@test.com", body: "x" })
+		expect(sent_url()).toBe("https://postal.test.com/api/v1/send/message")
+
+		fetch.mockResolvedValue(
+			respond({
+				json: {
+					status: "error",
+					data: { code: "NoRecipients", message: "There are no recipients defined" },
+				},
+			})
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("postal")
+		expect(error.message).toBe("There are no recipients defined")
+		expect(error.code).toBe("NoRecipients")
+	})
+})
+
+describe("Customer.io", () => {
+	const mail = () => new CustomerIO({ api_key: "app_key", default: { from: "from@test.com" } })
+	const accepted = { delivery_id: "dlv_1", queued_at: "2030-01-01T10:00:00Z" }
+
+	it("sends raw content against the person the first recipient identifies", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			bcc: ["bcc@test.com", "bcc2@test.com"],
+			reply_to: "reply@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			tracking: { clicks: true },
+			scheduled_at: "2030-01-01T10:00:00Z",
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://api.customer.io/v1/send/email")
+		expect(sent_init().headers).toMatchObject({ Authorization: "Bearer app_key" })
+		const body = sent_json()
+		expect(body.to).toBe("To <to@test.com>, cc@test.com")
+		expect(body.identifiers).toEqual({ email: "to@test.com" })
+		expect(body.from).toBe("from@test.com")
+		expect(body.reply_to).toBe("reply@test.com")
+		expect(body.bcc).toBe("bcc@test.com, bcc2@test.com")
+		expect(body.body).toBe("<p>x</p>")
+		expect(body.plaintext_body).toBe("x")
+		expect(body.headers).toEqual({ "X-Campaign": "spring" })
+		expect(body.attachments).toEqual({ "doc.pdf": b64("filedata") })
+		expect(body.send_at).toBe(Math.floor(Date.parse("2030-01-01T10:00:00Z") / 1000))
+		expect(body.tracked).toBe(true)
+		expect(result).toEqual(accepted)
+	})
+
+	it("uses the EU host on request, and reads both error shapes", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		await new CustomerIO({ api_key: "k", region: "eu", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			body: "x",
+		})
+		expect(sent_url()).toBe("https://api-eu.customer.io/v1/send/email")
+
+		fetch.mockResolvedValue(
+			respond({ ok: false, status: 401, json: { meta: { error: "Unauthorized request" } } })
+		)
+		let error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("customerio")
+		expect(error.message).toBe("Unauthorized request")
+
+		fetch.mockResolvedValue(
+			respond({ ok: false, status: 400, json: { errors: [{ detail: "body is required" }] } })
+		)
+		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.message).toBe("body is required")
+	})
+})
+
+describe("Infobip", () => {
+	const mail = () =>
+		new Infobip({
+			api_key: "ib_key",
+			base_url: "https://xxxxx.api.infobip.com/",
+			default: { from: "from@test.com" },
+		})
+	const accepted = {
+		messages: [
+			{
+				to: "to@test.com",
+				messageId: "msg_1",
+				status: {
+					groupId: 1,
+					groupName: "PENDING",
+					id: 26,
+					name: "PENDING_ACCEPTED",
+					description: "Message accepted",
+				},
+			},
+		],
+	}
+
+	it("posts multipart form data to the account's host", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		const result = await mail().send({
+			to: [{ address: "to@test.com", name: "To" }, "other@test.com"],
+			cc: "cc@test.com",
+			reply_to: "reply@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			tracking: { opens: true, clicks: false },
+			scheduled_at: "2030-01-01T10:00:00Z",
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://xxxxx.api.infobip.com/email/3/send")
+		const init = sent_init()
+		expect(init.headers).toMatchObject({ Authorization: "App ib_key" })
+		expect(init.headers["Content-Type"]).toBeUndefined()
+		const form = init.body as FormData
+		expect(form.get("from")).toBe("from@test.com")
+		expect(form.getAll("to")).toEqual(["To <to@test.com>", "other@test.com"])
+		expect(form.getAll("cc")).toEqual(["cc@test.com"])
+		expect(form.get("replyTo")).toBe("reply@test.com")
+		expect(form.get("subject")).toBe("Hi")
+		expect(form.get("html")).toBe("<p>x</p>")
+		expect(form.get("text")).toBe("x")
+		expect(form.get("headers")).toBe(JSON.stringify({ "X-Campaign": "spring" }))
+		expect(form.get("trackOpens")).toBe("true")
+		expect(form.get("trackClicks")).toBe("false")
+		expect(form.get("sendAt")).toBe("2030-01-01T10:00:00.000Z")
+		expect((form.get("attachment") as File).name).toBe("doc.pdf")
+		expect(result).toEqual(accepted)
+	})
+
+	it("reads the request error envelope, and a response that rejected every recipient", async () => {
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 401,
+				json: {
+					requestError: {
+						serviceException: { messageId: "UNAUTHORIZED", text: "Invalid login details" },
+					},
+				},
+			})
+		)
+		let error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("infobip")
+		expect(error.message).toBe("Invalid login details")
+		expect(error.code).toBe("UNAUTHORIZED")
+
+		fetch.mockResolvedValue(
+			respond({
+				json: {
+					messages: [
+						{
+							to: "to@test.com",
+							messageId: "m",
+							status: {
+								groupId: 5,
+								groupName: "REJECTED",
+								id: 6,
+								name: "REJECTED_DESTINATION",
+								description: "Destination rejected",
+							},
+						},
+					],
+				},
+			})
+		)
+		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.message).toBe("Destination rejected")
+	})
+})
+
+describe("SendPulse", () => {
+	beforeEach(() => clear_token_cache())
+	const mail = () =>
+		new SendPulse({
+			client_id: "cid",
+			client_secret: "csecret",
+			default: { from: "From <from@test.com>" },
+		})
+
+	it("exchanges the credentials for a token, then sends with the HTML base64-encoded", async () => {
+		fetch
+			.mockResolvedValueOnce(
+				respond({ json: { access_token: "sp_token", token_type: "Bearer", expires_in: 3600 } })
+			)
+			.mockResolvedValue(respond({ json: { result: true, id: "email_1" } }))
+		const mailer = mail()
+		const result = await mailer.send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			attachments: attachment(),
+		})
+		const [token_url, token_init] = fetch.mock.calls[0] as [string, RequestInit]
+		expect(token_url).toBe("https://api.sendpulse.com/oauth/access_token")
+		expect(JSON.parse(token_init.body as string)).toEqual({
+			grant_type: "client_credentials",
+			client_id: "cid",
+			client_secret: "csecret",
+		})
+		expect(sent_url()).toBe("https://api.sendpulse.com/smtp/emails")
+		expect(sent_init().headers).toMatchObject({ Authorization: "Bearer sp_token" })
+		const body = sent_json().email
+		expect(body.html).toBe(b64("<p>x</p>"))
+		expect(body.text).toBe("x")
+		expect(body.from).toEqual({ email: "from@test.com", name: "From" })
+		expect(body.to).toEqual([{ email: "to@test.com", name: "To" }])
+		expect(body.cc).toEqual([{ email: "cc@test.com" }])
+		expect(body.attachments_binary).toEqual({ "doc.pdf": b64("filedata") })
+		expect(result).toEqual({ result: true, id: "email_1" })
+
+		await mailer.send({ to: "b@test.com", body: "x" })
+		// The token was cached — one exchange for two sends.
+		expect(fetch).toHaveBeenCalledTimes(3)
+	})
+
+	it("reads a failed exchange, and a refusal", async () => {
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 401,
+				json: { error: "invalid_client", message: "Client authentication failed" },
+			})
+		)
+		let error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("sendpulse")
+		expect(error.message).toBe("Client authentication failed")
+
+		clear_token_cache()
+		fetch
+			.mockResolvedValueOnce(respond({ json: { access_token: "t", expires_in: 3600 } }))
+			.mockResolvedValue(
+				respond({
+					ok: false,
+					status: 400,
+					json: { is_error: true, error_code: 8, message: "Sender is not confirmed" },
+				})
+			)
+		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.message).toBe("Sender is not confirmed")
+		expect(error.code).toBe(8)
+	})
+})
+
+describe("Iterable", () => {
+	const mail = () => new Iterable({ api_key: "it_key", campaign_id: "123456" })
+
+	it("targets the campaign with the send as data fields", async () => {
+		fetch.mockResolvedValue(respond({ json: { msg: "Email sent", code: "Success", params: null } }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			from: "Acme <from@test.com>",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			scheduled_at: "2030-01-01T10:00:00Z",
+		})
+		expect(sent_url()).toBe("https://api.iterable.com/api/email/target")
+		expect(sent_init().headers).toMatchObject({ "Api-Key": "it_key" })
+		const body = sent_json()
+		expect(body.campaignId).toBe(123456)
+		expect(body.recipientEmail).toBe("to@test.com")
+		expect(body.dataFields).toEqual({
+			subject: "Hi",
+			from: "Acme <from@test.com>",
+			html: "<p>x</p>",
+			text: "x",
+			name: "To",
+		})
+		expect(body.sendAt).toBe("2030-01-01 10:00:00")
+		expect(result).toEqual({ msg: "Email sent", code: "Success", params: null })
+	})
+
+	it("merges constructor data fields, uses the EU host, and reads a non-Success code", async () => {
+		fetch.mockResolvedValue(respond({ json: { msg: "ok", code: "Success" } }))
+		await new Iterable({
+			api_key: "k",
+			campaign_id: 1,
+			region: "eu",
+			data_fields: { plan: "pro", subject: "ignored" },
+		}).send({ to: "to@test.com", subject: "Hi", body: "x" })
+		expect(sent_url()).toBe("https://api.eu.iterable.com/api/email/target")
+		expect(sent_json().dataFields).toMatchObject({ plan: "pro", subject: "Hi" })
+
+		const single = await caught(mail().send({ to: ["a@test.com", "b@test.com"], body: "x" }))
+		expect(single.code).toBe("single_recipient")
+
+		fetch.mockResolvedValue(respond({ json: { msg: "Campaign not found", code: "BadParams" } }))
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("iterable")
+		expect(error.message).toBe("Campaign not found")
+		expect(error.code).toBe("BadParams")
+	})
+})
+
+describe("JetEmail", () => {
+	const mail = () => new JetEmail({ api_key: "jet_key", default: { from: "from@test.com" } })
+
+	it("maps a send, giving a bare sender its local part as a name", async () => {
+		fetch.mockResolvedValue(respond({ json: { id: "jet_1", response: "queued" } }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			reply_to: ["reply@test.com", "extra@test.com"],
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			idempotency_key: "idem-1",
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://api.jetemail.com/email")
+		expect(sent_init().headers).toMatchObject({
+			Authorization: "Bearer jet_key",
+			"Idempotency-Key": "idem-1",
+		})
+		const body = sent_json()
+		expect(body.from).toBe("from <from@test.com>")
+		expect(body.to).toEqual(["To <to@test.com>"])
+		expect(body.cc).toEqual(["cc@test.com"])
+		expect(body.reply_to).toEqual(["reply@test.com", "extra@test.com"])
+		expect(body.html).toBe("<p>x</p>")
+		expect(body.text).toBe("x")
+		expect(body.headers).toEqual({ "X-Campaign": "spring" })
+		expect(body.attachments).toEqual([{ filename: "doc.pdf", data: b64("filedata") }])
+		expect(result).toEqual({ id: "jet_1", response: "queued" })
+	})
+
+	it("keeps a named sender, and reads an error", async () => {
+		fetch.mockResolvedValue(respond({ json: { id: "jet_2" } }))
+		await mail().send({ to: "to@test.com", from: "Acme <from@test.com>", body: "x" })
+		expect(sent_json().from).toBe("Acme <from@test.com>")
+
+		fetch.mockResolvedValue(
+			respond({ ok: false, status: 422, json: { error: "from domain is not verified" } })
+		)
+		const error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("jetemail")
+		expect(error.message).toBe("from domain is not verified")
+	})
+})
+
+describe("Lettr", () => {
+	const mail = () => new Lettr({ api_key: "lettr_key", default: { from: "Acme <from@test.com>" } })
+	const accepted = { data: { request_id: "req_1", accepted: 2, rejected: 0 } }
+
+	it("splits names from addresses and sends bare recipients", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			cc: "cc@test.com",
+			reply_to: "Support <reply@test.com>",
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			headers: { "X-Campaign": "spring" },
+			tags: ["welcome", "second"],
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://app.lettr.com/api/emails")
+		expect(sent_init().headers).toMatchObject({ Authorization: "Bearer lettr_key" })
+		const body = sent_json()
+		expect(body.from).toBe("from@test.com")
+		expect(body.from_name).toBe("Acme")
+		expect(body.to).toEqual(["to@test.com"])
+		expect(body.cc).toEqual(["cc@test.com"])
+		expect(body.reply_to).toBe("reply@test.com")
+		expect(body.reply_to_name).toBe("Support")
+		expect(body.tag).toBe("welcome")
+		expect(body.headers).toEqual({ "X-Campaign": "spring" })
+		expect(body.attachments).toEqual([
+			{ filename: "doc.pdf", content: b64("filedata"), content_type: "application/pdf" },
+		])
+		expect(body.scheduled_at).toBeUndefined()
+		expect(result).toEqual(accepted)
+	})
+
+	it("schedules through the scheduled endpoint, and treats nobody accepted as a refusal", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		await mail().send({ to: "to@test.com", body: "x", scheduled_at: "2030-01-01T10:00:00Z" })
+		expect(sent_url()).toBe("https://app.lettr.com/api/emails/scheduled")
+		expect(sent_json().scheduled_at).toBe("2030-01-01T10:00:00.000Z")
+
+		fetch.mockResolvedValue(
+			respond({ json: { data: { request_id: "r", accepted: 0, rejected: 1 } } })
+		)
+		let error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("lettr")
+		expect(error.message).toContain("rejected every recipient")
+
+		fetch.mockResolvedValue(
+			respond({ ok: false, status: 401, json: { message: "Unauthenticated." } })
+		)
+		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.message).toBe("Unauthenticated.")
+	})
+})
+
+describe("Primitive", () => {
+	const mail = () => new Primitive({ api_key: "prim_key", default: { from: "from@test.com" } })
+	const accepted = {
+		success: true,
+		data: { id: "prim_1", status: "queued", accepted: ["to@test.com"], rejected: [] },
+	}
+
+	it("maps a single-recipient send", async () => {
+		fetch.mockResolvedValue(respond({ json: accepted }))
+		const result = await mail().send({
+			to: { address: "to@test.com", name: "To" },
+			subject: "Hi",
+			body: "<p>x</p>",
+			text: "x",
+			idempotency_key: "idem-1",
+			attachments: attachment(),
+		})
+		expect(sent_url()).toBe("https://api.primitive.dev/v1/send-mail")
+		expect(sent_init().headers).toMatchObject({
+			Authorization: "Bearer prim_key",
+			"Idempotency-Key": "idem-1",
+		})
+		const body = sent_json()
+		expect(body).toEqual({
+			from: "from@test.com",
+			to: "To <to@test.com>",
+			subject: "Hi",
+			body_text: "x",
+			body_html: "<p>x</p>",
+			attachments: [
+				{ filename: "doc.pdf", content_base64: b64("filedata"), content_type: "application/pdf" },
+			],
+		})
+		expect(result).toEqual(accepted)
+	})
+
+	it("refuses several recipients or a cc, and reads the error envelope", async () => {
+		let error = await caught(mail().send({ to: "to@test.com", cc: "cc@test.com", body: "x" }))
+		expect(error.code).toBe("single_recipient")
+		expect(fetch).not.toHaveBeenCalled()
+
+		fetch.mockResolvedValue(
+			respond({
+				ok: false,
+				status: 400,
+				json: { error: { code: "invalid_from", message: "Sender not verified" } },
+			})
+		)
+		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
+		expect(error.provider).toBe("primitive")
+		expect(error.message).toBe("Sender not verified")
+		expect(error.code).toBe("invalid_from")
+	})
+})
+
+describe("review fixes", () => {
+	it("primitive: an empty cc or bcc is no cc or bcc", async () => {
+		fetch.mockResolvedValue(respond({ json: { success: true, data: { id: "p" } } }))
+		await new Primitive({ api_key: "k", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			cc: [],
+			bcc: [],
+			body: "x",
+		})
+		expect(fetch).toHaveBeenCalledTimes(1)
+	})
+
+	it("one-switch tracking: on when either flag is, off only when both are, otherwise left alone", async () => {
+		fetch.mockResolvedValue(respond({ json: { delivery_id: "d", queued_at: "t" } }))
+		const mail = new CustomerIO({ api_key: "k", default: { from: "from@test.com" } })
+		await mail.send({ to: "to@test.com", body: "x", tracking: { opens: false } })
+		expect(sent_json().tracked).toBeUndefined()
+		await mail.send({ to: "to@test.com", body: "x", tracking: { opens: false, clicks: false } })
+		expect(sent_json().tracked).toBe(false)
+		await mail.send({ to: "to@test.com", body: "x", tracking: { opens: false, clicks: true } })
+		expect(sent_json().tracked).toBe(true)
+
+		fetch.mockResolvedValue(
+			respond({ json: { success: true, message: "ok", data: { reference_id: "r" } } })
+		)
+		await new Maileroo({ api_key: "k", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			body: "x",
+			tracking: { clicks: false },
+		})
+		expect(sent_json().tracking).toBeUndefined()
+	})
+
+	it("name-keyed attachment maps keep two files that share a name", async () => {
+		fetch.mockResolvedValue(respond({ json: { delivery_id: "d", queued_at: "t" } }))
+		await new CustomerIO({ api_key: "k", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			body: "x",
+			attachments: [
+				new File(["one"], "scan.pdf", { type: "application/pdf" }),
+				new File(["two"], "scan.pdf", { type: "application/pdf" }),
+				new File(["three"], "notes", { type: "" }),
+				new File(["four"], "notes", { type: "" }),
+			],
+		})
+		expect(sent_json().attachments).toEqual({
+			"scan.pdf": b64("one"),
+			"scan (2).pdf": b64("two"),
+			notes: b64("three"),
+			"notes (2)": b64("four"),
+		})
+	})
+
+	it("an attachment with no known type goes out as octet-stream everywhere", async () => {
+		fetch.mockResolvedValue(
+			respond({ json: { success: true, message: "ok", data: { reference_id: "r" } } })
+		)
+		await new Maileroo({ api_key: "k", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			body: "x",
+			attachments: new File(["bytes"], "blob", { type: "" }),
+		})
+		expect(sent_json().attachments[0].content_type).toBe("application/octet-stream")
+	})
+
+	it("mime: quotes, backslashes and non-ASCII in a filename never break the header, and long subjects fold", async () => {
+		fetch.mockResolvedValue(respond({ json: { id: "m" } }))
+		const decode = (raw: string) => Buffer.from(raw, "base64url").toString("utf8")
+		await new Gmail({ access_token: "byo", default: { from: "from@test.com" } }).send({
+			to: "to@test.com",
+			subject: "Ünterwegs ".repeat(30).trim(),
+			body: "x",
+			attachments: [
+				new File(["a"], 'Q3 "final".pdf', { type: "application/pdf" }),
+				new File(["b"], "résumé.pdf", { type: "application/pdf" }),
+			],
+		})
+		const raw = decode(sent_json().raw)
+		expect(raw).toContain('filename="Q3 \\"final\\".pdf"')
+		expect(raw).toContain("filename*=UTF-8''r%C3%A9sum%C3%A9.pdf")
+		for (const line of raw.split("\r\n")) expect(line.length).toBeLessThanOrEqual(998)
+		const subject = raw.match(/^Subject: ([\s\S]*?)\r\n(?=\S)/m)![1]
+		for (const word of subject.split("\r\n ")) expect(word.length).toBeLessThanOrEqual(75)
+		const decoded = subject
+			.split(/\s+/)
+			.map((w) =>
+				Buffer.from(w.slice("=?UTF-8?B?".length, -"?=".length), "base64").toString("utf8")
+			)
+			.join("")
+		expect(decoded).toBe("Ünterwegs ".repeat(30).trim())
 	})
 })

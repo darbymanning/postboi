@@ -11,8 +11,8 @@
  * Frameworks that wrap the request deeper (Hono keeps it at `c.req.raw`) unwrap in
  * place: `app.post("/webhooks", (c) => webhook(handler)(c.req.raw))`.
  */
-import { receive, handshake, WebhookVerificationError } from "./index.js"
-import type { ReceiveOptions, WebhookEvent } from "./index.js"
+import { receive, handshake, resolve_adapter, WebhookVerificationError } from "./index.js"
+import type { ReceiveOptions, WebhookAdapter, WebhookEvent } from "./index.js"
 import { is_error } from "../errors.js"
 
 /** A web `Request`, or any framework context that carries one — both shapes accepted. */
@@ -59,19 +59,42 @@ function build(
 	return async (carrier) => {
 		const request = carrier instanceof Request ? carrier : carrier.request
 
-		// A provider's endpoint handshake is answered before anything is read as an event.
-		// Any other GET goes on to receive() exactly as it always did — a custom adapter
-		// may be answering its own provider's ping there, and every stock adapter turns it
-		// away with the same 401 whether or not it has a handshake of its own.
+		let adapter: WebhookAdapter
+		let body: string
 		let events: Array<WebhookEvent>
 		try {
+			// A provider's unsigned endpoint handshake (Meta's GET) is answered before
+			// anything is read as an event. Any other GET goes on to receive() exactly as it
+			// always did — a custom adapter may be answering its own provider's ping there,
+			// and every stock adapter turns it away with the same 401.
 			const challenge = await handshake(request, options)
 			if (challenge !== undefined) {
 				return new Response(challenge, { status: 200, headers: { "content-type": "text/plain" } })
 			}
-			events = await receive(request, options)
+			// The adapter is resolved and the body read here, once, so both are still to
+			// hand for a signed handshake reply after `receive` has done its work.
+			adapter = await resolve_adapter(options?.provider)
+			body = await request.text()
+			const bodiless = request.method === "GET" || request.method === "HEAD"
+			events = await receive(
+				new Request(request.url, {
+					method: request.method,
+					headers: request.headers,
+					// A web Request refuses a body on GET/HEAD, even an empty one.
+					body: bodiless ? undefined : body,
+				}),
+				{ ...options, provider: adapter }
+			)
 		} catch (error) {
 			return failure(error)
+		}
+
+		// A verified request that is a handshake rather than an event (SocketLabs echoes a
+		// validation key, Event Grid a validation code) is answered the way the provider
+		// expects.
+		if (events.length === 0 && adapter.respond) {
+			const reply = adapter.respond(body, { headers: request.headers, url: new URL(request.url) })
+			if (reply) return reply
 		}
 
 		try {

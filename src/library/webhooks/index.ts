@@ -153,12 +153,21 @@ export interface WebhookAdapter {
 	/** Map the raw body to normalized events (providers may batch several per request). */
 	normalize(body: string, ctx: NormalizeContext): Array<WebhookEvent> | Promise<Array<WebhookEvent>>
 	/**
-	 * Providers that check an endpoint is yours before subscribing it (Meta): recognise
-	 * that GET and return the challenge it wants echoed plus the token it presented, or
-	 * `undefined` for a request that isn't one. {@link handshake} does the comparing —
-	 * fail-closed and timing-safe, like `verify` — so an adapter only has to read the URL.
+	 * Providers that check an endpoint is yours before subscribing it with a bare GET
+	 * (Meta): recognise that request and return the challenge it wants echoed plus the
+	 * token it presented, or `undefined` for a request that isn't one. Nothing is signed
+	 * yet at that point, so {@link handshake} does the comparing — fail-closed and
+	 * timing-safe, like `verify` — and an adapter only has to read the URL. A handshake
+	 * that arrives as a *signed* POST is `respond`'s job instead.
 	 */
 	handshake?(ctx: NormalizeContext): { challenge: string; token?: string } | undefined
+	/**
+	 * The response a request needs in the provider's own words, when it is not an event
+	 * but a handshake — SocketLabs validates an endpoint by expecting its `ValidationKey`
+	 * echoed back. Consulted by the `webhook()` handler after verification; undefined
+	 * means the usual `{ received }` answer.
+	 */
+	respond?(body: string, ctx: NormalizeContext): Response | undefined
 }
 
 /** A loaded adapter module: the adapter plus its mock-payload builder (for tests). */
@@ -203,6 +212,15 @@ export const MODULES: Record<string, () => Promise<AdapterModule>> = {
 	lettermint: () => import("./lettermint.js"),
 	unosend: () => import("./unosend.js"),
 	sequenzy: () => import("./sequenzy.js"),
+	loops: () => import("./loops.js"),
+	smtp2go: () => import("./smtp2go.js"),
+	socketlabs: () => import("./socketlabs.js"),
+	azure: () => import("./azure.js"),
+	postal: () => import("./postal.js"),
+	customerio: () => import("./customerio.js"),
+	ahasend: () => import("./ahasend.js"),
+	infobip: () => import("./infobip.js"),
+	sendpulse: () => import("./sendpulse.js"),
 	zepto: () => import("./zepto.js"),
 	elasticemail: () => import("./elasticemail.js"),
 	plunk: () => import("./plunk.js"),
@@ -273,13 +291,6 @@ export async function resolve_key(): Promise<string> {
 	return key
 }
 
-/** The adapter `options` name — explicitly, by key, or by the zero-config resolution. */
-async function adapter_from(options: ReceiveOptions): Promise<WebhookAdapter> {
-	return typeof options.provider === "object"
-		? options.provider
-		: adapter_for(options.provider ?? (await resolve_key()))
-}
-
 /** Load the adapter for a provider key, or throw `webhooks_not_supported`. */
 export async function adapter_for(key: string): Promise<WebhookAdapter> {
 	const load = MODULES[key]
@@ -296,6 +307,13 @@ export async function adapter_for(key: string): Promise<WebhookAdapter> {
 	return (await load()).default
 }
 
+/** The adapter `provider` names — a key, a custom adapter, or the zero-config resolution. */
+export async function resolve_adapter(
+	provider?: ReceiveOptions["provider"]
+): Promise<WebhookAdapter> {
+	return typeof provider === "object" ? provider : adapter_for(provider ?? (await resolve_key()))
+}
+
 /**
  * Verify and normalize an incoming provider webhook. Reads the request once, checks the
  * signature (fail-closed — no secret is an error unless `verify: false`), and returns the
@@ -309,7 +327,7 @@ export async function receive(
 	request: Request,
 	options: ReceiveOptions = {}
 ): Promise<Array<WebhookEvent>> {
-	const adapter = await adapter_from(options)
+	const adapter = await resolve_adapter(options.provider)
 
 	await ensure_env_loaded()
 	const secret =
@@ -370,7 +388,7 @@ export async function handshake(
 	const url = new URL(request.url)
 	if (!url.search) return undefined
 
-	const adapter = await adapter_from(options)
+	const adapter = await resolve_adapter(options.provider)
 	if (!adapter.handshake) return undefined
 	const presented = adapter.handshake({ headers: request.headers, url })
 	if (!presented) return undefined
