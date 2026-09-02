@@ -1,0 +1,166 @@
+---
+title: Lifecycle
+name: Lifecycle
+description: Put signups, sign-ins and your own product events on a contact's timeline from inside your backend — with first-party plugins for Better Auth, Convex and Lunora.
+category: Guides
+---
+
+A contact's **timeline** is every event about one person in one place: the opens and
+clicks Postboi observed, and the things only your application knows — a signup, a plan
+change, a project created. Segments filter on it, sequences trigger from it, and an
+email can read it (`{event.plan}`).
+
+Anything can write to it with one call:
+
+```typescript
+import { mail } from 'postboi'
+
+await mail.events.track('ada@example.com', 'project_created', { plan: 'pro', seats: 3 })
+```
+
+That is the whole API, and for most events it is all you need. The plugins below exist
+for the events you'd otherwise write the same fifteen lines for in every project: the
+ones your **auth layer** already knows about.
+
+## Better Auth
+
+`postboi/better-auth` is a plugin. Add it and signups, sign-ins and profile changes
+appear on the timeline — no webhook, no endpoint, no second copy of who your users are.
+
+```typescript
+import { betterAuth } from 'better-auth'
+import { postboi } from 'postboi/better-auth'
+
+export const auth = betterAuth({
+	database: db,
+	plugins: [postboi()],
+})
+```
+
+It writes `auth.signed_up`, `auth.email_verified`, `auth.user_updated` and
+`auth.signed_in`, and upserts the contact with the user's name and your own id as
+`external_id` — so `mail.events.track({ external_id: user.id }, …)` works from
+anywhere else in your code.
+
+**It never fails a sign-up.** Every call is caught and reported through `on_error` (a
+console line by default). A network blip at Postboi turning into a 500 on somebody's
+sign-up form would be a far worse bug than a missing timeline row.
+
+Sign-ins are one event per session, which on a busy product is a great deal of
+timeline. Switch them off, or rename anything:
+
+```typescript
+postboi({
+	events: { signed_in: false, signed_up: 'user.joined' },
+	attributes: (user) => ({ plan: 'free' }),
+	on_error: (error) => Sentry.captureException(error),
+})
+```
+
+Better Auth's session hook is handed the *session*, not the user, so recording sign-ins
+needs a way to resolve one — pass `user_for_session`. Without it, sign-ins are skipped
+and the plugin says so once (once, not once per login).
+
+```typescript
+postboi({
+	user_for_session: async (session) =>
+		db.query.users.findFirst({ where: eq(users.id, session.userId) }),
+})
+```
+
+## Convex
+
+Convex **mutations cannot do network I/O** — only actions can. So the shape is always
+the same: the mutation that stores the user schedules an action, and the action tracks.
+
+```typescript
+// convex/postboi.ts
+import { internalAction } from './_generated/server'
+import { v } from 'convex/values'
+import { track, identify } from 'postboi/convex'
+
+export const signed_up = internalAction({
+	args: { id: v.string(), email: v.string(), name: v.optional(v.string()) },
+	handler: async (_ctx, args) => {
+		await identify(args)
+		await track(args.email, 'auth.signed_up')
+	},
+})
+```
+
+```typescript
+// convex/users.ts
+export const create = mutation({
+	handler: async (ctx, args) => {
+		const id = await ctx.db.insert('users', args)
+		await ctx.scheduler.runAfter(0, internal.postboi.signed_up, { ...args, id })
+		return id
+	},
+})
+```
+
+Scheduling rather than awaiting isn't a workaround, it's the better shape: the mutation
+commits on its own and the event follows, so a Postboi outage delays a timeline row and
+never rolls back a signup.
+
+Set `POSTBOI_TOKEN` in the Convex dashboard. If your project uses **Clerk** for auth,
+user creation is a Clerk webhook rather than a mutation — connect Clerk in the Postboi
+dashboard instead and the same `auth.*` events arrive with no code at all.
+
+## Lunora
+
+`postboi/lunora` is an opt-in package in the convention Lunora's auth, payments and
+email packages already use. Register it once and `ctx.postboi` is on every action and
+background job.
+
+```typescript
+import { postboi } from 'postboi/lunora'
+
+export default defineApp({
+	packages: [postboi()],
+})
+```
+
+```typescript
+await ctx.postboi.identify({ id: user.id, email: user.email, name: user.name })
+await ctx.postboi.track(user.email, 'project_created', { plan })
+await ctx.postboi.send({ to: user.email, subject: 'Welcome', body: '<p>…</p>' })
+```
+
+Lunora bundles Better Auth, so signups need nothing extra — `auth()` from the same
+import *is* the Better Auth plugin above, so the events cannot differ by which door
+they came through:
+
+```typescript
+import { auth } from 'postboi/lunora'
+
+betterAuth({ plugins: [auth()] })
+```
+
+Everything runs in your backend with your token. Nothing here is hosted.
+
+## Or connect the source directly
+
+If the events you want come from a system Postboi already speaks to, you don't need
+code at all. **Stripe, Paddle, Lemon Squeezy, Polar, Clerk, Supabase, Shopify,
+WooCommerce and PostHog** connect in the dashboard, and a **generic inbound hook**
+takes JSON from anything else — you send it one request and then point at the fields of
+the payload it actually received.
+
+They write the same vocabulary these plugins do — `billing.*`, `auth.*`, `commerce.*` —
+so a sequence written against `billing.payment_recovered` works whichever processor the
+money moved through, and moving an event from a webhook to your own code (or back)
+changes nothing downstream.
+
+## Events you can build on
+
+| Family      | Names                                                                                                                                                                                    |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth.*`    | `signed_up`, `signed_in`, `email_verified`, `user_updated`, `user_deleted`                                                                                                                 |
+| `billing.*` | `trial_started`, `trial_ending`, `subscription_started`, `subscription_updated`, `subscription_cancelled`, `payment_failed`, `payment_recovered`, `purchase`, `refunded`                    |
+| `commerce.*`| `checkout_started`, `checkout_abandoned`, `order_placed`, `order_paid`, `order_fulfilled`, `order_cancelled`, `refunded`                                                                    |
+
+Your own names are anything snake_case, optionally namespaced by one dot
+(`project_created`, `usage.limit_reached`). The `contact.*`, `email.*`, `sms.*` and
+`whatsapp.*` prefixes are Postboi's own — an open is a fact the platform observed, and
+an API caller claiming one would put a fiction in the timeline every segment trusts.

@@ -96,6 +96,7 @@ export const contentSections: ContentSectionConfig[] = [
 					{ slug: "scheduling", name: "Scheduling" },
 					{ slug: "tracking", name: "Tracking & unsubscribe" },
 					{ slug: "webhooks", name: "Webhooks" },
+					{ slug: "lifecycle", name: "Lifecycle" },
 				],
 			},
 			{

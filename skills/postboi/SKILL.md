@@ -214,6 +214,30 @@ SMS receipts: The SMS Works pushes delivery reports to `receive()` / `webhook()`
 
 WhatsApp receipts: Twilio is `poll({ provider: "twilio" })` (callbacks are per message, so nothing to register); Meta's Cloud API is `receive()` / `webhook()` with `{ provider: "meta" }` — `META_WEBHOOK_SECRET` is the app secret (`X-Hub-Signature-256`), `META_WEBHOOK_VERIFY_TOKEN` answers the `hub.challenge` GET Meta makes before subscribing, so **export the handler as both `GET` and `POST`**. Events carry `channel: "whatsapp"` and `phone`, never `email`; a read is `opened`, a STOP is `unsubscribed`, anything else a person writes is `received` with `body.text` (and the 24-hour window just opened). `/raw/whatsapp`
 
+## Lifecycle (contact timeline)
+
+A contact's timeline is every event about one person: the opens and clicks Postboi observed, and the ones only your app knows. Segments filter on it, sequences trigger from it, an email reads it (`{event.plan}`). One call writes to it:
+
+```ts
+await mail.events.track("ada@example.com", "project_created", { plan: "pro" })
+await mail.events.track({ external_id: "user_42" }, "usage.limit_reached")
+```
+
+Names are snake_case, optionally namespaced by one dot. `contact.*` / `email.*` / `sms.*` / `whatsapp.*` are the platform's own and are refused — an open is a fact Postboi observed, and an API caller claiming one puts a fiction in the timeline every segment trusts.
+
+Three first-party plugins write the `auth.*` half so you don't:
+
+```ts
+import { postboi } from "postboi/better-auth"
+betterAuth({ plugins: [postboi()] }) // auth.signed_up, auth.email_verified, auth.user_updated
+```
+
+- **`postboi/better-auth`** — database hooks. Never fails a sign-up (every call is caught → `on_error`). Sign-ins need `user_for_session` (Better Auth's session hook has the session, not the user) or `events: { signed_in: false }`.
+- **`postboi/convex`** — `track` / `identify` for **actions**; Convex mutations can't do network I/O, so the mutation schedules an action (`ctx.scheduler.runAfter(0, internal.postboi.signed_up, …)`). Clerk-auth projects should connect Clerk in the dashboard instead.
+- **`postboi/lunora`** — an opt-in package: `ctx.postboi.track()` on every action and job; `auth()` re-exports the Better Auth plugin unchanged.
+
+Or connect the source and write no code: **Stripe, Paddle, Lemon Squeezy, Polar, Clerk, Supabase, Shopify, WooCommerce, PostHog**, plus a generic inbound hook for anything that can POST JSON (send it one request, then map the payload's fields). They write the same vocabulary — `billing.*` (`payment_failed`, `payment_recovered`, `subscription_started`, `purchase`, …), `auth.*`, `commerce.*` — so a sequence written against `billing.payment_recovered` works whichever processor the money moved through. `/raw/lifecycle`
+
 ## Scheduling, tracking, bulk
 
 - `scheduled_at: { days: 1, hours: 5 } | Date | ISO string` — provider-side; only Postboi, Resend, Brevo, Mailgun and SendGrid support it, **others send immediately**. `cancel(id)` where supported; unsupported providers throw `cancel_not_supported`, never a silent no-op. `/raw/scheduling`
@@ -356,4 +380,6 @@ Order matters — the old provider keeps sending until the new domain verifies.
 | Global config                         | `config` from `postboi` (file) · `configure` from `postboi` (runtime)                                                                                                                                                                                                                    |
 | Tests                                 | `postboi/mock`, `postboi/sms-mock`, `postboi/whatsapp-mock`, `postboi/push-mock`, `postboi/chat-mock`                                                                                                                                                                                    |
 | Email linting                         | `analyze`, `check_links` from `postboi/inspect`                                                                                                                                                                                                                                          |
+| Contact timeline                      | `mail.events.track` / `.record` from `postboi`                                                                                                                                                                                                                                           |
+| Auth-layer lifecycle plugins          | `postboi` from `postboi/better-auth` · `track`, `identify` from `postboi/convex` · `postboi`, `auth` from `postboi/lunora`                                                                                                                                                               |
 | Spam helpers                          | `is_spam`, `SkipSendError` from `postboi`                                                                                                                                                                                                                                                |
