@@ -132,15 +132,7 @@ export default class HMS extends PushProvider<SendResponse> {
 			},
 		})
 
-		const size = new TextEncoder().encode(body).length
-		if (size > MAX_PAYLOAD_BYTES) {
-			throw new PostboiError({
-				provider: this.provider,
-				channel: "push",
-				code: "payload_too_large",
-				message: `Push payload is ${size} bytes; HMS accepts ${MAX_PAYLOAD_BYTES}. Send an id and fetch the detail in the app.`,
-			})
-		}
+		this.check_payload(body, MAX_PAYLOAD_BYTES, "HMS accepts")
 
 		return {
 			url: `https://push-api.cloud.huawei.com/v1/${encodeURIComponent(this.#app_id)}/messages:send`,

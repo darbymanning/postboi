@@ -167,15 +167,7 @@ export default class WebPush extends PushProvider<SendResponse> {
 		const payload = this.payload(message)
 		// Check before encrypting: the limit is on plaintext, and a 400 from the push service
 		// would not tell you which of your notifications was too big.
-		const size = new TextEncoder().encode(payload).length
-		if (size > MAX_PAYLOAD_BYTES) {
-			throw new PostboiError({
-				provider: this.provider,
-				channel: "push",
-				code: "payload_too_large",
-				message: `Push payload is ${size} bytes; one aes128gcm record holds ${MAX_PAYLOAD_BYTES}. Send an id and fetch the detail in the service worker.`,
-			})
-		}
+		this.check_payload(payload, MAX_PAYLOAD_BYTES, "one aes128gcm record holds", "service worker")
 
 		const body = await encrypt_payload(subscription, payload)
 		const authorization = await this.#vapid_for(subscription.endpoint)

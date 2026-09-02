@@ -190,7 +190,11 @@ describe("a config file's options never reach another provider", () => {
 				for (const dst of list) {
 					if (src.key === dst.key) continue
 					const from = required(src)
-					if ([...required(dst)].every((a) => from.has(a))) out.push(`${src.key} -> ${dst.key}`)
+					const needs = required(dst)
+					// A destination needing nothing (Expo) takes nothing from the bag either, so
+					// there is no credential to leak — reachable, but not exploitable.
+					if (needs.size && [...needs].every((a) => from.has(a)))
+						out.push(`${src.key} -> ${dst.key}`)
 				}
 			return out
 		}
@@ -333,6 +337,9 @@ describe("provider inference reads intent, not ambience", () => {
 			"COMMUNICATION_SERVICES_CONNECTION_STRING",
 			// What every CI notification action sets.
 			"DISCORD_WEBHOOK_URL",
+			// What expo-server-sdk's README reads; optional too, so unmarked it would make
+			// Expo "configured" on every machine.
+			"EXPO_ACCESS_TOKEN",
 			// Mailjet's own SDK default pair.
 			"MJ_APIKEY_PRIVATE",
 			"MJ_APIKEY_PUBLIC",
@@ -364,6 +371,8 @@ describe("provider inference reads intent, not ambience", () => {
 		// a new provider joins it deliberately, in a diff someone reads.
 		const keys = (channel: (typeof CHANNELS)[number]) =>
 			inferable_channel_providers(channel).map((p) => p.key)
+		// Expo is absent: its one field is optional, so unmarked it would count as configured
+		// on every machine — and EXPO_ACCESS_TOKEN is the name expo-server-sdk users set.
 		expect(keys("push")).toEqual(["webpush", "fcm", "apns", "hms"])
 		// Twilio is absent from both: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are the
 		// Twilio SDK's zero-argument defaults, so anyone using Voice or Verify has them set

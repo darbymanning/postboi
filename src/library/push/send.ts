@@ -14,6 +14,7 @@ const LOADERS: ChannelResolution<PushProvider<unknown>>["loaders"] = {
 	fcm: () => import("./fcm.js").then((m) => m.default as unknown as PushConstructor),
 	apns: () => import("./apns.js").then((m) => m.default as unknown as PushConstructor),
 	hms: () => import("./hms.js").then((m) => m.default as unknown as PushConstructor),
+	expo: () => import("./expo.js").then((m) => m.default as unknown as PushConstructor),
 	mock: () => import("./mock.js").then((m) => m.default as unknown as PushConstructor),
 }
 

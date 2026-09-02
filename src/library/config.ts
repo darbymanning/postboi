@@ -106,9 +106,9 @@ export interface PostboiConfig {
 		/** Non-secret constructor options. Access tokens are secrets — keep them in env. */
 		options?: Record<string, string>
 	}
-	/** Push channel settings for the zero-config `push()` — Web Push, FCM, APNs and HMS. */
+	/** Push channel settings for the zero-config `push()` — Web Push, FCM, APNs, HMS and Expo. */
 	push?: {
-		/** Provider key (`webpush`, `fcm`, `apns`, `hms`). */
+		/** Provider key (`webpush`, `fcm`, `apns`, `hms`, `expo`). */
 		provider?: PushProviderKey | "mock"
 		/** Default icon and TTL. Deliberately no default target — push targets are per-device. */
 		default?: PushDefaults
