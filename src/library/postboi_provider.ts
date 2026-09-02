@@ -220,6 +220,68 @@ export interface SyncRule {
 	remove_tags: Array<string>
 }
 
+/** How a `data` field or event property is compared. `exists`/`missing` take no value. */
+export type SegmentOp =
+	| "eq"
+	| "neq"
+	| "contains"
+	| "starts"
+	| "exists"
+	| "missing"
+	| "gt"
+	| "gte"
+	| "lt"
+	| "lte"
+	| "before"
+	| "after"
+
+/** One test on a contact — `kind` picks the shape. */
+export type SegmentPredicate =
+	| { kind: "tag"; tag: string; has: boolean }
+	| { kind: "attribute"; key: string; op: SegmentOp; value?: string }
+	| { kind: "list"; list_id: string; member: boolean; status?: MembershipStatus }
+	| {
+			kind: "engagement"
+			metric: "opened" | "clicked" | "replied" | "any"
+			within_days: number
+			happened: boolean
+	  }
+	| {
+			kind: "event"
+			name: string
+			happened: boolean
+			within_days?: number
+			min_count?: number
+			property?: { key: string; op: SegmentOp; value?: string }
+	  }
+	| { kind: "suppressed"; is: boolean }
+	| { kind: "phone"; has: boolean }
+
+/**
+ * A segment's rule: `all` (and) or `any` (or) of its rules, each a predicate or a nested
+ * group — at most 25 predicates, 3 levels deep. Evaluated fresh every time it's used.
+ */
+export interface SegmentDefinition {
+	match: "all" | "any"
+	rules: Array<SegmentPredicate | SegmentDefinition>
+}
+
+/** A saved segment. */
+export interface Segment {
+	id: string
+	name: string
+	definition: SegmentDefinition
+	created_at: string
+	updated_at: string
+}
+
+/** How many contacts a segment matches, and how many a broadcast could reach. */
+export interface SegmentCounts {
+	matching: number
+	/** Matching contacts subscribed on at least one list — the ones marketing mail may reach. */
+	reachable: number
+}
+
 /** A contact's presence on one list, with its per-list status. */
 export interface Membership {
 	list: { id: string; name: string }
@@ -686,7 +748,14 @@ export default class Postboi extends ProviderBase<SendResponse> {
 		 * `search` over email and name.
 		 */
 		all: async (
-			options: { list?: string; status?: MembershipStatus; search?: string; tag?: string } = {}
+			options: {
+				list?: string
+				status?: MembershipStatus
+				search?: string
+				tag?: string
+				/** A saved segment, by id or name. */
+				segment?: string
+			} = {}
 		): Promise<Array<Contact>> => {
 			const out: Array<Contact> = []
 			let cursor: string | undefined
@@ -696,6 +765,7 @@ export default class Postboi extends ProviderBase<SendResponse> {
 				if (options.status) params.set("status", options.status)
 				if (options.search) params.set("search", options.search)
 				if (options.tag) params.set("tag", options.tag)
+				if (options.segment) params.set("segment", options.segment)
 				if (cursor) params.set("cursor", cursor)
 				const query = params.toString()
 				const page = await this.#api<{ contacts: Array<Contact>; cursor: string | null }>(
@@ -768,6 +838,106 @@ export default class Postboi extends ProviderBase<SendResponse> {
 			} while (cursor)
 			return out
 		},
+	}
+
+	/**
+	 * Segments — saved filters over the audience, evaluated fresh every time they're used.
+	 * `ref` is an id or a name throughout. A broadcast to a segment reaches the matching
+	 * contacts who are subscribed on at least one list; `count` says how many that is.
+	 */
+	readonly segments = {
+		/** Every saved segment, by name. */
+		all: async (): Promise<Array<Segment>> => {
+			const data = await this.#api<{ segments: Array<Segment> }>("/segments", { method: "GET" })
+			return data.segments
+		},
+
+		/** One segment with its counts. */
+		get: (ref: string): Promise<Segment & SegmentCounts> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}`, { method: "GET" }),
+
+		/**
+		 * Save a segment.
+		 *
+		 * @example
+		 * ```ts
+		 * await mail.segments.create("Lapsed customers", {
+		 * 	match: "all",
+		 * 	rules: [
+		 * 		{ kind: "tag", tag: "customer", has: true },
+		 * 		{ kind: "engagement", metric: "opened", within_days: 60, happened: false },
+		 * 	],
+		 * })
+		 * ```
+		 */
+		create: (name: string, definition: SegmentDefinition): Promise<Segment> =>
+			this.#api("/segments", { body: { name, definition } }),
+
+		/** Rename and/or redefine a segment. */
+		update: (
+			ref: string,
+			changes: { name?: string; definition?: SegmentDefinition }
+		): Promise<Segment> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}`, { method: "PATCH", body: changes }),
+
+		/** Delete a segment. Contacts are untouched. */
+		delete: (ref: string): Promise<{ id: string; deleted: boolean }> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}`, { method: "DELETE" }),
+
+		/** How many contacts match right now, and how many a broadcast could reach. */
+		count: (ref: string): Promise<SegmentCounts> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}/count`, { method: "GET" }),
+
+		/** Try a definition without saving it: counts and the first few matches. */
+		preview: (definition: SegmentDefinition): Promise<SegmentCounts & { sample: Array<Contact> }> =>
+			this.#api("/segments/preview", { body: { definition } }),
+
+		/** The contacts a segment matches, newest first — following pagination for you. */
+		contacts: async (ref: string): Promise<Array<Contact>> => {
+			const out: Array<Contact> = []
+			let cursor: string | undefined
+			do {
+				const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""
+				const page = await this.#api<{ contacts: Array<Contact>; cursor: string | null }>(
+					`/segments/${encodeURIComponent(ref)}/contacts${query}`,
+					{ method: "GET" }
+				)
+				out.push(...page.contacts)
+				cursor = page.cursor ?? undefined
+			} while (cursor)
+			return out
+		},
+
+		/**
+		 * One message to everyone the segment matches who a broadcast may reach — the same
+		 * `{key}` templating and one-click unsubscribe as `lists.broadcast`. `matching` in
+		 * the response counts everyone the segment matched, reachable or not.
+		 */
+		broadcast: (
+			ref: string,
+			options: BroadcastOptions
+		): Promise<BroadcastResponse & { matching: number }> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}/send`, {
+				body: {
+					from: options.from ? this.email_name(this.parse_email_address(options.from)) : undefined,
+					reply_to: options.reply_to
+						? this.email_name(this.parse_email_address(options.reply_to))
+						: undefined,
+					subject: options.subject,
+					html: options.body,
+					text: options.text,
+					scheduled_at: options.scheduled_at
+						? this.resolve_scheduled_at(options.scheduled_at).toISOString()
+						: undefined,
+				},
+			}),
+
+		/** Put tags on, or take them off, everyone the segment matches (up to 10,000 a call). */
+		tag: (
+			ref: string,
+			changes: { add?: Array<string>; remove?: Array<string> }
+		): Promise<{ contacts: number; capped: boolean }> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}/tags`, { body: changes }),
 	}
 
 	/**

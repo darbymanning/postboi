@@ -633,6 +633,60 @@ describe("the Postboi provider — account API", () => {
 			expect(sent_url()).toBe("https://postboi.app/v1/events/schemas")
 		})
 
+		it("segments: create, get, count, contacts, broadcast, tag hit their routes", async () => {
+			const definition = {
+				match: "all" as const,
+				rules: [{ kind: "tag" as const, tag: "vip", has: true }],
+			}
+			fetch.mockResolvedValue(respond({ json: { id: "seg_1", name: "VIPs", definition } }))
+			await provider().segments.create("VIPs", definition)
+			expect(sent_url()).toBe("https://postboi.app/v1/segments")
+			expect(sent_json()).toEqual({ name: "VIPs", definition })
+
+			await provider().segments.get("VIPs")
+			expect(sent_url()).toBe("https://postboi.app/v1/segments/VIPs")
+			await provider().segments.count("seg_1")
+			expect(sent_url()).toBe("https://postboi.app/v1/segments/seg_1/count")
+			await provider().segments.update("seg_1", { name: "Very important" })
+			expect(sent_init().method).toBe("PATCH")
+			await provider().segments.delete("seg_1")
+			expect(sent_init().method).toBe("DELETE")
+
+			fetch
+				.mockResolvedValueOnce(
+					respond({ json: { contacts: [{ email: "a@x.test" }], cursor: "c1" } })
+				)
+				.mockResolvedValueOnce(
+					respond({ json: { contacts: [{ email: "b@x.test" }], cursor: null } })
+				)
+			const contacts = await provider().segments.contacts("seg_1")
+			expect(contacts.map((contact) => contact.email)).toEqual(["a@x.test", "b@x.test"])
+			expect(fetch.mock.calls.at(-1)![0]).toBe(
+				"https://postboi.app/v1/segments/seg_1/contacts?cursor=c1"
+			)
+
+			fetch.mockResolvedValue(
+				respond({ json: { ids: ["m1"], recipients: 1, matching: 3, scheduled_at: "" } })
+			)
+			const sent = await provider().segments.broadcast("VIPs", {
+				subject: "Hi {name}",
+				body: "<p>Hello</p>",
+				from: "Ada <ada@test.com>",
+			})
+			expect(sent_url()).toBe("https://postboi.app/v1/segments/VIPs/send")
+			expect(sent_json()).toEqual({
+				from: { email: "ada@test.com", name: "Ada" },
+				subject: "Hi {name}",
+				html: "<p>Hello</p>",
+			})
+			expect(sent.matching).toBe(3)
+
+			fetch.mockResolvedValue(respond({ json: { contacts: 3, capped: false } }))
+			await provider().segments.tag("VIPs", { add: ["reached"], remove: ["cold"] })
+			expect(sent_url()).toBe("https://postboi.app/v1/segments/VIPs/tags")
+			expect(sent_json()).toEqual({ add: ["reached"], remove: ["cold"] })
+		})
+
 		it("contacts.add carries the profile fields; contacts.all a tag", async () => {
 			await provider().contacts.add("ada@test.com", { phone: "+447700900123", external_id: "u1" })
 			expect(sent_json()).toEqual({

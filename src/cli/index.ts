@@ -153,6 +153,7 @@ ${bold("Account")} ${dim("(Postboi provider — full reference: https://api.post
   ${cyan("bunx postboi contacts")}        The audience ${dim("· add <email> [--name --data --phone --external-id --timezone]")}
   ${dim("                                 · <email> · remove <email> · tag <email> <tag…> · untag <email> <tag> · tags")}
   ${cyan("bunx postboi events")}          A contact's timeline ${dim("· <email> · track <email|ext:id> <event> [--props] · schemas · rules")}
+  ${cyan("bunx postboi segments")}        Saved audience filters ${dim("· <ref> · create <name> --definition <json> · tag <ref> <tag…> [--remove] · delete <ref>")}
   ${cyan("bunx postboi domains")}         Sending domains ${dim("· add <domain> · check <ref> · delete <ref>")}
   ${cyan("bunx postboi webhooks")}        Webhooks ${dim("· add <url> · delete <id> · deliveries <id>")}
   ${cyan("bunx postboi members")}         Members ${dim("· invite <email> · remove <ref> · revoke <ref>")}

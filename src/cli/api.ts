@@ -465,6 +465,90 @@ async function events(args: Array<string>): Promise<void> {
 	)
 }
 
+// ── Segments ───────────────────────────────────────────────────────────────
+
+interface SegmentWire {
+	id: string
+	name: string
+	definition: unknown
+	updated_at: string
+}
+
+async function segments(args: Array<string>): Promise<void> {
+	const [action, ...rest] = args
+
+	// `segments create <name> --definition '<json>'`
+	if (action === "create") {
+		const { flags, rest: words } = take_flags(rest, ["definition"])
+		const name = words.join(" ").trim()
+		if (!name || !flags.definition) {
+			throw new ApiCommandError(
+				'Usage: postboi segments create <name> --definition \'{"match":"all","rules":[…]}\''
+			)
+		}
+		const segment = await api<SegmentWire>("/v1/segments", {
+			method: "POST",
+			body: { name, definition: json_object_flag("definition", flags.definition) },
+		})
+		return console.log(`${green("✓")} created ${bold(segment.name)} ${dim(`(${segment.id})`)}`)
+	}
+
+	if (action === "delete") {
+		const ref = rest.join(" ").trim()
+		if (!ref) throw new ApiCommandError("Usage: postboi segments delete <name or id>")
+		const gone = await api<{ id: string }>(`/v1/segments/${encodeURIComponent(ref)}`, {
+			method: "DELETE",
+		})
+		return console.log(`${green("✓")} deleted ${bold(ref)} ${dim(`(${gone.id})`)}`)
+	}
+
+	// `segments tag <ref> <tag…> [--remove]`
+	if (action === "tag") {
+		const { flags, rest: words } = take_flags(rest, ["remove"])
+		const [ref, ...tags] = words
+		if (!ref || tags.length === 0) {
+			throw new ApiCommandError("Usage: postboi segments tag <ref> <tag…> [--remove]")
+		}
+		const { contacts, capped } = await api<{ contacts: number; capped: boolean }>(
+			`/v1/segments/${encodeURIComponent(ref)}/tags`,
+			{ method: "POST", body: flags.remove !== undefined ? { remove: tags } : { add: tags } }
+		)
+		return console.log(
+			`${green("✓")} ${flags.remove !== undefined ? "untagged" : "tagged"} ${bold(String(contacts))} contact${contacts === 1 ? "" : "s"}${capped ? dim(" (capped — run again for the rest)") : ""}`
+		)
+	}
+
+	// A bare `segments <ref>` shows the segment, its counts and the first page of contacts.
+	if (action) {
+		const segment = await api<SegmentWire & { matching: number; reachable: number }>(
+			`/v1/segments/${encodeURIComponent(action)}`
+		)
+		console.log(`${bold(segment.name)} ${dim(`(${segment.id})`)}`)
+		console.log(
+			`  ${dim("matching:")} ${segment.matching}  ${dim("reachable:")} ${segment.reachable}`
+		)
+		console.log(`  ${dim("definition:")} ${JSON.stringify(segment.definition)}`)
+		const { contacts } = await api<{ contacts: Array<ContactWire> }>(
+			`/v1/segments/${encodeURIComponent(action)}/contacts`
+		)
+		if (contacts.length === 0) return console.log(dim("  Nobody matches."))
+		console.log()
+		return table(
+			["EMAIL", "NAME", "TAGS"],
+			contacts.map((c) => [c.email, c.name ?? "", dim((c.tags ?? []).join(", "))])
+		)
+	}
+
+	const { segments: rows } = await api<{ segments: Array<SegmentWire> }>("/v1/segments")
+	if (rows.length === 0) {
+		return console.log(dim("No segments yet — postboi segments create <name> --definition <json>"))
+	}
+	table(
+		["NAME", "UPDATED", "ID"],
+		rows.map((s) => [bold(s.name), day(s.updated_at), dim(s.id)])
+	)
+}
+
 // ── Domains ────────────────────────────────────────────────────────────────
 
 interface DomainDetail {
@@ -739,6 +823,7 @@ const COMMANDS: Record<string, (args: Array<string>) => Promise<void>> = {
 	recipients,
 	contacts,
 	events,
+	segments,
 	domains,
 	webhooks,
 	members,

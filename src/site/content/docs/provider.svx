@@ -473,6 +473,74 @@ The preset makes a `billing.trial_started` contact `trial`, a `billing.purchase`
 Free accounts keep 90 days of timeline and paid accounts 13 months; the `last_opened_at`,
 `last_clicked_at`, `last_replied_at` and `last_event_at` stamps on the contact outlive it.
 
+## Segments
+
+A **segment** is a saved filter over the audience — tags, `data` fields, list membership,
+engagement, events, suppression, phone — matched `all` (and) or `any` (or), with groups
+nested up to three deep. It is evaluated fresh every time it's used, so it is always who
+your contacts are _now_, never a snapshot:
+
+```ts
+const lapsed = await mail.segments.create("Lapsed customers", {
+	match: "all",
+	rules: [
+		{ kind: "tag", tag: "customer", has: true },
+		{ kind: "engagement", metric: "opened", within_days: 60, happened: false },
+	],
+})
+
+await mail.segments.count("Lapsed customers") // { matching: 212, reachable: 190 }
+await mail.segments.contacts(lapsed.id) // every matching contact, pagination followed
+await mail.segments.broadcast("Lapsed customers", { subject: "We miss you, {name}", body })
+await mail.segments.tag("Lapsed customers", { add: ["win-back"] })
+await mail.contacts.all({ segment: "Lapsed customers" })
+```
+
+The predicates, each an object with a `kind`:
+
+| kind         | fields                                                                                       |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| `tag`        | `tag`, `has`                                                                                 |
+| `attribute`  | `key` (a `data` field), `op` (`eq` `neq` `contains` `starts` `exists` `missing` `gt` `gte` `lt` `lte` `before` `after`), `value` |
+| `list`       | `list_id`, `member`, optional `status`                                                       |
+| `engagement` | `metric` (`opened` `clicked` `replied` `any`), `within_days`, `happened`                     |
+| `event`      | `name`, `happened`, optional `within_days`, `min_count`, `property: { key, op, value }`      |
+| `suppressed` | `is`                                                                                         |
+| `phone`      | `has`                                                                                        |
+
+Numbers in `data` compare as numbers whether they were stored as `49` or `"49"`, and dates
+as dates. Engagement reads the counters on the contact, so "hasn't opened in 60 days" is
+one column, not a scan of the timeline.
+
+**Who a broadcast reaches.** A segment can match contacts who exist only because an event
+named them and who never joined a list. A `segments.broadcast` reaches only the matching
+contacts **subscribed on at least one list** — that is what `reachable` counts, and the
+response's `matching` says how many were matched in all, so nobody is dropped in silence.
+Suppressions apply as they do everywhere. `mail.segments.preview(definition)` tries a
+definition without saving it.
+
+Three definitions worth copying:
+
+```ts
+// Trial users who never opened anything
+{ match: "all", rules: [
+	{ kind: "tag", tag: "trial", has: true },
+	{ kind: "engagement", metric: "opened", within_days: 730, happened: false },
+] }
+
+// Paying customers on the pro plan, by the data your app keeps on them
+{ match: "all", rules: [
+	{ kind: "event", name: "billing.purchase", happened: true },
+	{ kind: "attribute", key: "plan", op: "eq", value: "pro" },
+] }
+
+// Anyone who replied in the last month, or clicked twice this quarter
+{ match: "any", rules: [
+	{ kind: "engagement", metric: "replied", within_days: 30, happened: true },
+	{ kind: "event", name: "email.clicked", happened: true, within_days: 90, min_count: 2 },
+] }
+```
+
 ## Confirmation (double opt-in)
 
 Lists can require **confirmation**: new recipients start `pending` and receive an
