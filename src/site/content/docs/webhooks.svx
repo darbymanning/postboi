@@ -139,6 +139,20 @@ message to your number: `phone` is the person, `body.text` is what they said, an
 `message_id` is the send they replied to when they used WhatsApp's reply. Providers
 without inbound never emit it.
 
+## Text messages
+
+The same events cover [SMS](/sms#delivery-receipts): `channel` says `"sms"` (absent
+still means email), and the number is in `phone` — never in `email`, so a handler that
+reads `event.email` is never handed a phone number. A text that reached the handset is
+`delivered`; one the carrier gave up on is `failed`, with the carrier's code in
+`bounce.detail`; one it is still retrying is `delayed`. Which way they arrive depends on
+the provider. **The SMS Works** pushes account-wide delivery reports, so it is a
+`receive()` provider like any of the email ones — `provider: 'smsworks'`, verified with
+`SMSWORKS_WEBHOOK_SECRET` as `?token=…` (see the [table below](#verification)).
+**Twilio** sets its callbacks per message, so it is [polled](#providers-that-dont-push-poll).
+Both read an inbound reply for one thing: a reply that is an
+[opt-out keyword](/sms#opt-outs) is an `unsubscribed` event for the number that sent it.
+
 ## Who opened it, and on what
 
 On opens and clicks, most providers report the recipient's user-agent. postboi parses it
@@ -185,6 +199,7 @@ Providers fall into three camps:
 | Customer.io | Signed (HMAC timestamp+body, 5-minute replay window) | `CUSTOMERIO_WEBHOOK_SECRET`, the reporting webhook's signing key |
 | SocketLabs | Secret key in the body | `SOCKETLABS_WEBHOOK_SECRET`, the endpoint's secret key — set it before pressing Validate, since the `Validation` handshake is verified like any other request and then echoed back by `webhook()` for you |
 | Postmark, Brevo, SparkPost, Mailjet, ZeptoMail, Elastic Email, Plunk, SMTP2GO, Postal, Infobip, SendPulse | Shared secret | `<PROVIDER>_WEBHOOK_SECRET`, a token you make up; put the same value in the webhook URL as `?token=…` (or the provider's auth-header option) |
+| The SMS Works (SMS) | Shared secret | `SMSWORKS_WEBHOOK_SECRET`, a token you make up, as `?token=…` on the delivery-report URL (Delivery Reports → Webhook Configuration) — or the basic-auth password on a reply-number webhook |
 | Amazon SES, Scaleway | Shared secret over SNS | `SES_WEBHOOK_SECRET` / `SCALEWAY_WEBHOOK_SECRET` as `?token=…` on the subscription URL; SNS subscription handshakes confirm automatically |
 | Azure Communication Services | Shared secret over Event Grid | `AZURE_WEBHOOK_SECRET` as `?token=…` on the subscription's endpoint URL (Event Grid keeps the query string secret); the subscription validation handshake is completed automatically. Engagement reports name the message but not the recipient, so opens and clicks carry `message_id` and no `email` |
 
@@ -279,6 +294,10 @@ const events = await receive(request, { provider: 'resend', secret })
 // WhatsApp via Meta, a person writing back to your number:
 const wa = await mock_request({ provider: 'meta', type: 'received' })
 // (await receive(wa.request, { provider: 'meta', secret: wa.secret }))[0].body.text
+
+// Text-message providers put the number in `phone`:
+const sms = await mock_request({ provider: 'smsworks', type: 'failed' })
+// (await receive(sms.request, { provider: 'smsworks', secret: sms.secret }))[0].phone === "+447700900123"
 ```
 
 Polling providers get the same treatment: `mock_poll` builds a realistic `poll()` result

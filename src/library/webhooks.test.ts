@@ -1037,6 +1037,7 @@ describe("receive — every provider round-trips through mock_request", () => {
 			"postal",
 			"infobip",
 			"sendpulse",
+			"smsworks",
 		]) {
 			const { request } = await mock_request({ provider, type: "delivered" })
 			const error = await receive(request, {
@@ -1086,6 +1087,157 @@ describe("receive — every provider round-trips through mock_request", () => {
 		} finally {
 			fetch_spy.mockRestore()
 		}
+	})
+})
+
+describe("receive — smsworks (SMS delivery reports and replies)", () => {
+	// Twilio's receipts are polled; The SMS Works pushes them, so this is the first
+	// webhook adapter whose events are about a number rather than an address.
+	it("a delivery report is a delivered event about a phone number, never an email", async () => {
+		const { request, secret } = await mock_request({ provider: "smsworks", type: "delivered" })
+		const [event] = await receive(request, { provider: "smsworks", secret })
+		expect(event).toMatchObject({
+			type: "delivered",
+			provider: "smsworks",
+			channel: "sms",
+			phone: "+447700900123",
+			message_id: "d87e93c0-fa08-4903-becd-aeb5b0ab3b6a",
+			tags: ["otp"],
+		})
+		expect(event.email).toBeUndefined()
+		expect(event.timestamp).toBeInstanceOf(Date)
+	})
+
+	it("maps the statuses: SENT, the three failures, and never SCHEDULED", async () => {
+		const secret = "smsworks-token"
+		const url = `https://example.com/webhooks?token=${secret}`
+		const post = (payload: Record<string, unknown>) =>
+			receive(new Request(url, { method: "POST", body: JSON.stringify(payload) }), {
+				provider: "smsworks",
+				secret,
+			})
+		const base = { messageid: "m1", destination: "447700900123", modified: "2026-08-07T10:00:00Z" }
+
+		expect((await post({ ...base, status: "SENT" }))[0].type).toBe("sent")
+		for (const status of ["UNDELIVERABLE", "REJECTED", "EXPIRED"]) {
+			expect((await post({ ...base, status }))[0].type, status).toBe("failed")
+		}
+		// The provider still holding the message is not something that happened to it.
+		expect(await post({ ...base, status: "SCHEDULED" })).toEqual([])
+		// Lower-case, just in case a payload ever arrives that way.
+		expect((await post({ ...base, status: "delivered" }))[0].type).toBe("delivered")
+		// A healthy report can carry an empty failure object; that is not a retry.
+		const healthy = {
+			...base,
+			status: "SENT",
+			failurereason: { code: 0, details: "", permanent: false },
+		}
+		expect((await post(healthy))[0]).toMatchObject({ type: "sent", bounce: undefined })
+	})
+
+	it("takes a list of reports, and refuses a body that is no report at all", async () => {
+		const secret = "smsworks-token"
+		const url = `https://example.com/webhooks?token=${secret}`
+		const post = (body: string) =>
+			receive(new Request(url, { method: "POST", body }), { provider: "smsworks", secret })
+		const events = await post(
+			JSON.stringify([
+				{ messageid: "a", status: "DELIVERED", destination: 447700900123 },
+				{ messageid: "b", status: "SCHEDULED", destination: 447700900124 },
+				{ messageid: "c", status: "EXPIRED", destination: 447700900125 },
+			])
+		)
+		expect(events.map((event) => [event.message_id, event.type])).toEqual([
+			["a", "delivered"],
+			["c", "failed"],
+		])
+		const error = await post("null").catch((e) => e)
+		expect(error).toMatchObject({ code: "invalid_payload", provider: "smsworks" })
+	})
+
+	it("leaves phone unset for a destination that isn't a number, rather than inventing one", async () => {
+		const secret = "smsworks-token"
+		const request = new Request(`https://example.com/webhooks?token=${secret}`, {
+			method: "POST",
+			body: JSON.stringify({ messageid: "m1", status: "DELIVERED", destination: "4477" }),
+		})
+		const [event] = await receive(request, { provider: "smsworks", secret })
+		expect(event.type).toBe("delivered")
+		expect(event.phone).toBeUndefined()
+	})
+
+	it("classifies a failure by the permanent flag, with the carrier's code in the detail", async () => {
+		const { request, secret } = await mock_request({ provider: "smsworks", type: "failed" })
+		const [event] = await receive(request, { provider: "smsworks", secret })
+		expect(event.type).toBe("failed")
+		expect(event.bounce?.category).toBe("hard")
+		expect(event.bounce?.detail).toBe(
+			"5001 Handset Error: Number does not exist or has not been assigned to a user."
+		)
+	})
+
+	it("a SENT carrying a temporary failure is delayed — the carrier is still trying", async () => {
+		const { request, secret } = await mock_request({ provider: "smsworks", type: "delayed" })
+		const [event] = await receive(request, { provider: "smsworks", secret })
+		expect(event.type).toBe("delayed")
+		expect(event.bounce?.category).toBe("soft")
+		expect(event.bounce?.detail).toContain("3001")
+	})
+
+	it("reads an inbound reply for an opt-out and nothing else", async () => {
+		const { request, secret } = await mock_request({ provider: "smsworks", type: "unsubscribed" })
+		const [event] = await receive(request, { provider: "smsworks", secret })
+		// The number is the sender's — they are the one opting out.
+		expect(event).toMatchObject({
+			type: "unsubscribed",
+			channel: "sms",
+			phone: "+447700900123",
+			message_id: "328827210622192878142",
+		})
+
+		const url = `https://example.com/webhooks?token=${secret}`
+		const reply = new Request(url, {
+			method: "POST",
+			body: JSON.stringify({
+				messagetype: "incoming",
+				messageid: "in-2",
+				content: "Thanks, see you at 3",
+				from: "447700900123",
+			}),
+		})
+		expect(await receive(reply, { provider: "smsworks", secret })).toEqual([])
+	})
+
+	it("is the default when no email provider is configured but the SMS one pushes", async () => {
+		const saved = { ...process.env }
+		delete process.env.POSTBOI_PROVIDER
+		delete process.env.POSTBOI_TOKEN
+		delete process.env.POSTBOI_WHATSAPP_PROVIDER
+		process.env.POSTBOI_SMS_PROVIDER = "smsworks"
+		try {
+			const { request, secret } = await mock_request({ provider: "smsworks", type: "delivered" })
+			const [event] = await receive(request, { secret })
+			expect(event).toMatchObject({ provider: "smsworks", type: "delivered", channel: "sms" })
+			// Twilio polls, so naming it is not naming a webhook provider.
+			process.env.POSTBOI_SMS_PROVIDER = "twilio"
+			const again = await mock_request({ provider: "smsworks", type: "delivered", secret })
+			const error = await receive(again.request, { secret }).catch((e) => e)
+			expect(error).toMatchObject({ code: "no_provider" })
+		} finally {
+			for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]
+			Object.assign(process.env, saved)
+		}
+	})
+
+	it("accepts the token as a basic-auth password, the option their reply webhooks offer", async () => {
+		const secret = "smsworks-token"
+		const request = new Request("https://example.com/webhooks", {
+			method: "POST",
+			headers: { authorization: `Basic ${btoa(`postboi:${secret}`)}` },
+			body: JSON.stringify({ messageid: "m1", status: "DELIVERED", destination: 447700900123 }),
+		})
+		const events = await receive(request, { provider: "smsworks", secret })
+		expect(events[0]).toMatchObject({ type: "delivered", phone: "+447700900123" })
 	})
 })
 

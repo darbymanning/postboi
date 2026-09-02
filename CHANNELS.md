@@ -958,6 +958,9 @@ against `META_WEBHOOK_VERIFY_TOKEN`. Its `statuses` are the same events as Twili
 inbound `messages` are a STOP → `unsubscribed`, and anything else a person writes →
 `received` with `phone` and `body.text` — the webhook is the only way those reach you,
 unlike Twilio's replies, which sit in the Message resource for whoever reads them.
+**The SMS Works ships on the same side** — as a `receive()` adapter
+(`webhooks/smsworks.ts`), because its delivery reports go to one account-wide URL,
+which is exactly the shape every email webhook adapter already handles.
 
 **Why polling rather than webhooks.** Twilio's status callbacks exist, but the URL is set
 **per message, at send time** — so receiving them means every send having somewhere to
@@ -969,9 +972,9 @@ as for a deployed app.
 email — no existing adapter starts claiming a channel), and the number lands in `phone`,
 never in `email`. The shared vocabulary does the rest: an SMS that reached the handset is
 `delivered`, an undeliverable one is `failed` with the carrier's code in `bounce.detail`
-(there is no bounce _classification_ for a text message — no mailbox to be permanently or
-temporarily unavailable), and WhatsApp's read receipt is `opened`, because it is the same
-fact as an email open.
+(Twilio offers no bounce _classification_ for a text message, so its category stays
+`unknown`; The SMS Works does, below), and WhatsApp's read receipt is `opened`, because it
+is the same fact as an email open.
 
 **The window is trailing, not incremental.** Twilio filters its list by `DateSent`, but
 what changes over a message's life is its _status_ — a message sent last night and
@@ -980,13 +983,20 @@ delivered this morning still has last night's `DateSent`. So every poll asks for
 only when that changes. The `seen` map is bounded (~500), so a transition on a message
 that has been quiet for that long is re-emitted once.
 
+**The SMS Works is a webhook, not a poll.** Its delivery reports are readable per message
+(`GET /message/{id}`) and per batch, but there is no documented date-window query to poll
+a whole account with — and no need for one, because the reports are pushed to one URL
+set once on the account (or per send as `deliveryreporturl`). So it is the `?token=…`
+shared-secret shape already used by Postmark, Brevo and friends: `SMSWORKS_WEBHOOK_SECRET`
+in the URL, compared timing-safe. That is weaker than PureSMS's HMAC, as Appendix B
+accepted, and the docs say so. What the adapter adds over Twilio's mapping is a real
+bounce _classification_: their `failurereason.permanent` is the hard/soft split, and a
+`SENT` still carrying a temporary reason is `delayed` — the carrier retrying for up to
+48 hours. The same adapter takes their reply-number webhook (`messagetype: "incoming"`)
+and reads it for a STOP and nothing else, the line the Twilio poll draws.
+
 ### Not shipping, and why
 
-- **The SMS Works** — the provider this document picks for UK SMS. Its delivery reports are
-  readable per message (`GET /message/{id}`) and per batch, but there is **no documented
-  date-window query** on `POST /messages` to poll a whole account with. Its webhooks are
-  the intended path, and the `?token=…` shape already used elsewhere in `webhooks/` fits
-  them. Revisit if a date-range filter turns up in their API reference.
 - **Amazon SNS SMS** — delivery status goes to **CloudWatch Logs**, not an API that lists
   message states. Polling it would mean a CloudWatch Logs Insights query per window: a
   different shape of adapter, and a different set of IAM permissions to ask for.

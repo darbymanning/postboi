@@ -22,7 +22,7 @@
  */
 import { PostboiError } from "../index.js"
 import type { Channel } from "../errors.js"
-import type { ProviderKey, WhatsappProviderKey } from "../registry.js"
+import type { ProviderKey, SmsProviderKey, WhatsappProviderKey } from "../registry.js"
 import { load_config } from "../config.js"
 import { ensure_env_loaded, read_env } from "../env.js"
 import { parse_json, sns_envelope, sns_subscribe_url } from "./shared.js"
@@ -226,24 +226,28 @@ export const MODULES: Record<string, () => Promise<AdapterModule>> = {
 	plunk: () => import("./plunk.js"),
 	ses: () => import("./ses.js"),
 	scaleway: () => import("./scaleway.js"),
-	// WhatsApp via Meta's Cloud API — keyed like `whatsapp()`'s provider, and the one
-	// non-email provider here: Twilio reports both its channels by `poll()`.
+	// The channel providers that push. Twilio reports both its channels by `poll()`;
+	// Meta's Cloud API pushes a real webhook, keyed like `whatsapp()`'s provider, and
+	// The SMS Works pushes account-wide SMS delivery reports, keyed like `sms()`'s.
 	meta: () => import("./meta.js"),
+	smsworks: () => import("./smsworks.js"),
 }
 
 /** Options for {@link receive}. */
 export interface ReceiveOptions {
 	/**
-	 * Which provider the request comes from — a key like `"resend"`, or a custom
-	 * {@link WebhookAdapter}. Defaults to the same resolution `mail()` uses:
-	 * `POSTBOI_PROVIDER`, then `postboi.config.ts`, then a `POSTBOI_TOKEN` → the
-	 * Postboi provider — and, only when none of those names an email provider, the
-	 * WhatsApp provider (`POSTBOI_WHATSAPP_PROVIDER` / `whatsapp.provider`) when it
-	 * pushes webhooks. A project with both names `"meta"` here: the endpoint Meta
-	 * calls is never the one the email provider calls. (Twilio types but polls —
-	 * `poll()` is where its receipts are.)
+	 * Which provider the request comes from — a key like `"resend"`, a channel one that
+	 * pushes (`"meta"`, `"smsworks"`), or a custom {@link WebhookAdapter}. Defaults to
+	 * the same resolution `mail()` uses: `POSTBOI_PROVIDER`, then `postboi.config.ts`,
+	 * then a `POSTBOI_TOKEN` → the Postboi provider — and, only when none of those
+	 * names an email provider, the WhatsApp provider (`POSTBOI_WHATSAPP_PROVIDER` /
+	 * `whatsapp.provider`) or the SMS provider (`POSTBOI_SMS_PROVIDER` / `sms.provider`)
+	 * when it pushes webhooks. A project with both names the channel one here: the
+	 * endpoint Meta or The SMS Works calls is never the one the email provider calls.
+	 * A key with no adapter (Twilio types but polls) is a `webhooks_not_supported`
+	 * error at runtime, not a type error — `poll()` is where its receipts are.
 	 */
-	provider?: ProviderKey | WhatsappProviderKey | "postboi" | WebhookAdapter
+	provider?: ProviderKey | SmsProviderKey | WhatsappProviderKey | "postboi" | WebhookAdapter
 	/**
 	 * The signing secret / verification key. Defaults to the provider's
 	 * `<PROVIDER>_WEBHOOK_SECRET` environment variable. For Svix-style providers
@@ -278,14 +282,18 @@ export async function resolve_key(): Promise<string> {
 		read_env("POSTBOI_PROVIDER") ??
 		config.provider ??
 		(read_env("POSTBOI_TOKEN") ? "postboi" : undefined)
-	const whatsapp = read_env("POSTBOI_WHATSAPP_PROVIDER") ?? config.whatsapp?.provider
-	const key = email ?? (whatsapp && whatsapp in MODULES ? whatsapp : undefined)
+	// A channel provider stands in only when it pushes: Twilio names itself on both
+	// channels and polls, so it is never the answer here.
+	const pushes = (key: string | undefined) => (key && key in MODULES ? key : undefined)
+	const whatsapp = pushes(read_env("POSTBOI_WHATSAPP_PROVIDER") ?? config.whatsapp?.provider)
+	const sms = pushes(read_env("POSTBOI_SMS_PROVIDER") ?? config.sms?.provider)
+	const key = email ?? whatsapp ?? sms
 	if (!key) {
 		throw new PostboiError({
 			provider: "postboi",
 			code: "no_provider",
 			message:
-				"No provider configured. Run `bunx postboi init`, set POSTBOI_PROVIDER (or POSTBOI_WHATSAPP_PROVIDER=meta), or pass { provider } to receive().",
+				"No provider configured. Run `bunx postboi init`, set POSTBOI_PROVIDER (or POSTBOI_WHATSAPP_PROVIDER=meta / POSTBOI_SMS_PROVIDER=smsworks), or pass { provider } to receive().",
 		})
 	}
 	return key

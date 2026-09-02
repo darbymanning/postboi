@@ -830,7 +830,16 @@ export const SMS_PROVIDERS = [
 		note: "UK-native, and only charges for messages that actually arrive",
 		price: "~2.8p effective",
 		verified: "2026-08-07",
-		fields: [{ env: "SMSWORKS_API_KEY", arg: "api_key", label: "API key (JWT)", secret: true }],
+		fields: [
+			{ env: "SMSWORKS_API_KEY", arg: "api_key", label: "API key (JWT)", secret: true },
+			{
+				env: "SMSWORKS_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label: "Webhook token (optional; also add ?token=… to the delivery-report URL)",
+				secret: true,
+				default: "",
+			},
+		],
 	},
 	{
 		key: "puresms",

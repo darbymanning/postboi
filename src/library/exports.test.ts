@@ -67,7 +67,7 @@ describe("package exports", () => {
 			"sms/provider.ts", // the SMS base class, reached via each provider
 			"sms/phone.ts", // E.164 + segment helpers, used by sms/provider.ts
 			"sms/send.ts", // the zero-config sms(), re-exported from the root
-			"sms/opt_out.ts", // STOP-keyword detection, reached via the root export and the Twilio poll
+			"sms/opt_out.ts", // STOP-keyword detection, reached via the root export, the Twilio poll and the SMS Works webhook
 			"chat/types.ts", // pure types, re-exported from the root
 			"chat/provider.ts", // the chat base class, reached via each provider
 			"chat/send.ts", // the platform functions (slack() and friends), re-exported from the root
