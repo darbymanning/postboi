@@ -11,8 +11,8 @@ import {
 	hmac_sha256,
 	hex_encode,
 	base64_encode,
-	base64_decode,
 	timing_safe_equal,
+	whsec_key_candidates,
 } from "./crypto.js"
 
 /**
@@ -111,26 +111,6 @@ function parse_signatures(header: string): Array<string> {
 }
 
 /**
- * The HMAC keys a `whsec_…` secret could mean. Sequenzy signs with "the signing
- * secret" and doesn't say whether the prefix is part of the key or whether the rest is
- * base64 (the Svix convention the prefix is borrowed from), so all three readings are
- * tried — each is derived from the configured secret, so accepting any gives away nothing.
- */
-function key_candidates(secret: string): Array<Uint8Array | string> {
-	const candidates: Array<Uint8Array | string> = [secret]
-	if (secret.startsWith("whsec_")) {
-		const stripped = secret.slice("whsec_".length)
-		candidates.push(stripped)
-		try {
-			candidates.push(base64_decode(stripped))
-		} catch {
-			// not base64 — the string readings still stand
-		}
-	}
-	return candidates
-}
-
-/**
  * Sequenzy webhook adapter. Verification is HMAC-SHA256 of `v1:{timestamp}:{body}` with
  * the endpoint's signing secret, carried as `X-Sequenzy-Signature: v1=…` (several `v1=`
  * values while secrets rotate) beside `X-Sequenzy-Timestamp`, which is checked against
@@ -173,7 +153,7 @@ const adapter: WebhookAdapter = {
 		const secrets = ctx.secret.split(/[\s,]+/).filter(Boolean)
 		const expected: Array<string> = []
 		for (const secret of secrets) {
-			for (const key of key_candidates(secret)) {
+			for (const key of whsec_key_candidates(secret)) {
 				// The docs leave the digest's encoding unsaid; hex and base64 are both derived
 				// from the same key, so accepting either costs nothing.
 				const digest = await hmac_sha256(key, payload)

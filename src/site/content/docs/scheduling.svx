@@ -51,6 +51,13 @@ Scheduling is done by the provider, so it only works where the provider offers i
 | SendGrid      | Sent as `send_at`.                                                  |
 | Lettermint    | Passed through as `scheduled_at`.                                    |
 | Unosend       | Sent as `scheduled_for`.                                            |
+| SMTP2GO       | Sent as `schedule`, up to three days ahead.                          |
+| Maileroo      | Passed through as `scheduled_at`.                                    |
+| AhaSend       | Sent as the schedule's `first_attempt`.                              |
+| Customer.io   | Sent as `send_at` (unix seconds).                                    |
+| Infobip       | Sent as `sendAt`.                                                    |
+| Iterable      | Sent as `sendAt`, in Iterable's own `yyyy-MM-dd HH:mm:ss` form.      |
+| Lettr         | Sent as `scheduled_at`, through the `/emails/scheduled` endpoint.    |
 
 Every other provider **ignores** `scheduled_at` and sends immediately, so don't lean on it
 with a provider that doesn't support it.

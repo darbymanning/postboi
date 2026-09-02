@@ -5,7 +5,7 @@ description: Integrate the postboi messaging library — send email, SMS, WhatsA
 
 # Postboi
 
-Framework-agnostic messaging library. One `mail()` call, 22 email providers, normalized errors and webhooks across all of them — same shape for SMS, WhatsApp, push and chat, plus a `send()` that reaches someone across all of them.
+Framework-agnostic messaging library. One `mail()` call, 38 email providers, normalized errors and webhooks across all of them — same shape for SMS, WhatsApp, push and chat, plus a `send()` that reaches someone across all of them.
 
 Every docs page is raw Markdown at `https://docs.postboi.app/raw/<slug>` — fetch those for anything below marked with one. Everything in one file: `https://docs.postboi.app/llms-full.txt`.
 
@@ -328,7 +328,7 @@ Order matters — the old provider keeps sending until the new domain verifies.
 | Push service worker                  | `receive` from `postboi/push/sw` — the `push`, `notificationclick` and `pushsubscriptionchange` handlers. `bunx postboi init --push` wires it: the import where the framework builds the worker (SvelteKit), the handlers written out where it's served as-is (Next, Nuxt, Astro, Remix) |
 | Push toggle state machine            | `subscription` from `postboi/svelte` (reactive: `push.on`, `push.busy`, `push.toggle`) · `usePush` from `postboi/react` · `use_push` from `postboi/vue` · `subscription` from `postboi/push` (store contract) anywhere else                                                              |
 | Mint a VAPID pair                    | `generate_vapid_keys` from `postboi/webpush`, or `bunx postboi vapid`                                                                                                                                                                                                                    |
-| Explicit provider                    | `postboi/resend`, `postboi/ses`, `postboi/smtp`, … (`/raw/providers` for all 22 + env var names)                                                                                                                                                                                         |
+| Explicit provider                    | `postboi/resend`, `postboi/ses`, `postboi/smtp`, … (`/raw/providers` for all 38 + env var names)                                                                                                                                                                                         |
 | Explicit channel provider            | `postboi/twilio`, `postboi/smsworks`, `postboi/puresms`, `postboi/sns`, `postboi/webpush`, `postboi/fcm`, `postboi/apns`, `postboi/hms`, `postboi/whatsapp-twilio`, `postboi/whatsapp-meta`, `postboi/slack`, …                                                                          |
 | SvelteKit action & webhook handler   | `mail`, `action`, `webhook` from `postboi/kit`                                                                                                                                                                                                                                           |
 | SvelteKit remote form (experimental) | `mail` from `postboi/remote`; factory `remote` from `postboi/kit`                                                                                                                                                                                                                        |
