@@ -50,7 +50,27 @@ export function hmac_sha1(key: Uint8Array | string, data: string): Promise<Uint8
 }
 
 /** The outcome of a {@link svix_verify} check. */
-export type SvixVerdict = "ok" | "stale_timestamp" | "invalid_signature"
+export type SvixVerdict = "ok" | "stale_timestamp" | "invalid_signature" | "malformed_secret"
+
+/**
+ * The HMAC keys a `whsec_…` secret could mean, for providers that borrow the prefix
+ * without saying how they key with it: the literal string, the string with the prefix
+ * stripped, and the base64 the prefix conventionally announces. Each is derived from the
+ * one configured value, so accepting any of them gives away nothing.
+ */
+export function whsec_key_candidates(secret: string): Array<Uint8Array | string> {
+	const candidates: Array<Uint8Array | string> = [secret]
+	if (secret.startsWith("whsec_")) {
+		const stripped = secret.slice("whsec_".length)
+		candidates.push(stripped)
+		try {
+			candidates.push(base64_decode(stripped))
+		} catch {
+			// not base64 — the string readings still stand
+		}
+	}
+	return candidates
+}
 
 /**
  * Verify a Svix / standard-webhooks signature (Resend, and the Postboi provider's own
@@ -69,6 +89,11 @@ export async function svix_verify(options: {
 	tolerance_s?: number
 	/** Current unix time in seconds — injectable for tests. */
 	now_s?: number
+	/**
+	 * The HMAC keys to try instead of the conventional reading of `secret` (the base64
+	 * inside the `whsec_` prefix), for providers that key the same scheme differently.
+	 */
+	keys?: Array<Uint8Array | string>
 }): Promise<SvixVerdict> {
 	const tolerance = options.tolerance_s ?? 300
 	const timestamp = Number(options.timestamp)
@@ -77,13 +102,24 @@ export async function svix_verify(options: {
 		return "stale_timestamp"
 	}
 
-	const key = base64_decode(options.secret.replace(/^whsec_/, ""))
+	let keys = options.keys
+	if (!keys) {
+		try {
+			keys = [base64_decode(options.secret.replace(/^whsec_/, ""))]
+		} catch {
+			// Not a whsec_ secret at all — a misconfiguration, not a forgery.
+			return "malformed_secret"
+		}
+	}
 	const signed = `${options.id}.${options.timestamp}.${options.body}`
-	const expected = base64_encode(await hmac_sha256(key, signed))
+	const expected = await Promise.all(
+		keys.map(async (key) => base64_encode(await hmac_sha256(key, signed)))
+	)
 
 	for (const entry of options.signatures.split(" ")) {
 		const [version, signature] = entry.split(",")
-		if (version === "v1" && signature && timing_safe_equal(signature, expected)) return "ok"
+		if (version !== "v1" || !signature) continue
+		if (expected.some((candidate) => timing_safe_equal(signature, candidate))) return "ok"
 	}
 	return "invalid_signature"
 }

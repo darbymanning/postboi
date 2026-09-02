@@ -1,8 +1,7 @@
 import { PushProvider, type PreparedPush, type PushProviderOptions } from "./provider.js"
 import type { RequestSpec } from "../transport.js"
 import { PostboiError, type ProviderError } from "../errors.js"
-import { pem_to_der, to_base64url } from "../encoding.js"
-import { cached_token } from "./oauth.js"
+import { cached_token, google_service_account_assertion } from "../oauth.js"
 
 /** Options for the FCM provider constructor. */
 type Options = PushProviderOptions & {
@@ -15,8 +14,6 @@ type Options = PushProviderOptions & {
 }
 
 type SendResponse = { name: string }
-
-const encoder = new TextEncoder()
 
 /**
  * Firebase Cloud Messaging (HTTP v1) —
@@ -62,30 +59,12 @@ export default class FCM extends PushProvider<SendResponse> {
 
 	/** The actual JWT sign + token exchange. Only reached on a cold or expiring cache. */
 	async #exchange(now: number): Promise<{ value: string; expires_in: number }> {
-		const claims = {
-			iss: this.#client_email,
+		const assertion = await google_service_account_assertion({
+			client_email: this.#client_email,
+			private_key: this.#private_key,
 			scope: "https://www.googleapis.com/auth/firebase.messaging",
-			aud: "https://oauth2.googleapis.com/token",
-			exp: Math.floor(now / 1000) + 3600,
-			iat: Math.floor(now / 1000),
-		}
-		const header = to_base64url(encoder.encode(JSON.stringify({ alg: "RS256", typ: "JWT" })))
-		const payload = to_base64url(encoder.encode(JSON.stringify(claims)))
-		const signing_input = `${header}.${payload}`
-
-		const key = await crypto.subtle.importKey(
-			"pkcs8",
-			pem_to_der(this.#private_key),
-			{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-			false,
-			["sign"]
-		)
-		const signature = await crypto.subtle.sign(
-			"RSASSA-PKCS1-v1_5",
-			key,
-			encoder.encode(signing_input)
-		)
-		const assertion = `${signing_input}.${to_base64url(new Uint8Array(signature))}`
+			now,
+		})
 
 		const response = await this.request({
 			url: "https://oauth2.googleapis.com/token",

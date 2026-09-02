@@ -147,6 +147,13 @@ export interface WebhookAdapter {
 	verify(ctx: VerifyContext): void | Promise<void>
 	/** Map the raw body to normalized events (providers may batch several per request). */
 	normalize(body: string, ctx: NormalizeContext): Array<WebhookEvent> | Promise<Array<WebhookEvent>>
+	/**
+	 * The response a request needs in the provider's own words, when it is not an event
+	 * but a handshake — SocketLabs validates an endpoint by expecting its `ValidationKey`
+	 * echoed back. Consulted by the `webhook()` handler after verification; undefined
+	 * means the usual `{ received }` answer.
+	 */
+	respond?(body: string, ctx: NormalizeContext): Response | undefined
 }
 
 /** A loaded adapter module: the adapter plus its mock-payload builder (for tests). */
@@ -191,6 +198,15 @@ export const MODULES: Record<string, () => Promise<AdapterModule>> = {
 	lettermint: () => import("./lettermint.js"),
 	unosend: () => import("./unosend.js"),
 	sequenzy: () => import("./sequenzy.js"),
+	loops: () => import("./loops.js"),
+	smtp2go: () => import("./smtp2go.js"),
+	socketlabs: () => import("./socketlabs.js"),
+	azure: () => import("./azure.js"),
+	postal: () => import("./postal.js"),
+	customerio: () => import("./customerio.js"),
+	ahasend: () => import("./ahasend.js"),
+	infobip: () => import("./infobip.js"),
+	sendpulse: () => import("./sendpulse.js"),
 	zepto: () => import("./zepto.js"),
 	elasticemail: () => import("./elasticemail.js"),
 	plunk: () => import("./plunk.js"),
@@ -257,6 +273,13 @@ export async function adapter_for(key: string): Promise<WebhookAdapter> {
 	return (await load()).default
 }
 
+/** The adapter `provider` names — a key, a custom adapter, or the zero-config resolution. */
+export async function resolve_adapter(
+	provider?: ReceiveOptions["provider"]
+): Promise<WebhookAdapter> {
+	return typeof provider === "object" ? provider : adapter_for(provider ?? (await resolve_key()))
+}
+
 /**
  * Verify and normalize an incoming provider webhook. Reads the request once, checks the
  * signature (fail-closed — no secret is an error unless `verify: false`), and returns the
@@ -270,10 +293,7 @@ export async function receive(
 	request: Request,
 	options: ReceiveOptions = {}
 ): Promise<Array<WebhookEvent>> {
-	const adapter =
-		typeof options.provider === "object"
-			? options.provider
-			: await adapter_for(options.provider ?? (await resolve_key()))
+	const adapter = await resolve_adapter(options.provider)
 
 	await ensure_env_loaded()
 	const secret =
