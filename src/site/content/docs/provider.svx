@@ -200,12 +200,15 @@ The rules, because these are secrets:
   unlocks the rest — the store must not contain its own key.
 - **Encrypted at rest**, and only ever decrypted for a bearer of your account token: the
   same trust that could already send with those credentials.
-- **Used server-side for exactly two things.** The library itself sends with whatever is
-  in your process environment, servers included — the synced store never feeds your send
-  path. On Postboi's side, synced credentials are decrypted only to poll a provider that
-  can't push delivery webhooks (SMTP, Microsoft 365, Cloudflare — on by default once
-  synced, pausable per provider on the credentials page), and to send on your behalf when
-  you've turned on **send via** there. Never otherwise.
+- **Used server-side for exactly three things.** The library itself sends with whatever
+  is in your process environment, servers included — the synced store never feeds your
+  send path. On Postboi's side, synced credentials are decrypted only to poll a provider
+  that can't push delivery webhooks (SMTP, Microsoft 365, Cloudflare — on by default once
+  synced, pausable per provider on the credentials page); to send on your behalf when
+  you've turned on **send via** there; and, for a provider whose delivery events you point
+  at us, to verify those webhooks with its signing secret — plus to register the webhook
+  with that provider when you press Register, which stores any key it hands back. Never
+  otherwise.
 
 See what's synced, push a hand-set var, or remove one:
 

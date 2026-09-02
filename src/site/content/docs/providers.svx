@@ -24,6 +24,7 @@ keep the secrets in the environment.
 | Provider       | Import               | Environment variables                                   | Constructor options                  |
 | -------------- | -------------------- | ------------------------------------------------------- | ------------------------------------ |
 | AhaSend        | `postboi/ahasend`    | `AHASEND_API_KEY`, `AHASEND_ACCOUNT_ID`                | `api_key`, `account_id`              |
+| Alibaba Direct Mail | `postboi/alibaba` | `ALIBABA_CLOUD_ACCESS_KEY_ID`, `ALIBABA_CLOUD_ACCESS_KEY_SECRET`, `ALIBABA_CLOUD_REGION_ID` | `access_key_id`, `access_key_secret`, `region?`, `address_type?` |
 | Amazon SES     | `postboi/ses`        | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | `access_key_id`, `secret_access_key`, `region`, `session_token?` |
 | Azure Communication Services | `postboi/azure` | `COMMUNICATION_SERVICES_CONNECTION_STRING`     | `connection_string` (or `endpoint`, `access_key`) |
 | Brevo          | `postboi/brevo`      | `BREVO_API_KEY`                                         | `api_key`                            |
@@ -31,9 +32,11 @@ keep the secrets in the environment.
 | Customer.io    | `postboi/customerio` | `CUSTOMERIO_APP_API_KEY`, `CUSTOMERIO_REGION`          | `api_key`, `region?`                 |
 | Elastic Email  | `postboi/elasticemail` | `ELASTICEMAIL_API_KEY`                               | `api_key`                            |
 | Gmail (Google Workspace) | `postboi/gmail` | `GMAIL_CLIENT_EMAIL`, `GMAIL_PRIVATE_KEY`, `GMAIL_USER` | `client_email`, `private_key`, `user?` (or `access_token`) |
+| HubSpot        | `postboi/hubspot`    | `HUBSPOT_ACCESS_TOKEN`, `HUBSPOT_EMAIL_ID`             | `api_key`, `email_id`                |
 | Infobip        | `postboi/infobip`    | `INFOBIP_API_KEY`, `INFOBIP_BASE_URL`                  | `api_key`, `base_url`                |
 | Iterable       | `postboi/iterable`   | `ITERABLE_API_KEY`, `ITERABLE_CAMPAIGN_ID`, `ITERABLE_REGION` | `api_key`, `campaign_id`, `region?` |
 | JetEmail       | `postboi/jetemail`   | `JETEMAIL_API_KEY`                                     | `api_key`                            |
+| Klaviyo        | `postboi/klaviyo`    | `KLAVIYO_API_KEY`, `KLAVIYO_METRIC`                    | `api_key`, `metric?`, `revision?`    |
 | Lettr          | `postboi/lettr`      | `LETTR_API_KEY`                                        | `api_key`                            |
 | Lettermint     | `postboi/lettermint` | `LETTERMINT_SENDING_TOKEN`, `LETTERMINT_ROUTE`         | `api_key`, `route?`                  |
 | Loops          | `postboi/loops`      | `LOOPS_API_KEY`, `LOOPS_TRANSACTIONAL_ID`              | `api_key`, `transactional_id`        |
@@ -46,6 +49,8 @@ keep the secrets in the environment.
 | Mailtrap       | `postboi/mailtrap`   | `MAILTRAP_TOKEN`                                       | `api_key`, `sandbox?`, `inbox_id?`   |
 | Mandrill       | `postboi/mandrill`   | `MANDRILL_API_KEY`                                     | `api_key`                            |
 | Microsoft 365  | `postboi/microsoft365` | `MS365_TENANT_ID`, `MS365_CLIENT_ID`, `MS365_CLIENT_SECRET` | `tenant_id`, `client_id`, `client_secret` |
+| Netcore (Pepipost) | `postboi/netcore` | `NETCORE_API_KEY`, `NETCORE_REGION`                    | `api_key`, `region?`                 |
+| OneSignal      | `postboi/onesignal`  | `ONESIGNAL_API_KEY`, `ONESIGNAL_APP_ID`                | `api_key`, `app_id`, `include_unsubscribed?` |
 | Plunk          | `postboi/plunk`      | `PLUNK_API_KEY`                                        | `api_key`                            |
 | Postal         | `postboi/postal`     | `POSTAL_HOST`, `POSTAL_API_KEY`                        | `host`, `api_key`                    |
 | Postmark       | `postboi/postmark`   | `POSTMARK_SERVER_TOKEN`                                | `api_key`, `message_stream?`         |
@@ -60,6 +65,7 @@ keep the secrets in the environment.
 | SocketLabs     | `postboi/socketlabs` | `SOCKETLABS_SERVER_ID`, `SOCKETLABS_API_KEY`           | `server_id`, `api_key`               |
 | SparkPost      | `postboi/sparkpost`  | `SPARKPOST_API_KEY`                                    | `api_key`, `region?`                 |
 | Unosend        | `postboi/unosend`    | `UNOSEND_API_KEY`                                      | `api_key`                            |
+| Yandex Cloud Postbox | `postboi/yandex` | `YANDEX_ACCESS_KEY_ID`, `YANDEX_SECRET_ACCESS_KEY`, `YANDEX_REGION` | `access_key_id`, `secret_access_key`, `region?` |
 | ZeptoMail      | `postboi/zepto`      | `ZEPTO_TOKEN`                                          | `api_key`                            |
 | Mock (testing) | `postboi/mock`       | _none_                                                  | _none_                               |
 
@@ -146,24 +152,50 @@ native concept, and quietly ignored where unsupported:
 - **headers** → Resend, Postmark, SendGrid, Mailgun (`h:`), Brevo, SparkPost, Mandrill,
   Plunk, Mailtrap, Scaleway, Cloudflare, SES, Mailjet, Elastic Email, Lettermint, Unosend,
   SMTP2GO (`custom_headers`), SocketLabs, Azure, Gmail, MailChannels, Maileroo, AhaSend,
-  Postal, Customer.io, Infobip, JetEmail, Lettr.
+  Postal, Customer.io, Infobip, JetEmail, Lettr, Netcore (as `x-apiheader`), Yandex
+  Cloud Postbox.
 - **tags** → SendGrid (categories), Mailgun (`o:tag`), Brevo, MailerSend, Mandrill,
   MailPace, SES (`EmailTags`), Resend, Lettermint, Unosend (`{name,value}` pairs), AhaSend,
-  Maileroo (a name→value map, each tag as its own name). Postmark, Mailtrap, Postal, Lettr
-  and SocketLabs (as the `mailingId`) use the **first** tag only.
+  Maileroo (a name→value map, each tag as its own name), Netcore, Yandex Cloud Postbox.
+  Postmark, Mailtrap, Postal, Lettr, SocketLabs (as the `mailingId`) and Alibaba Direct
+  Mail (as the `TagName`) use the **first** tag only.
 
 A few of the roster shape the message around their own model rather than the wire:
 
-- **Loops** and **Iterable** only send emails designed in their own editors, so each takes
-  the template to use (`transactional_id` / `campaign_id`) and hands the send over as data
-  variables — `subject`, `html`, `text`, `from` and the recipient's `name` — for that
-  template to place. One recipient per send; a [batch](/bulk) with `data` reaches several.
+- **Loops**, **Iterable**, **Klaviyo** and **HubSpot** only send emails designed in their
+  own editors, so each takes the template to use (`transactional_id` / `campaign_id` /
+  `metric` / `email_id`) and hands the send over as data variables — `subject`, `html`,
+  `text`, `from` and the recipient's `name` — for that template to place. One recipient
+  per send; a [batch](/bulk) with `data` reaches several. Klaviyo is the furthest from a
+  send: there is no transactional endpoint at all, so the message is filed as an **event**
+  and a flow triggered by that metric is what actually mails — nothing goes out until one
+  exists, and Klaviyo answers `202` either way.
+- **HubSpot** reports a refusal — `INVALID_TO_ADDRESS`, `PREVIOUSLY_BOUNCED`, a missing
+  template property — as `sendResult` on an HTTP **200**. Anything but `SENT` or `QUEUED`
+  is thrown with that value as the error code rather than returned as a success.
 - **Primitive** addresses one person per request with no cc or bcc, so several recipients
   is an error rather than a guess.
 - **AhaSend** has no cc/bcc — every address gets its own copy — so `cc` and `bcc` join
   the recipient list. **Customer.io** has no cc either; `cc` addresses join its
   comma-separated `to`, and every send is filed against the person the first recipient
   identifies.
+- **OneSignal** sends through its `/notifications` endpoint on the email channel, and
+  answers `200` with no `id` when it reached nobody — that case is thrown too.
+  `include_unsubscribed` defaults to **true**, because a password reset is owed to the
+  person whatever they think of the newsletter; turn it off for anything they could
+  reasonably have opted out of. It has no cc (those addresses join the recipient list) and
+  `bcc` maps to `email_bcc`, which caps at five.
+- **Alibaba Direct Mail** signs its own requests (HMAC-SHA1 over sorted form parameters)
+  rather than carrying a token, sends from the `AccountName` the `from` address names —
+  which must be verified in the console, in that region — and has neither cc, bcc nor
+  attachments: `cc` and `bcc` addresses join the recipient list, each getting their own
+  copy, up to 100 per send.
+- **Yandex Cloud Postbox** implements Amazon's SES v2 API, so it is `postboi/ses` pointed
+  at `postbox.cloud.yandex.net` and signed for `ru-central1` — same payload, same
+  attachments, same headers and tags. Its credential is a service account's static access
+  key, and that account needs the `postbox.sender` role.
+- **Netcore** carries one content block, so the HTML body is the message: a `text`
+  alternative alongside it is dropped, and a text-only send goes out as that body.
 - **Azure** sends from the bare `senderAddress` (the display name is set on the domain in
   Azure) and its tracking is a resource-level switch; the one per-send control is turning
   it off with `tracking: { opens: false, clicks: false }`.

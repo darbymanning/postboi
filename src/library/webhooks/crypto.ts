@@ -2,52 +2,19 @@
  * WebCrypto-only primitives for webhook signature verification. `crypto.subtle` is used
  * (never `node:crypto`) so verification runs anywhere postboi does — Node, Bun, Deno,
  * Cloudflare Workers and other edge runtimes.
+ *
+ * The generic halves live one level up and are re-exported here: base64 in `encoding.ts`,
+ * the HMACs and the comparison in `crypto.ts` — the signing providers use those too, and
+ * two copies of an HMAC is how a verifier and a signer come to disagree.
  */
 
 import { base64_decode, base64_encode } from "../encoding.js"
+import { hex_encode, hmac_sha1, hmac_sha256, timing_safe_equal } from "../crypto.js"
 
 export { base64_decode, base64_encode }
+export { hex_encode, hmac_sha1, hmac_sha256, timing_safe_equal }
 
 const encoder = new TextEncoder()
-
-/** Encode bytes as lowercase hex. */
-export function hex_encode(bytes: Uint8Array): string {
-	let out = ""
-	for (const byte of bytes) out += byte.toString(16).padStart(2, "0")
-	return out
-}
-
-/**
- * Constant-time string comparison. Always walks the full longest length so a mismatch
- * position can't be inferred from timing.
- */
-export function timing_safe_equal(a: string, b: string): boolean {
-	const length = Math.max(a.length, b.length)
-	let diff = a.length === b.length ? 0 : 1
-	for (let i = 0; i < length; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0)
-	return diff === 0
-}
-
-async function hmac(hash: "SHA-1" | "SHA-256", key: Uint8Array, data: string): Promise<Uint8Array> {
-	const imported = await crypto.subtle.importKey(
-		"raw",
-		key as BufferSource,
-		{ name: "HMAC", hash },
-		false,
-		["sign"]
-	)
-	return new Uint8Array(await crypto.subtle.sign("HMAC", imported, encoder.encode(data)))
-}
-
-/** HMAC-SHA256 of `data`. A string key is used as its UTF-8 bytes. */
-export function hmac_sha256(key: Uint8Array | string, data: string): Promise<Uint8Array> {
-	return hmac("SHA-256", typeof key === "string" ? encoder.encode(key) : key, data)
-}
-
-/** HMAC-SHA1 of `data` (Mandrill's scheme). A string key is used as its UTF-8 bytes. */
-export function hmac_sha1(key: Uint8Array | string, data: string): Promise<Uint8Array> {
-	return hmac("SHA-1", typeof key === "string" ? encoder.encode(key) : key, data)
-}
 
 /** The outcome of a {@link svix_verify} check. */
 export type SvixVerdict = "ok" | "stale_timestamp" | "invalid_signature" | "malformed_secret"

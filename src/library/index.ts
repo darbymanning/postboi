@@ -755,6 +755,54 @@ export abstract class EmailProvider<TResponse = unknown> extends Transport<
 		return slots.map((s) => s.result!)
 	}
 
+	/**
+	 * The one address a provider that addresses exactly one person per request can accept,
+	 * or a `single_recipient` error naming what to do instead.
+	 *
+	 * `extra` is for providers with no cc or bcc either (Primitive, Klaviyo): pass those
+	 * addresses and a request carrying them is refused here rather than silently dropping a
+	 * copy someone believed had gone out. An empty one is not an address — an untouched
+	 * `_cc` input arrives as `""` — so a falsy entry is skipped rather than parsed into a
+	 * recipient nobody named. `hint` completes the sentence "<Provider> sends …" in the
+	 * message.
+	 */
+	protected single_recipient(
+		message: PreparedMessage,
+		hint: string,
+		extra: Array<Array<Email> | Email | undefined> = []
+	): MailAddress {
+		const to = this.parse_addresses(message.to)
+		const copied = extra.flatMap((a) => (a ? this.parse_addresses(a) : []))
+		if (to.length !== 1 || copied.length) {
+			throw new PostboiError({
+				provider: this.provider,
+				code: "single_recipient",
+				message: `${hint} Pass an array of sends (or a batch with \`data\`) to reach several people.`,
+			})
+		}
+		return to[0]
+	}
+
+	/**
+	 * The send handed over as template variables, for the providers that have no raw-content
+	 * API at all — Loops, Iterable, Klaviyo, HubSpot. Each of them sends a template designed
+	 * in its own editor, so the only way the message reaches the recipient is as data the
+	 * template places: `subject`, `from`, `html`, `text`, and the recipient's `name` when the
+	 * address carried one. Absent fields are omitted rather than sent empty, so a template
+	 * that falls back to its own copy still can.
+	 */
+	protected template_fields(
+		message: PreparedMessage,
+		recipient?: MailAddress
+	): Record<string, string> {
+		const fields: Record<string, string> = { subject: message.subject }
+		if (message.from) fields.from = this.stringify_address(this.parse_email_address(message.from))
+		if (message.html) fields.html = message.html
+		if (message.text) fields.text = message.text
+		if (recipient?.name) fields.name = recipient.name
+		return fields
+	}
+
 	/** Convert a File into a provider-agnostic attachment. */
 	protected async parse_attachment(file: File): Promise<MailAttachment> {
 		return {

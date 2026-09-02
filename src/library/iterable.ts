@@ -1,5 +1,5 @@
 import type { PreparedMessage, ApiKeyOptions, ProviderError, RequestSpec } from "./index.js"
-import { ProviderBase, PostboiError } from "./index.js"
+import { ProviderBase } from "./index.js"
 
 /** Options for the Iterable provider constructor. */
 type Options = ApiKeyOptions & {
@@ -76,25 +76,15 @@ export default class Iterable extends ProviderBase<SendResponse> {
 	}
 
 	protected build_request(message: PreparedMessage): RequestSpec {
-		const to = this.parse_addresses(message.to)
-		if (to.length !== 1) {
-			throw new PostboiError({
-				provider: "iterable",
-				code: "single_recipient",
-				message:
-					"Iterable sends one campaign email per user. Pass an array of sends (or a batch with `data`) to reach several people.",
-			})
+		const to = this.single_recipient(message, "Iterable sends one campaign email per user.")
+		const fields: Record<string, unknown> = {
+			...this.#data_fields,
+			...this.template_fields(message, to),
 		}
-
-		const fields: Record<string, unknown> = { ...this.#data_fields, subject: message.subject }
-		if (message.from) fields.from = this.stringify_address(this.parse_email_address(message.from))
-		if (message.html) fields.html = message.html
-		if (message.text) fields.text = message.text
-		if (to[0].name) fields.name = to[0].name
 
 		const params: SendParams = {
 			campaignId: this.#campaign_id,
-			recipientEmail: to[0].address,
+			recipientEmail: to.address,
 			dataFields: fields,
 			sendAt: message.scheduled_at ? iterable_time(message.scheduled_at) : undefined,
 		}

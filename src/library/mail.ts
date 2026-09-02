@@ -74,6 +74,13 @@ const LOADERS: Record<string, () => Promise<ProviderConstructor>> = {
 		import("./microsoft365.js").then((m) => m.default as unknown as ProviderConstructor),
 	smtp: () => import("./smtp.js").then((m) => m.default as unknown as ProviderConstructor),
 	zepto: () => import("./zepto.js").then((m) => m.default as unknown as ProviderConstructor),
+	netcore: () => import("./netcore.js").then((m) => m.default as unknown as ProviderConstructor),
+	klaviyo: () => import("./klaviyo.js").then((m) => m.default as unknown as ProviderConstructor),
+	hubspot: () => import("./hubspot.js").then((m) => m.default as unknown as ProviderConstructor),
+	onesignal: () =>
+		import("./onesignal.js").then((m) => m.default as unknown as ProviderConstructor),
+	alibaba: () => import("./alibaba.js").then((m) => m.default as unknown as ProviderConstructor),
+	yandex: () => import("./yandex.js").then((m) => m.default as unknown as ProviderConstructor),
 	// The Postboi provider. Not in the registry (its only credential is POSTBOI_TOKEN, which the
 	// provider reads itself) — a token in the environment routes send() here automatically.
 	// NB: the leaf module, not the package root — a dynamic import of a module that is also

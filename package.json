@@ -1,6 +1,6 @@
 {
 	"name": "postboi",
-	"version": "0.48.0",
+	"version": "0.49.0",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -184,6 +184,30 @@
 		"./primitive": {
 			"types": "./dist/primitive.d.ts",
 			"default": "./dist/primitive.js"
+		},
+		"./netcore": {
+			"types": "./dist/netcore.d.ts",
+			"default": "./dist/netcore.js"
+		},
+		"./klaviyo": {
+			"types": "./dist/klaviyo.d.ts",
+			"default": "./dist/klaviyo.js"
+		},
+		"./hubspot": {
+			"types": "./dist/hubspot.d.ts",
+			"default": "./dist/hubspot.js"
+		},
+		"./onesignal": {
+			"types": "./dist/onesignal.d.ts",
+			"default": "./dist/onesignal.js"
+		},
+		"./alibaba": {
+			"types": "./dist/alibaba.d.ts",
+			"default": "./dist/alibaba.js"
+		},
+		"./yandex": {
+			"types": "./dist/yandex.d.ts",
+			"default": "./dist/yandex.js"
 		},
 		"./scaleway": {
 			"types": "./dist/scaleway.d.ts",

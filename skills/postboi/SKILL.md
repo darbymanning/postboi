@@ -5,7 +5,7 @@ description: Integrate the postboi messaging library — send email, SMS, WhatsA
 
 # Postboi
 
-Framework-agnostic messaging library. One `mail()` call, 38 email providers, normalized errors and webhooks across all of them — same shape for SMS, WhatsApp, push and chat, plus a `send()` that reaches someone across all of them.
+Framework-agnostic messaging library. One `mail()` call, 44 email providers, normalized errors and webhooks across all of them — same shape for SMS, WhatsApp, push and chat, plus a `send()` that reaches someone across all of them.
 
 Every docs page is raw Markdown at `https://docs.postboi.app/raw/<slug>` — fetch those for anything below marked with one. Everything in one file: `https://docs.postboi.app/llms-full.txt`.
 
@@ -210,6 +210,8 @@ export const POST = webhook(async (event) => {
 
 Elsewhere: `receive(request)` from `postboi/webhooks` → normalized `WebhookEvent[]` (`sent | delivered | delayed | bounced | complained | opened | clicked | unsubscribed | failed | received`), with `event.client` parsed locally into name/os/device on opens and clicks. Signature verification is **fail-closed**: set `<PROVIDER>_WEBHOOK_SECRET` (e.g. `RESEND_WEBHOOK_SECRET`) or `receive()` throws. Test without a tunnel using `mock_event` / `mock_request`. `/raw/webhooks`
 
+SMS receipts: The SMS Works pushes delivery reports to `receive()` / `webhook()` with `{ provider: "smsworks" }` — `SMSWORKS_WEBHOOK_SECRET` is a token you make up, carried as `?token=…` on the delivery-report URL (Delivery Reports → Webhook Configuration). Events carry `channel: "sms"` and `phone`, never `email`; a `SENT` still holding a temporary `failurereason` is `delayed`, a permanent one is `failed` with a hard/soft `bounce.category`, and a STOP on the reply-number webhook is `unsubscribed`. Twilio is `poll({ provider: "twilio" })`. `/raw/sms`
+
 WhatsApp receipts: Twilio is `poll({ provider: "twilio" })` (callbacks are per message, so nothing to register); Meta's Cloud API is `receive()` / `webhook()` with `{ provider: "meta" }` — `META_WEBHOOK_SECRET` is the app secret (`X-Hub-Signature-256`), `META_WEBHOOK_VERIFY_TOKEN` answers the `hub.challenge` GET Meta makes before subscribing, so **export the handler as both `GET` and `POST`**. Events carry `channel: "whatsapp"` and `phone`, never `email`; a read is `opened`, a STOP is `unsubscribed`, anything else a person writes is `received` with `body.text` (and the 24-hour window just opened). `/raw/whatsapp`
 
 ## Scheduling, tracking, bulk
@@ -342,7 +344,7 @@ Order matters — the old provider keeps sending until the new domain verifies.
 | Push service worker                   | `receive` from `postboi/push/sw` — the `push`, `notificationclick` and `pushsubscriptionchange` handlers. `bunx postboi init --push` wires it: the import where the framework builds the worker (SvelteKit), the handlers written out where it's served as-is (Next, Nuxt, Astro, Remix) |
 | Push toggle state machine             | `subscription` from `postboi/svelte` (reactive: `push.on`, `push.busy`, `push.toggle`) · `usePush` from `postboi/react` · `use_push` from `postboi/vue` · `subscription` from `postboi/push` (store contract) anywhere else                                                              |
 | Mint a VAPID pair                     | `generate_vapid_keys` from `postboi/webpush`, or `bunx postboi vapid`                                                                                                                                                                                                                    |
-| Explicit provider                     | `postboi/resend`, `postboi/ses`, `postboi/smtp`, … (`/raw/providers` for all 38 + env var names)                                                                                                                                                                                         |
+| Explicit provider                     | `postboi/resend`, `postboi/ses`, `postboi/smtp`, … (`/raw/providers` for all 44 + env var names)                                                                                                                                                                                         |
 | Explicit channel provider             | `postboi/twilio`, `postboi/smsworks`, `postboi/puresms`, `postboi/sns`, `postboi/webpush`, `postboi/fcm`, `postboi/apns`, `postboi/hms`, `postboi/expo`, `postboi/whatsapp-twilio`, `postboi/whatsapp-meta`, `postboi/slack`, …                                                          |
 | SvelteKit action & webhook handler    | `mail`, `action`, `webhook` from `postboi/kit`                                                                                                                                                                                                                                           |
 | SvelteKit remote form (experimental)  | `mail` from `postboi/remote`; factory `remote` from `postboi/kit`                                                                                                                                                                                                                        |
