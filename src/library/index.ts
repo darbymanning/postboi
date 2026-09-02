@@ -734,18 +734,20 @@ export abstract class EmailProvider<TResponse = unknown> extends Transport<
 	 * The one address a provider that addresses exactly one person per request can accept,
 	 * or a `single_recipient` error naming what to do instead.
 	 *
-	 * `extra` is for providers with no cc or bcc either (Primitive, Klaviyo, HubSpot's
-	 * `to`): pass those addresses and a request carrying them is refused here rather than
-	 * silently dropping a copy someone believed had gone out. `hint` completes the
-	 * sentence "<Provider> sends …" in the message.
+	 * `extra` is for providers with no cc or bcc either (Primitive, Klaviyo): pass those
+	 * addresses and a request carrying them is refused here rather than silently dropping a
+	 * copy someone believed had gone out. An empty one is not an address — an untouched
+	 * `_cc` input arrives as `""` — so a falsy entry is skipped rather than parsed into a
+	 * recipient nobody named. `hint` completes the sentence "<Provider> sends …" in the
+	 * message.
 	 */
 	protected single_recipient(
 		message: PreparedMessage,
 		hint: string,
-		extra: Array<Array<Email> | Email> = []
+		extra: Array<Array<Email> | Email | undefined> = []
 	): MailAddress {
 		const to = this.parse_addresses(message.to)
-		const copied = extra.flatMap((a) => this.parse_addresses(a))
+		const copied = extra.flatMap((a) => (a ? this.parse_addresses(a) : []))
 		if (to.length !== 1 || copied.length) {
 			throw new PostboiError({
 				provider: this.provider,

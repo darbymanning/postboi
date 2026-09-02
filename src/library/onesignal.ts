@@ -61,7 +61,7 @@ type SendResponse = {
  * import OneSignal from "postboi/onesignal"
  *
  * const mail = new OneSignal({
- *   api_key: ONESIGNAL_REST_API_KEY,
+ *   api_key: ONESIGNAL_API_KEY,
  *   app_id: ONESIGNAL_APP_ID,
  *   default: { from: "no-reply@example.com" },
  * })
@@ -140,7 +140,11 @@ export default class OneSignal extends ProviderBase<SendResponse> {
 				message: errors.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join("; "),
 			}
 		}
-		if (errors && typeof errors === "object") return { message: JSON.stringify(errors) }
+		// The map form — `{ invalid_player_ids: [...] }`. An *empty* array is neither shape:
+		// it is an accepted send that listed no complaints, and must not become one.
+		if (errors && typeof errors === "object" && !Array.isArray(errors)) {
+			return { message: JSON.stringify(errors) }
+		}
 		if (response.ok && !e.id) {
 			return { message: "onesignal accepted the request but reached no recipients" }
 		}

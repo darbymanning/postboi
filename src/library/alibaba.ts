@@ -58,8 +58,8 @@ function percent_encode(value: string): string {
  * import DirectMail from "postboi/alibaba"
  *
  * const mail = new DirectMail({
- *   access_key_id: ALIBABA_ACCESS_KEY_ID,
- *   access_key_secret: ALIBABA_ACCESS_KEY_SECRET,
+ *   access_key_id: ALIBABA_CLOUD_ACCESS_KEY_ID,
+ *   access_key_secret: ALIBABA_CLOUD_ACCESS_KEY_SECRET,
  *   region: "ap-southeast-1",
  *   default: { from: "no-reply@example.com" },
  * })

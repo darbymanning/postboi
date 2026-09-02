@@ -2320,12 +2320,17 @@ describe("Primitive", () => {
 describe("review fixes", () => {
 	it("primitive: an empty cc or bcc is no cc or bcc", async () => {
 		fetch.mockResolvedValue(respond({ json: { success: true, data: { id: "p" } } }))
-		await new Primitive({ api_key: "k", default: { from: "from@test.com" } }).send({
-			to: "to@test.com",
-			cc: [],
-			bcc: [],
-			body: "x",
-		})
+		const mail = new Primitive({ api_key: "k", default: { from: "from@test.com" } })
+		await mail.send({ to: "to@test.com", cc: [], bcc: [], body: "x" })
+		// The untouched `_cc` input: parse_form_data hands "" through, and "" is not an
+		// address — reading it as one refuses a send nobody asked to copy anyone on.
+		await mail.send({ to: "to@test.com", cc: "", bcc: "", body: "x" })
+		expect(fetch).toHaveBeenCalledTimes(2)
+	})
+
+	it("klaviyo: the same empty cc, on the other provider that refuses one", async () => {
+		fetch.mockResolvedValue(respond({ status: 202 }))
+		await new Klaviyo({ api_key: "pk_key" }).send({ to: "to@test.com", cc: "", body: "x" })
 		expect(fetch).toHaveBeenCalledTimes(1)
 	})
 
@@ -2605,6 +2610,20 @@ describe("HubSpot", () => {
 		expect(error.code).toBe("INVALID_TO_ADDRESS")
 	})
 
+	// The retry the idempotency key was for: the mail went out on the first attempt, so the
+	// send that provoked IDEMPOTENT_IGNORE succeeded too.
+	it("treats the idempotent replay as the success it is", async () => {
+		fetch.mockResolvedValue(
+			respond({ json: { status: "COMPLETE", sendResult: "IDEMPOTENT_IGNORE" } })
+		)
+		const result = await mail().send({
+			to: "to@test.com",
+			body: "x",
+			idempotency_key: "idem-1",
+		})
+		expect(result).toEqual({ status: "COMPLETE", sendResult: "IDEMPOTENT_IGNORE" })
+	})
+
 	it("reads HubSpot's own error envelope, and refuses several recipients", async () => {
 		fetch.mockResolvedValue(
 			respond({
@@ -2686,6 +2705,13 @@ describe("OneSignal", () => {
 		)
 		error = await caught(mail().send({ to: "to@test.com", body: "x" }))
 		expect(error.message).toBe("Invalid app_id format")
+	})
+
+	// An empty list is not the map form: it is an accepted send with nothing to complain of.
+	it("lets an empty errors list through as the success it is", async () => {
+		fetch.mockResolvedValue(respond({ json: { id: "n-3", recipients: 1, errors: [] } }))
+		const result = await mail().send({ to: "to@test.com", body: "x" })
+		expect(result).toEqual({ id: "n-3", recipients: 1, errors: [] })
 	})
 })
 

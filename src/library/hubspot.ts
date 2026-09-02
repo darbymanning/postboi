@@ -38,8 +38,13 @@ type SendResponse = {
 	eventId?: { id?: string; created?: string }
 }
 
-/** `sendResult` values that mean the mail is on its way. Anything else is a refusal. */
-const DELIVERED = new Set(["SENT", "QUEUED"])
+/**
+ * `sendResult` values that mean the mail is on its way. Anything else is a refusal.
+ * `IDEMPOTENT_IGNORE` is one of them: it is what HubSpot answers when the `sendId` has
+ * been seen before — the mail went out on the first attempt, so the retry that provoked
+ * it succeeded too. Throwing there would defeat the whole point of `idempotency_key`.
+ */
+const DELIVERED = new Set(["SENT", "QUEUED", "IDEMPOTENT_IGNORE"])
 
 /**
  * HubSpot single-send provider — https://developers.hubspot.com/docs/api-reference/marketing-transactional-single-send-v3

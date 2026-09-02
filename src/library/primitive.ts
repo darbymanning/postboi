@@ -62,7 +62,7 @@ export default class Primitive extends ProviderBase<SendResponse> {
 		const to = this.single_recipient(
 			message,
 			"Primitive sends to one recipient per request, with no cc or bcc.",
-			[message.cc, message.bcc].filter((a) => a !== undefined)
+			[message.cc, message.bcc]
 		)
 
 		const params: SendParams = {

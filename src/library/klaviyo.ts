@@ -84,7 +84,7 @@ export default class Klaviyo extends ProviderBase<SendResponse> {
 		const to = this.single_recipient(
 			message,
 			"Klaviyo files one event per profile, and has no cc or bcc.",
-			[message.cc, message.bcc].filter((a) => a !== undefined)
+			[message.cc, message.bcc]
 		)
 
 		const params: SendParams = {
