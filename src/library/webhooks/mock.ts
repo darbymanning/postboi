@@ -51,6 +51,12 @@ export function mock_event(
 		base.email = "someone@example.com"
 		base.body = { text: "Thanks — that works for me." }
 	}
+	if (overrides.channel === "sms" || overrides.channel === "whatsapp") {
+		// A text-message event is about a number: never an address, and no subject line.
+		base.email = undefined
+		base.subject = undefined
+		base.phone = "+15557770006"
+	}
 	return { ...base, ...overrides }
 }
 

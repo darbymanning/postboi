@@ -1174,6 +1174,25 @@ export const WHATSAPP_PROVIDERS = [
 				label: "WhatsApp Business Account id (optional; types your template names)",
 				default: "",
 			},
+			// Read by receive() (webhooks/meta.ts), not the send constructor, like the email
+			// providers' webhook_secret fields. Named META_* rather than WHATSAPP_* because
+			// both are the app's: the app secret signs every Meta product's webhooks.
+			{
+				env: "META_WEBHOOK_SECRET",
+				arg: "webhook_secret",
+				label:
+					"App secret (optional; signs delivery webhooks — Basic Settings in the app dashboard)",
+				secret: true,
+				default: "",
+			},
+			{
+				env: "META_WEBHOOK_VERIFY_TOKEN",
+				arg: "webhook_verify_token",
+				label:
+					"Webhook verify token (optional; a string you choose, also typed into the webhook form)",
+				secret: true,
+				default: "",
+			},
 		],
 	},
 ] as const satisfies ReadonlyArray<NotedProviderMeta>

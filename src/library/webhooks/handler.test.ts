@@ -124,3 +124,91 @@ describe("webhook.node()", () => {
 		expect(res.statusCode).toBe(401)
 	})
 })
+
+describe("webhook() — endpoint handshake (Meta)", () => {
+	const url = (query: string) => `https://example.com/webhooks/whatsapp?${query}`
+	const options = { provider: "meta" as const, secret: "app-secret", verify_token: "chosen-token" }
+
+	it("echoes the challenge as plain text when the verify token matches", async () => {
+		const handler = webhook(() => {}, options)
+		const response = await handler(
+			new Request(url("hub.mode=subscribe&hub.verify_token=chosen-token&hub.challenge=1158201444"))
+		)
+		expect(response.status).toBe(200)
+		expect(response.headers.get("content-type")).toBe("text/plain")
+		expect(await response.text()).toBe("1158201444")
+	})
+
+	it("answers 401 when the token is wrong or missing, so a stranger can't subscribe you", async () => {
+		const handler = webhook(() => {}, options)
+		const wrong = await handler(
+			new Request(url("hub.mode=subscribe&hub.verify_token=guess&hub.challenge=1"))
+		)
+		expect(wrong.status).toBe(401)
+		const absent = await handler(new Request(url("hub.mode=subscribe&hub.challenge=1")))
+		expect(absent.status).toBe(401)
+	})
+
+	it("fails closed with no verify token configured", async () => {
+		delete process.env.META_WEBHOOK_VERIFY_TOKEN
+		const handler = webhook(() => {}, { provider: "meta", secret: "app-secret" })
+		const response = await handler(
+			new Request(url("hub.mode=subscribe&hub.verify_token=anything&hub.challenge=1"))
+		)
+		expect(response.status).toBe(401)
+		expect((await response.json()).error).toMatch(/META_WEBHOOK_VERIFY_TOKEN/)
+	})
+
+	it("verify: false does not open the handshake — there is no payload to trust", async () => {
+		// A stranger with the URL could otherwise subscribe it to their own app.
+		delete process.env.META_WEBHOOK_VERIFY_TOKEN
+		const handler = webhook(() => {}, { provider: "meta", verify: false })
+		const response = await handler(
+			new Request(url("hub.mode=subscribe&hub.verify_token=anything&hub.challenge=7"))
+		)
+		expect(response.status).toBe(401)
+	})
+
+	it("sends a GET that isn't a handshake on to receive(), as it always did", async () => {
+		// Same answer for every provider, handshake or not: the request has no signature.
+		const meta = webhook(() => {}, options)
+		expect((await meta(new Request(url("hello=world")))).status).toBe(401)
+		expect((await meta(new Request("https://example.com/webhooks/whatsapp"))).status).toBe(401)
+		const resend = webhook(() => {}, { provider: "resend", secret: "whsec_d3JvbmchIQ==" })
+		expect((await resend(new Request("https://example.com/webhooks"))).status).toBe(401)
+	})
+
+	it("reaches the node adapter too, method and query intact", async () => {
+		const middleware = webhook.node(() => {}, options)
+		const res = fake_response()
+		await middleware(
+			{
+				method: "GET",
+				url: "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=chosen-token&hub.challenge=99",
+				headers: {},
+				async *[Symbol.asyncIterator]() {},
+			},
+			res
+		)
+		expect(res.statusCode).toBe(200)
+		expect(res.body).toBe("99")
+	})
+
+	it("drops a body a GET arrived with, rather than throwing before any response is written", async () => {
+		const middleware = webhook.node(() => {}, options)
+		const res = fake_response()
+		await middleware(
+			{
+				method: "GET",
+				url: "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=chosen-token&hub.challenge=5",
+				headers: { "content-length": "2" },
+				async *[Symbol.asyncIterator]() {
+					yield new TextEncoder().encode("{}")
+				},
+			},
+			res
+		)
+		expect(res.statusCode).toBe(200)
+		expect(res.body).toBe("5")
+	})
+})
