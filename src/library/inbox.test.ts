@@ -127,11 +127,12 @@ describe("inbox middleware", () => {
 		// The mailbox closes too, and the Start menu is how it comes back.
 		expect(html).toContain('id="m-mailbox"')
 		// Resize handles on the mailbox, the reader, the messenger, the three channel app
-		// windows (WhatsApp, chat, notifications), the capture viewer, POOM.EXE and the app
-		// frame itself — the reading pane is only ever big enough because you can make it
-		// bigger, and a client capture is a tall render you want room for. The Pokia has
-		// none: a handset is not resizable, which is rather the point of it.
-		expect(html.match(/class="grip"/g)).toHaveLength(9)
+		// windows (WhatsApp, chat, notifications), the capture viewer, both cabinets
+		// (POOM.EXE and SHINOBOI.EXE) and the app frame itself — the reading pane is only
+		// ever big enough because you can make it bigger, and a client capture is a tall
+		// render you want room for. The Pokia has none: a handset is not resizable, which
+		// is rather the point of it.
+		expect(html.match(/class="grip"/g)).toHaveLength(10)
 	})
 
 	it("is branded Postboi, not the client it's dressed as", async () => {
@@ -669,7 +670,7 @@ describe("channel captures", () => {
 		expect(html).toContain("td.chanco {")
 	})
 
-	it("ships the two things on the desktop that aren't mail", () => {
+	it("ships Snake on the handset and POOM on the desktop", () => {
 		const html = inbox_ui()
 		// Snake, on the handset's screen, over the same LCD the texts are drawn on.
 		expect(html).toContain('id="nk-game"')
@@ -700,6 +701,60 @@ describe("channel captures", () => {
 		// The cheat, and the frame the weapon rests in when it isn't being fired.
 		expect(html).toContain('"iddqd"')
 		expect(html).toContain('"gunidle"')
+	})
+
+	it("ships SHINOBOI.EXE, the other cabinet, with a whole stage in it", () => {
+		const html = inbox_ui()
+		// The window, the screen inside it, and the icon that opens it.
+		expect(html).toContain('id="shino"')
+		expect(html).toContain('id="sc-shino"')
+		// The canvas is twice the size the game is drawn at, so a pixel is two of them and
+		// the text is still asked for at a size the machine can actually set.
+		expect(html).toContain('<canvas id="shino-view" width="640" height="384">')
+		// Every frame of him ships: a missing one is a hole in the animation, not an error.
+		for (const frame of [
+			"stand",
+			"run1",
+			"run2",
+			"run3",
+			"jump",
+			"crouch",
+			"throw",
+			"cthrow",
+			"slash",
+			"dead",
+		]) {
+			expect(html).toContain(`${frame}: [`)
+		}
+		// What the syndicate sends, what it is holding, and what is waiting at the end.
+		for (const bit of ["grunt1", "crawl1", "toss1", "SHINO_SACKS", "MAILER DAEMON"]) {
+			expect(html).toContain(bit)
+		}
+		// The lane change is the whole defence, the ninjutsu is once a life, and the cheat
+		// is typed rather than pressed, exactly as POOM's is.
+		expect(html).toContain("function shino_lane()")
+		expect(html).toContain("function shino_magic()")
+		expect(html).toContain('"zeed"')
+	})
+
+	it("draws every sprite from a rectangle of characters", () => {
+		// A row that ran short would leave a hole down the side of whatever it drew, and it
+		// is invisible in the source — this is the check that catches a miscounted line.
+		const script = /<script>([\s\S]*)<\/script>/.exec(inbox_ui())?.[1] ?? ""
+		const from = script.indexOf("var SHINO_MAN")
+		// Both cabinets have an art department; this is the one after the sprite pictures.
+		const to = script.indexOf("/* ---- The art department ---- */", from)
+		expect(from).toBeGreaterThan(0)
+		expect(to).toBeGreaterThan(from)
+		const art = new Function(
+			`${script.slice(from, to)}; return { SHINO_MAN, SHINO_MOB, SHINO_SHOT, SHINO_SACK }`
+		)() as Record<string, Record<string, string[]>>
+		for (const set of Object.values(art)) {
+			for (const [name, rows] of Object.entries(set)) {
+				const widths = new Set(rows.map((row) => row.length))
+				expect([name, widths.size]).toEqual([name, 1])
+			}
+		}
 	})
 
 	it("keeps the platform on a chat capture so the window can dress as it", async () => {

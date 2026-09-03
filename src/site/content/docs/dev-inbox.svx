@@ -210,9 +210,17 @@ each in its own window on the desktop:
   its crown. The keypad types, and the letters printed on the keys still spell
   something.
 
-The desktop has one other icon on it, and it isn't a mail client. Its weapon sprites come
-from the [Freedoom](https://github.com/freedoom/freedoom) project, under the 3-clause BSD
-licence — the notice ships with the package as `FREEDOOM-LICENSE.txt`.
+The desktop has two other icons on it, and neither is a mail client.
+
+- **POOM.EXE** is a suburban round seen down the barrel of a shotgun, with the junk mail
+  coming up the path at you. Its weapon sprites come from the
+  [Freedoom](https://github.com/freedoom/freedoom) project, under the 3-clause BSD licence —
+  the notice ships with the package as `FREEDOOM-LICENSE.txt`.
+- **SHINOBOI.EXE** is the cabinet that stood next to it: a ninja, a night street with a lane
+  in front and a lane behind, six mail sacks tied up along it and something at the end of it
+  holding the rest. Arrows run, duck and jump; space throws a star, or draws the sword when
+  they are on top of you; shift changes lane, which is the only defence it has; and E returns
+  to sender, once a life. Every pixel is drawn in the page, so it licences nothing at all.
 
 Conversations thread by channel and destination — send three texts to the same number
 and the phone reads them as one inbox. Channel details ride along in each skin: SMS

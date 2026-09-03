@@ -73,6 +73,32 @@ const POOM_ICON =
 			"</svg>"
 	)
 
+/*
+ * SHINOBOI's icon: the cabinet's marquee shrunk to 48px. A shuriken over the sun that was
+ * painted on the side of it, and the name under that in the same heavy condensed letters
+ * POOM's wears -- the two of them came off the same shelf.
+ */
+const SHINO_ICON =
+	"data:image/svg+xml," +
+	encodeURIComponent(
+		'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 60" width="64" height="60">' +
+			"<defs>" +
+			'<radialGradient id="s" cx=".5" cy=".42" r=".72">' +
+			'<stop offset="0" stop-color="#e2503f"/><stop offset="1" stop-color="#8d1a12"/>' +
+			"</radialGradient>" +
+			"</defs>" +
+			'<rect x="2" y="4" width="60" height="52" rx="5" fill="#0b0d18" stroke="#05070f" stroke-width="3"/>' +
+			'<rect x="5" y="7" width="54" height="46" rx="3" fill="none" stroke="#1d2750" stroke-width="1"/>' +
+			'<circle cx="32" cy="25" r="16" fill="url(#s)"/>' +
+			'<path d="M32 9 37 20 48 25 37 30 32 41 27 30 16 25 27 20Z" fill="#0b0d18"/>' +
+			'<circle cx="32" cy="25" r="3" fill="#e2503f"/>' +
+			'<text text-anchor="middle" x="32" y="53" textLength="52" lengthAdjust="spacingAndGlyphs" ' +
+			'font-family="Impact, Haettenschweiler, \'Arial Narrow\', sans-serif" font-size="13" ' +
+			'paint-order="stroke" stroke="#05070f" stroke-width="4" stroke-linejoin="round" ' +
+			'fill="#fdc005">SHINOBOI</text>' +
+			"</svg>"
+	)
+
 const CSS = `
 * { box-sizing: border-box }
 
@@ -894,6 +920,35 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 /* God mode: nothing can touch you, and the face knows it. */
 #poom-faces.face-god, #poom-faces.face-godwink { background: #2a2410; box-shadow: inset 0 0 8px rgba(255,208,80,.55) }
 #poom-faces.hit { background: #5a1410; translate: 0 1px }
+
+/*
+ * ---- SHINOBOI.EXE ----
+ *
+ * The cabinet next to POOM's: a screen in a black bezel with a control panel under it, and
+ * the moves printed on the panel the way the glass on an arcade machine told you what the
+ * buttons did. Everything the game has to say about itself it says on its own screen.
+ */
+#shino .title-bar-text { letter-spacing: .04em }
+#shinostage { flex: 1; min-height: 0; background: #05070f; display: flex; padding: 3px }
+#shino-view {
+	width: 100%; height: 100%; display: block; image-rendering: pixelated;
+	background: #05070f; border: 1px solid #26262c;
+}
+#shinohud {
+	flex: none; display: flex; align-items: center; gap: 12px; padding: 5px 12px; overflow: hidden;
+	background: linear-gradient(180deg, #211436 0%, #150d26 60%, #08050f 100%);
+	border-top: 2px solid #b8332a; font: bold 11px "Courier New", monospace; color: #e8e0cc;
+}
+/* The name plate, screen-printed on the panel in the two colours the machine was sprayed. */
+#shinohud .plate {
+	flex: none; padding: 2px 7px; background: #b8332a; color: #fdc005;
+	letter-spacing: .14em; border: 1px solid #05070f;
+}
+#shinohud .spacer { flex: 1 }
+/* Clips rather than wraps, for the same reason POOM's does: a narrow window turns a printed
+   instruction into a column of one-word lines, which is worse than not reading it. */
+#shinohud .keys { font-size: 10px; color: #9aa0c8; text-align: right; line-height: 1.35; white-space: nowrap }
+#shinohud .keys b { color: #fdc005 }
 
 /*
  * ---- The Pokia ----
@@ -3411,6 +3466,1787 @@ function poom_open() {
 }
 
 /*
+ * ---- SHINOBOI.EXE ----
+ *
+ * The other cabinet. POOM is the one you play down the barrel of a shotgun; this is the
+ * side-on arcade game that stood next to it, with a joystick and two buttons and a ninja
+ * on the marquee.
+ *
+ * Shinobi's shape, kept whole: you walk right, you hop between the near lane and the far one
+ * to get out of the way of what is coming, the sword takes anything that gets close and the
+ * shuriken take everything that doesn't, the hostages are tied up along the road and freeing
+ * them is the actual mission. Ours are mail sacks, because the thing being held is the post
+ * and the syndicate holding it is spam. Kill the boss to finish; free the sacks to have
+ * finished it properly.
+ *
+ * ponytail: one stage, no music, no continues. Everything on screen is drawn into an
+ * offscreen canvas at boot -- pixel pictures for the things with faces, rectangles for the
+ * things without -- so the game ships as source, weighs nothing, and licences nothing.
+ */
+
+/* Game units. The canvas is twice this and every draw is scaled by two: sprites stay whole
+   pixels and the text is still asked for at a size the machine can actually set. */
+var SHINO_W = 320
+var SHINO_H = 192
+var SHINO_SCALE = 2
+/* The two lanes, as the y their feet stand on: the road, and the pavement behind it. */
+var SHINO_FRONT = 178
+var SHINO_BACK = 140
+var SHINO_GRAV = 900
+var SHINO_JUMP = 300
+var SHINO_RUN = 92
+var SHINO_TOSS = 230
+var SHINO_LEN = 2600
+var SHINO_GATE = 2280
+var SHINO_TIME = 90
+
+/*
+ * One palette, and it is the product's. The gi is the ink navy off the mark, the sash is
+ * the safety yellow, and everything the enemy is made of is the envelope cream and the
+ * stamp red POOM's junk mail is made of -- the two games are looking at the same post.
+ */
+var SHINO_PAL = {
+	k: "#05070f",
+	n: "#1a2b57",
+	d: "#0d1734",
+	y: "#fdc005",
+	o: "#c99a04",
+	w: "#f6f1e4",
+	c: "#e8e0cc",
+	g: "#b3a98e",
+	r: "#b8332a",
+	m: "#7f2119",
+	s: "#2b2119",
+	f: "#6f6350",
+}
+
+/*
+ * The ninja, one character to a pixel, drawn facing right and flipped for the other way.
+ * Fourteen across and twenty-two down is the smallest a man reads at when he has a mask,
+ * a sash and a sword to tell apart.
+ */
+var SHINO_MAN = {
+	stand: [
+		"....kkkkkk....",
+		"...knnnnnnk...",
+		"..knnnnnnnnk..",
+		"..kyyyyyyyyk..",
+		"yyknnnnwwwnk..",
+		".yknnnnnnnnk..",
+		"..knnnnnnnnk..",
+		"...knnnnnnk...",
+		"....knnnnk....",
+		"..kknnnnnnkk..",
+		".knnnnnnnnnnk.",
+		".knnnnnnnnnnk.",
+		".knyyyyyyyynk.",
+		".knnnnnnnnnnk.",
+		"..knnnnnnnnk..",
+		"..knnnnnnnnk..",
+		"...knnkknnk...",
+		"...knnkknnk...",
+		"...knnkknnk...",
+		"...knnkknnk...",
+		"..kknnkknnkk..",
+		"..kkkk..kkkk..",
+	],
+	run1: [
+		"....kkkkkk....",
+		"...knnnnnnk...",
+		"..knnnnnnnnk..",
+		"..kyyyyyyyyk..",
+		"yyknnnnwwwnk..",
+		".yknnnnnnnnk..",
+		"..knnnnnnnnk..",
+		"...knnnnnnk...",
+		"....knnnnk.kk.",
+		"..kknnnnnnknnk",
+		".knnnnnnnnnnk.",
+		".knnnnnnnnnk..",
+		".knyyyyyyynk..",
+		".knnnnnnnnk...",
+		"..knnnnnnnk...",
+		"..knnnnnnnnk..",
+		".knnkk.knnnnk.",
+		".knnk...knnnk.",
+		"kknnk....knnk.",
+		"knnk......knnk",
+		"knnk......knnk",
+		"kkk........kkk",
+	],
+	run2: [
+		"....kkkkkk....",
+		"...knnnnnnk...",
+		"..knnnnnnnnk..",
+		"..kyyyyyyyyk..",
+		"yyknnnnwwwnk..",
+		".yknnnnnnnnk..",
+		"..knnnnnnnnk..",
+		"...knnnnnnk...",
+		"....knnnnk....",
+		"..kknnnnnnkk..",
+		".knnnnnnnnnnk.",
+		".knnnnnnnnnnk.",
+		".knyyyyyyyynk.",
+		".knnnnnnnnnnk.",
+		"..knnnnnnnnk..",
+		"..knnnnnnnnk..",
+		"..knnnkknnnk..",
+		"..knnk..knnk..",
+		".knnk....knnk.",
+		".knnk.....knnk",
+		".knnk.....knnk",
+		".kkk.......kkk",
+	],
+	run3: [
+		"....kkkkkk....",
+		"...knnnnnnk...",
+		"..knnnnnnnnk..",
+		"..kyyyyyyyyk..",
+		"yyknnnnwwwnk..",
+		".yknnnnnnnnk..",
+		"..knnnnnnnnk..",
+		"...knnnnnnk...",
+		".kk.knnnnk....",
+		"knnknnnnnnkk..",
+		".knnnnnnnnnnk.",
+		"..knnnnnnnnnk.",
+		"..knyyyyyyynk.",
+		"...knnnnnnnnk.",
+		"...knnnnnnnk..",
+		"..knnnnnnnnk..",
+		".knnnnk.kknnk.",
+		".knnnk...knnk.",
+		".knnk....knnkk",
+		"knnk......knnk",
+		"knnk......knnk",
+		"kkk........kkk",
+	],
+	jump: [
+		"..............",
+		"....kkkkkk....",
+		"...knnnnnnk...",
+		"..knnnnnnnnk..",
+		"..kyyyyyyyyk..",
+		"yyknnnnwwwnk..",
+		".yknnnnnnnnk..",
+		"kk.knnnnnnk.kk",
+		"knnkknnnnkknnk",
+		"knnnnnnnnnnnnk",
+		".knnnnnnnnnnk.",
+		".knyyyyyyyynk.",
+		".knnnnnnnnnnk.",
+		"..knnnnnnnnk..",
+		"..knnkknnnnk..",
+		".knnk..knnnnk.",
+		".knnk...knnnk.",
+		"kknnk....knnk.",
+		"knnkk....knnk.",
+		"kkk.......knnk",
+		"...........kkk",
+		"..............",
+	],
+	crouch: [
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"....kkkkkk....",
+		"...knnnnnnk...",
+		"..knnnnnnnnk..",
+		"..kyyyyyyyyk..",
+		"yyknnnnwwwnk..",
+		".yknnnnnnnnk..",
+		"..kknnnnnnkk..",
+		".knnnnnnnnnnk.",
+		".knyyyyyyyynk.",
+		".knnnnnnnnnnk.",
+		"knnnnnnnnnnnnk",
+		"knnkknnkknnnnk",
+		"knnk.knnk.knnk",
+		"knnk.knnk.knnk",
+		"kkk..kkkk..kkk",
+	],
+	throw: [
+		"....kkkkkk....",
+		"...knnnnnnk...",
+		"..knnnnnnnnk..",
+		"..kyyyyyyyyk..",
+		"yyknnnnwwwnk..",
+		".yknnnnnnnnk..",
+		"..knnnnnnnnk..",
+		"...knnnnnnk...",
+		"....knnnnk....",
+		"..kknnnnnnkkkk",
+		".knnnnnnnnnnnn",
+		".knnnnnnnnnkkk",
+		".knyyyyyyyynk.",
+		".knnnnnnnnnnk.",
+		"..knnnnnnnnk..",
+		"..knnnnnnnnk..",
+		"...knnkknnk...",
+		"...knnkknnk...",
+		"..knnk..knnk..",
+		"..knnk...knnk.",
+		".kknnk...knnkk",
+		".kkkk.....kkkk",
+	],
+	cthrow: [
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"....kkkkkk....",
+		"...knnnnnnk...",
+		"..knnnnnnnnk..",
+		"..kyyyyyyyyk..",
+		"yyknnnnwwwnk..",
+		".yknnnnnnnnk..",
+		"..kknnnnnnkk..",
+		".knnnnnnnnnnkk",
+		".knyyyyyyyynnn",
+		".knnnnnnnnnkkk",
+		"knnnnnnnnnnnnk",
+		"knnkknnkknnnnk",
+		"knnk.knnk.knnk",
+		"knnk.knnk.knnk",
+		"kkk..kkkk..kkk",
+	],
+	slash: [
+		"....kkkkkk....",
+		"...knnnnnnk...",
+		"..knnnnnnnnk..",
+		"..kyyyyyyyyk..",
+		"yyknnnnwwwnk..",
+		".yknnnnnnnnk..",
+		"..knnnnnnnnk..",
+		"...knnnnnnk...",
+		"....knnnnk....",
+		"..kknnnnnnkk..",
+		".knnnnnnnnnnk.",
+		".knnnnnnnnnnk.",
+		".knyyyyyyyynk.",
+		".knnnnnnnnnnk.",
+		"..knnnnnnnnk..",
+		"..knnnnnnnnk..",
+		"..knnnkknnnk..",
+		".knnnk..knnnk.",
+		".knnk....knnk.",
+		"knnk......knnk",
+		"knnk......knnk",
+		"kkk........kkk",
+	],
+	dead: [
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"..............",
+		"...kk.....kk..",
+		"..knnk...knnk.",
+		"..knnk...knnk.",
+		"kk.knnkkknnk..",
+		"knnknnnnnnnkkk",
+		"knnnnyyyynnnnk",
+		".knnnnnnnnnnk.",
+		"kkknnnnnnnnkkk",
+		"knnnwwnnnnnnnk",
+		"kyynnnnnnnnkkk",
+		"kkkkkkkkkkk...",
+	],
+}
+
+/*
+ * The syndicate. A grunt is junk mail that grew legs, which is the same joke POOM's monsters
+ * are, seen from the side instead of head on -- cream envelope, ink fold, red stamp where a
+ * heart would be. The crawler is a folded circular sliding along the floor, too low to be
+ * hit by anything thrown standing up. The tosser stands off and posts things at you.
+ */
+var SHINO_MOB = {
+	grunt1: [
+		"................",
+		".ssssssssssssss.",
+		".scccccccccrrcs.",
+		".sscccccccrrccs.",
+		".scsccccccccccs.",
+		".sccsccccccsccs.",
+		".scckkccccckkss.",
+		"s.sckkccccckkcs.",
+		"sssccccccccccsss",
+		".sccccccccccccs.",
+		".sccrrrrrrrcccs.",
+		".ssssssssssssss.",
+		"...ss......ss...",
+		"...ss......ss...",
+		"..sss......sss..",
+		"................",
+	],
+	grunt2: [
+		"................",
+		"................",
+		".ssssssssssssss.",
+		".scccccccccrrcs.",
+		".sscccccccrrccs.",
+		".scsccccccccccs.",
+		"s.csccccccscccs.",
+		"sssckkccccckkss.",
+		".sckkccccckkcss.",
+		".sccccccccccccs.",
+		".sccrrrrrrrcccs.",
+		".ssssssssssssss.",
+		"....ss....ss....",
+		"....ss....ss....",
+		"...sss....sss...",
+		"................",
+	],
+	crawl1: [
+		"..................",
+		"....ssssssssss....",
+		"..sscccccccccccss.",
+		".sccrrccccccccccs.",
+		"sccccccccccccccccs",
+		"sccccccccccccccccs",
+		".ssssssssssssssss.",
+		"..ss..ss..ss..ss..",
+		"..................",
+	],
+	crawl2: [
+		"..................",
+		"...ssssssssssss...",
+		".sscccccccccccss..",
+		"sccrrcccccccccccs.",
+		"sccccccccccccccccs",
+		"sccccccccccccccccs",
+		".ssssssssssssssss.",
+		".ss..ss..ss..ss...",
+		"..................",
+	],
+	toss1: [
+		"....rrrrrr....",
+		"...rmmmmmmr...",
+		"..rmmmmmmmmr..",
+		"..rmmmmmmmmr..",
+		"..rmmwwmmmmr..",
+		"..rmmmmmmmmr..",
+		"...rmmmmmmr...",
+		"....rmmmmr....",
+		"..rrrrrrrrrr..",
+		".rmmmmmmmmmmr.",
+		".rmmmmmmmmmmr.",
+		".rmsssssssmmr.",
+		".rmmmmmmmmmmr.",
+		"..rmmmmmmmmr..",
+		"..rmmmmmmmmr..",
+		"..rmmmkkmmmr..",
+		"...rmmkkmmr...",
+		"...rmmkkmmr...",
+		"...rmmkkmmr...",
+		"..rrmmkkmmrr..",
+		"..rrrr..rrrr..",
+		"..............",
+	],
+	toss2: [
+		"....rrrrrr....",
+		"...rmmmmmmr...",
+		"..rmmmmmmmmr..",
+		"..rmmmmmmmmr..",
+		"..rmmwwmmmmr..",
+		"..rmmmmmmmmr..",
+		"...rmmmmmmr...",
+		"....rmmmmr....",
+		"..rrrrrrrrrrrr",
+		".rmmmmmmmmmmmm",
+		".rmmmmmmmmmrrr",
+		".rmsssssssmr..",
+		".rmmmmmmmmmr..",
+		"..rmmmmmmmmr..",
+		"..rmmmmmmmmr..",
+		"..rmmmkkmmmr..",
+		"...rmmkkmmr...",
+		"...rmmkkmmr...",
+		"..rmmkkkkmmr..",
+		"..rrmmkkmmrr..",
+		"..rrrr..rrrr..",
+		"..............",
+	],
+}
+
+/* What is thrown. The star is a letter folded four ways; the offer is a letter that was not. */
+var SHINO_SHOT = {
+	star1: [
+		"..w..",
+		"..w..",
+		"wwwww",
+		"..w..",
+		"..w..",
+	],
+	star2: [
+		"w...w",
+		".w.w.",
+		"..w..",
+		".w.w.",
+		"w...w",
+	],
+	offer: [
+		"ssssssss",
+		"scccccrs",
+		"scgccrrs",
+		"sccgcccs",
+		"sccccccs",
+		"ssssssss",
+	],
+}
+
+/* The mail sack, tied at the neck, and the same sack with the rope off it. */
+var SHINO_SACK = {
+	tied: [
+		"...gg..gg...",
+		"..gkkggkkg..",
+		"...ggggggg..",
+		"..yyyyyyyy..",
+		".gggggggggg.",
+		"gccccccccccg",
+		"gccssccssccg",
+		"gcssccssccsg",
+		"gccccccccccg",
+		"gccssccsscsg",
+		"gccccccccccg",
+		".gggggggggg.",
+		"..gggggggg..",
+	],
+	free: [
+		"............",
+		"............",
+		"...gggggg...",
+		"..gccccccg..",
+		".gccccccccg.",
+		"gccccccccccg",
+		"gccssccsscsg",
+		"gccccccccccg",
+		"gccssccsscsg",
+		"gccccccccccg",
+		".gggggggggg.",
+		"..gggggggg..",
+		"............",
+	],
+}
+
+/* ---- The art department ---- */
+
+function shino_canvas(w, h) {
+	var c = document.createElement("canvas")
+	c.width = w
+	c.height = h
+	return c
+}
+
+/** A picture into a canvas: one character a pixel, "." nothing, everything else a palette key. */
+function shino_pix(rows) {
+	var c = shino_canvas(rows[0].length, rows.length)
+	var g = c.getContext("2d")
+	for (var y = 0; y < rows.length; y++) {
+		for (var x = 0; x < rows[y].length; x++) {
+			var key = rows[y][x]
+			if (key === ".") continue
+			g.fillStyle = SHINO_PAL[key] || "#f0f"
+			g.fillRect(x, y, 1, 1)
+		}
+	}
+	return c
+}
+
+/** Every frame of one character, keyed as it was written. */
+function shino_pix_set(set) {
+	var out = {}
+	Object.keys(set).forEach(function (name) { out[name] = shino_pix(set[name]) })
+	return out
+}
+
+/* A repeatable scatter, so the stars and the grime land in the same places every time. */
+function shino_rand(seed) {
+	var s = seed
+	return function () {
+		s = (s * 1664525 + 1013904223) % 4294967296
+		return s / 4294967296
+	}
+}
+
+/*
+ * The sky, drawn once at full size because it does not scroll: a night that goes from ink at
+ * the top to the sodium orange a town throws up into it, a moon, and the stars that survive.
+ */
+function shino_tex_sky() {
+	var c = shino_canvas(SHINO_W, SHINO_H)
+	var g = c.getContext("2d")
+	var sky = g.createLinearGradient(0, 0, 0, 130)
+	sky.addColorStop(0, "#05060f")
+	sky.addColorStop(0.55, "#14183a")
+	sky.addColorStop(1, "#5a3a44")
+	g.fillStyle = sky
+	g.fillRect(0, 0, SHINO_W, 130)
+	var rand = shino_rand(41)
+	for (var i = 0; i < 70; i++) {
+		var x = Math.floor(rand() * SHINO_W)
+		var y = Math.floor(rand() * 88)
+		g.fillStyle = rand() > 0.7 ? "#f6f1e4" : "#8f96c0"
+		g.fillRect(x, y, 1, 1)
+	}
+	// The moon, full and low, with the two seas that make a moon look like one.
+	g.fillStyle = "#f3ecd6"
+	g.beginPath()
+	g.arc(258, 34, 15, 0, Math.PI * 2)
+	g.fill()
+	g.fillStyle = "#ded4b8"
+	g.beginPath()
+	g.arc(253, 30, 4, 0, Math.PI * 2)
+	g.arc(263, 40, 3, 0, Math.PI * 2)
+	g.fill()
+	return c
+}
+
+/*
+ * The skyline behind everything: a sorting depot at the end of a shift, its roofs and vents
+ * and one chimney, in a blue so dark it is only a shape. Tiles at 320, so the seam lands
+ * where a roof ends.
+ */
+function shino_tex_far() {
+	var c = shino_canvas(320, 76)
+	var g = c.getContext("2d")
+	var rand = shino_rand(7)
+	g.fillStyle = "#141c3d"
+	var x = 0
+	while (x < 320) {
+		var w = 24 + Math.floor(rand() * 40)
+		var h = 22 + Math.floor(rand() * 40)
+		g.fillRect(x, 76 - h, Math.min(w, 320 - x), h)
+		// Aerials and vents, the things that make a roof read as a roof.
+		if (rand() > 0.55) g.fillRect(x + 4, 76 - h - 7, 2, 7)
+		if (rand() > 0.7) g.fillRect(x + w - 8, 76 - h - 4, 5, 4)
+		x += w + Math.floor(rand() * 8)
+	}
+	// The chimney, and the one lit window nobody turned off.
+	g.fillRect(196, 6, 11, 70)
+	g.fillStyle = "#1d2750"
+	g.fillRect(198, 6, 7, 70)
+	g.fillStyle = "#3a2e52"
+	for (var i = 0; i < 40; i++) {
+		var wx = Math.floor(rand() * 316)
+		var wy = 40 + Math.floor(rand() * 32)
+		g.fillRect(wx, wy, 2, 3)
+	}
+	return c
+}
+
+/*
+ * The wall the pavement runs along: brick, a shutter pulled down for the night, windows with
+ * somebody still in, a fire escape and the posters nobody took down. Tiled at 320 so the eye
+ * has to work to catch it coming round again.
+ */
+function shino_tex_mid() {
+	var c = shino_canvas(320, 58)
+	var g = c.getContext("2d")
+	g.fillStyle = "#241d3c"
+	g.fillRect(0, 0, 320, 58)
+	var rand = shino_rand(19)
+	// Courses of brick, dark on dark: at this size it is texture, not masonry.
+	g.fillStyle = "#2b2246"
+	for (var y = 0; y < 58; y += 4) {
+		for (var x = (y / 4) % 2 ? 0 : 6; x < 320; x += 12) g.fillRect(x, y, 10, 3)
+	}
+	// Two roller shutters, down for the night.
+	;[18, 214].forEach(function (sx) {
+		g.fillStyle = "#1b2740"
+		g.fillRect(sx, 20, 42, 38)
+		g.fillStyle = "#25324f"
+		for (var b = 22; b < 58; b += 4) g.fillRect(sx + 1, b, 40, 2)
+		g.fillStyle = "#101828"
+		g.fillRect(sx, 18, 42, 3)
+	})
+	// Windows: lit, half lit, and one where the bulb went years ago.
+	var wins = [[76, 12, 1], [102, 12, 0], [128, 12, 1], [76, 34, 0], [128, 34, 2],
+		[176, 12, 1], [176, 34, 0], [268, 12, 2], [268, 34, 1], [294, 12, 0]]
+	wins.forEach(function (win) {
+		g.fillStyle = "#0e1526"
+		g.fillRect(win[0] - 1, win[1] - 1, 18, 16)
+		g.fillStyle = win[2] === 1 ? "#c9a53a" : win[2] === 2 ? "#6e5a86" : "#1a2138"
+		g.fillRect(win[0], win[1], 16, 14)
+		if (!win[2]) return
+		g.fillStyle = "#0e1526"
+		g.fillRect(win[0], win[1] + 6, 16, 2)
+		g.fillRect(win[0] + 7, win[1], 2, 14)
+	})
+	// The fire escape: a landing, its rail, and the ladder down off the end of it.
+	g.fillStyle = "#161e33"
+	g.fillRect(150, 26, 26, 3)
+	for (var r = 0; r < 5; r++) g.fillRect(152 + r * 6, 18, 2, 8)
+	g.fillRect(150, 18, 26, 2)
+	for (var l = 0; l < 6; l++) g.fillRect(154, 30 + l * 5, 12, 2)
+	g.fillRect(154, 29, 2, 29)
+	g.fillRect(164, 29, 2, 29)
+	// Posters, pasted up and gone over: the road has opinions about its mail.
+	var bills = [[200, 8, "#c7bda2"], [204, 30, "#a8a08a"], [58, 40, "#c7bda2"]]
+	bills.forEach(function (bill) {
+		g.fillStyle = bill[2]
+		g.fillRect(bill[0], bill[1], 13, 16)
+		g.fillStyle = "#b8332a"
+		g.fillRect(bill[0] + 1, bill[1] + 2, 11, 3)
+		g.fillStyle = "#3a3348"
+		g.fillRect(bill[0] + 2, bill[1] + 8, 9, 1)
+		g.fillRect(bill[0] + 2, bill[1] + 11, 9, 1)
+	})
+	// A downpipe, because every back wall has one.
+	g.fillStyle = "#161e33"
+	g.fillRect(310, 0, 4, 58)
+	g.fillRect(308, 30, 8, 3)
+	return c
+}
+
+/*
+ * The ground, in one 320-wide strip that tiles: the edge of the pavement the far lane stands
+ * on, the kerb dropping off it, and the road the near lane runs down with a line painted
+ * along the middle. Everything above the pavement's lip is wall, so the strip starts there.
+ */
+function shino_tex_near() {
+	var c = shino_canvas(320, SHINO_H - SHINO_BACK)
+	var g = c.getContext("2d")
+	var rand = shino_rand(23)
+	// The lip catches the light; the slabs under it do not. Two lines are the difference
+	// between a pavement and a stripe of grey paint on a wall.
+	g.fillStyle = "#7b7589"
+	g.fillRect(0, 0, 320, 2)
+	g.fillStyle = "#4a4657"
+	g.fillRect(0, 2, 320, 4)
+	g.fillStyle = "#3b3846"
+	g.fillRect(0, 6, 320, 10)
+	g.fillStyle = "#332f3d"
+	for (var x = 0; x < 320; x += 24) g.fillRect(x, 2, 1, 14)
+	for (var i = 0; i < 90; i++) g.fillRect(Math.floor(rand() * 320), 2 + Math.floor(rand() * 13), 2, 1)
+	// The kerb stone, then the gutter it drains into.
+	g.fillStyle = "#6d6779"
+	g.fillRect(0, 16, 320, 2)
+	g.fillStyle = "#2a2733"
+	g.fillRect(0, 18, 320, 3)
+	g.fillStyle = "#15141b"
+	g.fillRect(0, 21, 320, 2)
+	// The road, which is where the game is played.
+	g.fillStyle = "#1e1c26"
+	g.fillRect(0, 23, 320, c.height - 23)
+	g.fillStyle = "#26242f"
+	for (var j = 0; j < 300; j++) {
+		g.fillRect(Math.floor(rand() * 320), 23 + Math.floor(rand() * (c.height - 23)), 2, 1)
+	}
+	// A drain, and the line down the middle. Dashes at 40, so the strip still tiles at 320.
+	g.fillStyle = "#14131a"
+	g.fillRect(212, 24, 16, 5)
+	g.fillStyle = "#2f2c38"
+	for (var b = 0; b < 4; b++) g.fillRect(213 + b * 4, 25, 2, 3)
+	g.fillStyle = "#8a8460"
+	for (var d = 6; d < 320; d += 40) g.fillRect(d, c.height - 6, 18, 2)
+	return c
+}
+
+/* ---- The furniture on the street ---- */
+
+/** A lamp post on the pavement, with the cone of sodium light it drops on the slabs. */
+function shino_lamp(g, x) {
+	var top = SHINO_BACK - 64
+	g.fillStyle = "#4e4a5e"
+	g.fillRect(x - 1, top + 4, 4, 62)
+	g.fillStyle = "#35313f"
+	g.fillRect(x + 2, top + 4, 1, 62)
+	// The arm, out over the pavement, and the lamp hanging off the end of it.
+	g.fillStyle = "#4e4a5e"
+	g.fillRect(x - 1, top, 13, 3)
+	g.fillRect(x + 9, top + 3, 3, 3)
+	g.fillStyle = "#2a2733"
+	g.fillRect(x + 6, top + 5, 9, 4)
+	g.fillStyle = "#fdc005"
+	g.fillRect(x + 7, top + 8, 7, 2)
+	// The light, weak enough to be light rather than a shape drawn on the wall.
+	g.globalAlpha = 0.07
+	g.fillStyle = "#fdc005"
+	g.beginPath()
+	g.moveTo(x + 6, top + 10)
+	g.lineTo(x + 15, top + 10)
+	g.lineTo(x + 30, SHINO_BACK)
+	g.lineTo(x - 6, SHINO_BACK)
+	g.closePath()
+	g.fill()
+	g.globalAlpha = 0.14
+	g.fillRect(x - 4, SHINO_BACK - 2, 30, 2)
+	g.globalAlpha = 1
+	g.fillStyle = "#2a2733"
+	g.fillRect(x - 3, SHINO_BACK - 2, 8, 2)
+}
+
+/** A pillar box: the thing you are doing all this for, standing on the pavement. */
+function shino_pillar(g, x) {
+	var top = SHINO_BACK - 30
+	g.fillStyle = "#8d251d"
+	g.fillRect(x, top + 3, 16, 27)
+	g.fillStyle = "#b8332a"
+	g.fillRect(x + 1, top + 3, 13, 27)
+	g.fillStyle = "#8d251d"
+	g.fillRect(x - 1, top, 18, 4)
+	g.fillStyle = "#2b2119"
+	g.fillRect(x + 3, top + 9, 10, 3)
+	g.fillStyle = "#f6f1e4"
+	g.fillRect(x + 4, top + 17, 8, 5)
+}
+
+/** Crates of parcels, stacked where somebody left them. */
+function shino_crates(g, x) {
+	var boxes = [[0, 0, 18, 14], [19, 4, 13, 10], [4, -12, 14, 12]]
+	boxes.forEach(function (b) {
+		g.fillStyle = "#7c6242"
+		g.fillRect(x + b[0], SHINO_BACK - b[3] - b[1], b[2], b[3])
+		g.fillStyle = "#5d4830"
+		g.strokeStyle = "#3a2c1c"
+		g.lineWidth = 1
+		g.strokeRect(x + b[0] + 0.5, SHINO_BACK - b[3] - b[1] + 0.5, b[2] - 1, b[3] - 1)
+		g.fillRect(x + b[0] + b[2] / 2 - 1, SHINO_BACK - b[3] - b[1], 2, b[3])
+	})
+}
+
+/*
+ * The van, parked in the near lane with its back doors open. It is scenery you cannot hop
+ * through: the lanes are a way out of trouble, and a way out that is always there is not one.
+ */
+function shino_van(g, x) {
+	var base = SHINO_FRONT
+	g.fillStyle = "#1d3a6b"
+	g.fillRect(x, base - 34, 62, 28)
+	g.fillStyle = "#16294d"
+	g.fillRect(x, base - 34, 62, 4)
+	g.fillStyle = "#0e1526"
+	g.fillRect(x + 44, base - 30, 16, 12)
+	g.fillStyle = "#f6f1e4"
+	g.fillRect(x + 6, base - 26, 26, 12)
+	g.fillStyle = "#0f1c41"
+	g.fillRect(x + 8, base - 23, 22, 3)
+	g.fillRect(x + 8, base - 18, 14, 2)
+	g.fillStyle = "#12141c"
+	g.fillRect(x + 4, base - 8, 12, 8)
+	g.fillRect(x + 44, base - 8, 12, 8)
+	g.fillStyle = "#2a2d38"
+	g.fillRect(x + 6, base - 6, 8, 5)
+	g.fillRect(x + 46, base - 6, 8, 5)
+}
+
+/*
+ * The shutter across the road at the end of the stage. It comes down behind you when you walk
+ * under it, which is the arcade's way of saying the next part is not optional.
+ */
+function shino_shutter(g, x, drop) {
+	var h = Math.round(56 * drop)
+	if (h <= 0) return
+	g.fillStyle = "#3a2f22"
+	g.fillRect(x - 4, SHINO_FRONT - 56, 8, 56)
+	g.fillRect(x + 24, SHINO_FRONT - 56, 8, 56)
+	g.fillStyle = "#6b5238"
+	g.fillRect(x - 2, SHINO_FRONT - 56, 32, h)
+	g.fillStyle = "#4a3826"
+	for (var y = SHINO_FRONT - 56; y < SHINO_FRONT - 56 + h; y += 4) g.fillRect(x - 2, y, 32, 2)
+}
+
+/* ---- The stage ---- */
+
+/*
+ * One road, eight screens of it, laid out by hand. Vans park in the near lane and are the
+ * only thing that stops a lane change: a way out that is always open is not a way out.
+ */
+var SHINO_PROPS = [
+	{ kind: "lamp", x: 60 }, { kind: "pillar", x: 190 }, { kind: "crates", x: 330 },
+	{ kind: "lamp", x: 430 }, { kind: "van", x: 560 }, { kind: "lamp", x: 780 },
+	{ kind: "crates", x: 880 }, { kind: "pillar", x: 1010 }, { kind: "lamp", x: 1140 },
+	{ kind: "van", x: 1320 }, { kind: "crates", x: 1470 }, { kind: "lamp", x: 1580 },
+	{ kind: "pillar", x: 1700 }, { kind: "lamp", x: 1920 }, { kind: "crates", x: 2010 },
+	{ kind: "van", x: 2110 }, { kind: "lamp", x: 2260 }, { kind: "pillar", x: 2430 },
+	{ kind: "lamp", x: 2540 },
+]
+
+/* Who is waiting, where, and in which lane. They sleep until the camera is nearly on them. */
+var SHINO_MOBS = [
+	{ kind: "grunt", x: 300, plane: 0 }, { kind: "grunt", x: 390, plane: 1 },
+	{ kind: "crawl", x: 470, plane: 0 }, { kind: "toss", x: 620, plane: 1 },
+	{ kind: "grunt", x: 700, plane: 0 }, { kind: "grunt", x: 770, plane: 1 },
+	{ kind: "crawl", x: 850, plane: 1 }, { kind: "toss", x: 960, plane: 0 },
+	{ kind: "grunt", x: 1040, plane: 1 }, { kind: "crawl", x: 1110, plane: 0 },
+	{ kind: "grunt", x: 1180, plane: 0 }, { kind: "toss", x: 1290, plane: 1 },
+	{ kind: "grunt", x: 1400, plane: 1 }, { kind: "crawl", x: 1460, plane: 0 },
+	{ kind: "grunt", x: 1530, plane: 0 }, { kind: "toss", x: 1630, plane: 0 },
+	{ kind: "grunt", x: 1710, plane: 1 }, { kind: "crawl", x: 1790, plane: 1 },
+	{ kind: "grunt", x: 1870, plane: 0 }, { kind: "toss", x: 1970, plane: 1 },
+	{ kind: "grunt", x: 2030, plane: 0 }, { kind: "grunt", x: 2080, plane: 1 },
+	{ kind: "crawl", x: 2150, plane: 0 }, { kind: "toss", x: 2210, plane: 1 },
+	{ kind: "grunt", x: 2250, plane: 0 },
+]
+
+/* The mail, tied up along the road. Freeing all six is the difference between clearing the
+   stage and clearing it properly, and the clock says thank you each time. */
+var SHINO_SACKS = [
+	{ x: 230, plane: 1 }, { x: 660, plane: 0 }, { x: 1060, plane: 1 },
+	{ x: 1500, plane: 1 }, { x: 1850, plane: 0 }, { x: 2170, plane: 1 },
+]
+
+/* Where a life starts again. The last one is inside the shutter: the boss is not a walk back. */
+var SHINO_CHECKS = [0, 380, 760, 1140, 1520, 1900, 2150, SHINO_GATE + 34]
+
+/* The size of each thing that can be hit, feet on its lane's ground. */
+var SHINO_SIZE = {
+	grunt: { w: 14, h: 15, speed: 42 },
+	crawl: { w: 18, h: 9, speed: 66 },
+	toss: { w: 12, h: 21, speed: 0 },
+}
+
+/* ---- The world ---- */
+
+var shino = null
+var shino_frame = null
+var shino_keys = {}
+var shino_art = null
+var shino_last = 0
+var shino_best = Number(localStorage.getItem("postboi:shinoboi") || 0)
+
+function shino_build_art() {
+	if (shino_art) return
+	shino_art = {
+		man: shino_pix_set(SHINO_MAN),
+		mob: shino_pix_set(SHINO_MOB),
+		shot: shino_pix_set(SHINO_SHOT),
+		sack: shino_pix_set(SHINO_SACK),
+		sky: shino_tex_sky(),
+		far: shino_tex_far(),
+		mid: shino_tex_mid(),
+		near: shino_tex_near(),
+	}
+}
+
+function shino_ground(plane) { return plane ? SHINO_BACK : SHINO_FRONT }
+
+/** A van is parked across the lane change. Everywhere else the hop is free. */
+function shino_blocked(x) {
+	return SHINO_PROPS.some(function (prop) {
+		return prop.kind === "van" && x > prop.x - 10 && x < prop.x + 72
+	})
+}
+
+/** Do two boxes touch? Everything that can hurt or be hurt is one of these. */
+function shino_hit(a, b) {
+	return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+}
+
+function shino_man_box() {
+	var man = shino.man
+	var high = man.crouch && !man.air ? 13 : 22
+	return { x: man.x - 5, y: shino_man_y() - high, w: 10, h: high }
+}
+
+/** Where his feet are this instant: his lane's ground, the jump, and the hop between lanes. */
+function shino_man_y() {
+	var man = shino.man
+	var ground = shino_ground(man.plane)
+	if (man.hop > 0) {
+		var t = 1 - man.hop / 0.24
+		ground = shino_ground(man.from) + (ground - shino_ground(man.from)) * t - Math.sin(t * Math.PI) * 12
+	}
+	return ground + man.oy
+}
+
+function shino_mob_box(mob) {
+	var size = SHINO_SIZE[mob.kind]
+	return { x: mob.x - size.w / 2, y: shino_ground(mob.plane) - size.h, w: size.w, h: size.h }
+}
+
+function shino_start(next) {
+	shino_build_art()
+	// Anything already running stops here: this is also how the tally starts the next round
+	// and how GAME OVER starts a new one, and two loops would run the clock at twice the speed.
+	cancelAnimationFrame(shino_frame)
+	shino_frame = null
+	shino_keys = {}
+	var carry = next && shino ? shino : null
+	shino = {
+		mode: carry ? "ready" : "title",
+		t: 0,
+		wait: 1.4,
+		cam: 0,
+		round: carry ? carry.round + 1 : 1,
+		score: carry ? carry.score : 0,
+		lives: carry ? carry.lives : 3,
+		time: carry ? Math.max(55, SHINO_TIME - (carry.round) * 5) : SHINO_TIME,
+		man: null,
+		mobs: SHINO_MOBS.map(function (spot) {
+			return {
+				kind: spot.kind, x: spot.x, plane: spot.plane, dir: -1,
+				awake: false, dead: false, t: Math.random() * 1.4, frame: 0,
+			}
+		}),
+		sacks: SHINO_SACKS.map(function (spot) { return { x: spot.x, plane: spot.plane, freed: false } }),
+		shots: [], offers: [], bits: [],
+		freed: 0, magic: 1, flash: 0, shake: 0,
+		boss: null, gate: 0, check: 0,
+		note: "", note_at: -9,
+		// Everything the syndicate does gets faster every time the stage comes round again.
+		pace: carry ? Math.min(1.9, 1 + carry.round * 0.16) : 1,
+	}
+	shino_place_man(0)
+	shino_cam()
+	shino_loop()
+}
+
+/** Put him back on his feet, at a checkpoint, with the one ninjutsu a life comes with. */
+function shino_place_man(x) {
+	shino.man = {
+		x: x, plane: 0, oy: 0, vy: 0, face: 1, air: false, crouch: false,
+		walk: 0, atk: 0, kind: "", hop: 0, from: 0, gone: 0, safe: 1.6,
+	}
+	shino.magic = 1
+	shino.shots = []
+	shino.offers = []
+}
+
+function shino_cam() {
+	var low = shino.boss ? SHINO_GATE : 0
+	shino.cam = Math.max(low, Math.min(SHINO_LEN - SHINO_W, Math.round(shino.man.x - 130)))
+}
+
+function shino_say(text) {
+	shino.note = text
+	shino.note_at = shino.t
+}
+
+/* A handful of paper, thrown up by whatever just happened to it. */
+function shino_bits(x, y, count, colour) {
+	for (var i = 0; i < count; i++) {
+		shino.bits.push({
+			x: x, y: y,
+			vx: (Math.random() - 0.5) * 90,
+			vy: -30 - Math.random() * 90,
+			t: 0.7, colour: colour,
+		})
+	}
+}
+
+function shino_loop(now) {
+	if (!shino) { shino_frame = null; return }
+	shino_frame = requestAnimationFrame(shino_loop)
+	var win = find("shino")
+	// Minimised or shut: hold the clock still rather than running a stage nobody can see.
+	if (!win || !win.open || win.min) { shino_last = now || shino_last; return }
+	var dt = Math.min(0.05, (now - shino_last) / 1000 || 0.016)
+	shino_last = now
+	shino.t += dt
+	shino_step(dt)
+	shino_draw()
+}
+
+function shino_step(dt) {
+	shino.flash = Math.max(0, shino.flash - dt * 2.2)
+	shino.shake = Math.max(0, shino.shake - dt * 3)
+	shino.bits = shino.bits.filter(function (bit) {
+		bit.t -= dt
+		bit.x += bit.vx * dt
+		bit.y += bit.vy * dt
+		bit.vy += 260 * dt
+		return bit.t > 0
+	})
+	if (shino.mode === "title" || shino.mode === "over" || shino.mode === "clear") return
+	if (shino.mode === "ready") {
+		shino.wait -= dt
+		if (shino.wait <= 0) shino.mode = "play"
+		return
+	}
+	if (shino.mode === "dying") {
+		shino.wait -= dt
+		shino.man.oy += shino.man.vy * dt
+		shino.man.vy += SHINO_GRAV * 0.6 * dt
+		if (shino.wait <= 0) shino_next_life()
+		return
+	}
+
+	var man = shino.man
+	man.atk = Math.max(0, man.atk - dt)
+	man.hop = Math.max(0, man.hop - dt)
+	man.safe = Math.max(0, man.safe - dt)
+
+	// The clock is the other thing trying to kill you, and it never misses.
+	shino.time -= dt
+	if (shino.time <= 0) {
+		shino.time = 0
+		shino_say("OUT OF TIME")
+		return shino_die()
+	}
+
+	var dir = (shino_keys.right ? 1 : 0) - (shino_keys.left ? 1 : 0)
+	man.crouch = !!shino_keys.down && !man.air
+	if (dir && !man.crouch) {
+		man.face = dir
+		man.x += dir * SHINO_RUN * dt
+		man.walk += dt * 9
+	}
+	man.moving = !!dir && !man.crouch
+	var west = shino.boss ? SHINO_GATE + 12 : 10
+	man.x = Math.max(west, Math.min(SHINO_LEN - 20, man.x))
+
+	if (man.air) {
+		man.oy += man.vy * dt
+		man.vy += SHINO_GRAV * dt
+		if (man.oy >= 0) { man.oy = 0; man.vy = 0; man.air = false }
+	}
+
+	// The shutter, and the thing behind it.
+	if (!shino.boss && man.x > SHINO_GATE) shino_wake_boss()
+	if (shino.gate > 0 && shino.gate < 1) shino.gate = Math.min(1, shino.gate + dt * 2.5)
+
+	shino_step_mobs(dt)
+	shino_step_shots(dt)
+	if (shino.boss) shino_step_boss(dt)
+	shino_step_sacks()
+	// Where the next life starts from. Passing one is the only thing that moves it.
+	while (shino.check < SHINO_CHECKS.length - 1 && man.x > SHINO_CHECKS[shino.check + 1]) shino.check++
+	shino_cam()
+}
+
+function shino_step_mobs(dt) {
+	var man = shino.man
+	shino.mobs.forEach(function (mob) {
+		if (mob.dead) return
+		if (!mob.awake) {
+			// They come alive a little before the edge of the screen, never on top of you.
+			if (mob.x < shino.cam + SHINO_W + 24 && mob.x > shino.cam - 40) {
+				mob.awake = true
+				mob.dir = mob.x > man.x ? -1 : 1
+			}
+			return
+		}
+		var size = SHINO_SIZE[mob.kind]
+		mob.t += dt
+		mob.frame = Math.floor(mob.t * 7) % 2
+		if (mob.kind === "toss") {
+			mob.dir = man.x < mob.x ? -1 : 1
+			// It posts one at you every so often, and only when you are on the screen with it.
+			if (mob.t > 1.7 / shino.pace && Math.abs(mob.x - man.x) < 190) {
+				mob.t = 0
+				mob.frame = 1
+				mob.throwing = 0.28
+				var ground = shino_ground(mob.plane)
+				shino.offers.push({
+					x: mob.x + mob.dir * 8, y: ground - 13,
+					vx: mob.dir * 96 * shino.pace, plane: mob.plane, t: 0,
+				})
+			}
+			if (mob.throwing > 0) mob.throwing -= dt
+		} else {
+			// Walkers come at you. Turn to follow, but not on the spot -- a grunt that
+			// pivots the instant you pass it can never be got behind.
+			if (Math.abs(mob.x - man.x) > 14) mob.dir = man.x < mob.x ? -1 : 1
+			mob.x += mob.dir * size.speed * shino.pace * dt
+			if (mob.x < 8 || mob.x > SHINO_LEN - 8) mob.dir *= -1
+		}
+		if (man.safe <= 0 && man.hop <= 0 && mob.plane === man.plane && shino_hit(shino_man_box(), shino_mob_box(mob))) {
+			shino_die()
+		}
+	})
+}
+
+function shino_step_shots(dt) {
+	var man = shino.man
+	shino.shots = shino.shots.filter(function (shot) {
+		shot.x += shot.vx * dt
+		shot.spin += dt * 26
+		if (shot.x < shino.cam - 20 || shot.x > shino.cam + SHINO_W + 20) return false
+		var box = { x: shot.x - 2, y: shot.y - 2, w: 5, h: 5 }
+		var alive = true
+		shino.mobs.forEach(function (mob) {
+			if (!alive || mob.dead || !mob.awake || mob.plane !== shot.plane) return
+			if (!shino_hit(box, shino_mob_box(mob))) return
+			shino_kill(mob, 100)
+			alive = false
+		})
+		if (alive && shino.boss && shino.boss.hp > 0 && shino_hit(box, shino_boss_box())) {
+			shino_boss_hurt(1)
+			alive = false
+		}
+		return alive
+	})
+
+	shino.offers = shino.offers.filter(function (offer) {
+		offer.t += dt
+		offer.x += offer.vx * dt
+		// It droops the way a thrown envelope does, which is what makes ducking work.
+		offer.y += offer.t * 26 * dt
+		if (offer.x < shino.cam - 20 || offer.x > shino.cam + SHINO_W + 20) return false
+		if (offer.y > shino_ground(offer.plane)) return false
+		if (man.safe <= 0 && man.hop <= 0 && offer.plane === man.plane) {
+			if (shino_hit({ x: offer.x - 4, y: offer.y - 3, w: 8, h: 6 }, shino_man_box())) {
+				shino_die()
+				return false
+			}
+		}
+		return true
+	})
+}
+
+function shino_step_sacks() {
+	var man = shino.man
+	shino.sacks.forEach(function (sack) {
+		if (sack.freed || sack.plane !== man.plane) return
+		var box = { x: sack.x - 6, y: shino_ground(sack.plane) - 13, w: 12, h: 13 }
+		if (!shino_hit(box, shino_man_box())) return
+		sack.freed = true
+		shino.freed++
+		shino.score += 500
+		shino.time = Math.min(SHINO_TIME + 20, shino.time + 8)
+		shino_bits(sack.x, shino_ground(sack.plane) - 10, 10, "c")
+		shino_say(shino.freed === shino.sacks.length ? "ALL THE MAIL IS OUT" : "MAIL RECOVERED")
+	})
+}
+
+function shino_kill(mob, points) {
+	mob.dead = true
+	shino.score += points
+	shino_bits(mob.x, shino_ground(mob.plane) - 8, 7, mob.kind === "toss" ? "r" : "c")
+	shino_beep(220, 90, 0.09)
+}
+
+/* ---- What the two buttons do ---- */
+
+function shino_jump() {
+	var man = shino.man
+	if (shino.mode !== "play" || man.air || man.gone) return
+	man.air = true
+	man.vy = -SHINO_JUMP
+	man.crouch = false
+	shino_beep(520, 300, 0.05)
+}
+
+/*
+ * The lane change. A hop backwards onto the pavement or forwards into the road: it is the
+ * only defence this game has, and half of playing it well is knowing when the far lane is
+ * the safe one.
+ */
+function shino_lane() {
+	var man = shino.man
+	if (shino.mode !== "play" || man.air || man.gone || man.hop > 0) return
+	if (shino.boss) return shino_say("NO WAY ROUND IT")
+	if (shino_blocked(man.x)) return shino_say("BLOCKED")
+	man.from = man.plane
+	man.plane = man.plane ? 0 : 1
+	man.hop = 0.24
+	man.crouch = false
+	shino_beep(300, 620, 0.12)
+}
+
+/*
+ * Attack. Anything close enough gets the sword, which is Shinobi's own rule and the reason
+ * walking into a room full of them is survivable: the star is for distance, the blade is for
+ * the mistake you just made. Three stars on the screen at once, as the cabinet allowed.
+ */
+function shino_attack() {
+	if (shino.mode === "title") return shino_begin()
+	if (shino.mode === "over") return shino_start()
+	if (shino.mode === "clear") return shino_start(true)
+	var man = shino.man
+	if (shino.mode !== "play" || man.atk > 0 || man.gone) return
+	var reach = { x: man.x + (man.face > 0 ? 4 : -26), y: shino_man_y() - 20, w: 22, h: 20 }
+	var cut = null
+	shino.mobs.forEach(function (mob) {
+		if (mob.dead || !mob.awake || mob.plane !== man.plane) return
+		if (shino_hit(reach, shino_mob_box(mob))) cut = mob
+	})
+	man.atk = 0.22
+	if (cut) {
+		man.kind = "slash"
+		shino_kill(cut, 200)
+		return
+	}
+	man.kind = "star"
+	if (shino.shots.length >= 3) return
+	shino.shots.push({
+		x: man.x + man.face * 7,
+		y: shino_man_y() - (man.crouch ? 7 : 14),
+		vx: man.face * SHINO_TOSS, plane: man.plane, spin: 0,
+	})
+	shino_beep(880, 1200, 0.04)
+}
+
+/*
+ * Ninjutsu, once a life: every letter on the screen goes back where it came from and takes
+ * the sender with it. Shinobi gave you one per life too, and never told you either.
+ */
+function shino_magic() {
+	if (shino.mode !== "play" || shino.magic <= 0 || shino.man.gone) return
+	shino.magic--
+	shino.flash = 1
+	shino.shake = 0.6
+	shino_say("RETURN TO SENDER")
+	shino.mobs.forEach(function (mob) {
+		if (mob.dead || !mob.awake) return
+		if (mob.x < shino.cam - 10 || mob.x > shino.cam + SHINO_W + 10) return
+		shino_kill(mob, 50)
+	})
+	shino.offers = []
+	if (shino.boss) shino_boss_hurt(3)
+	for (var i = 0; i < 26; i++) {
+		shino_bits(shino.man.x, shino_man_y() - 11, 1, i % 3 ? "c" : "y")
+	}
+	shino_beep(140, 900, 0.3)
+}
+
+/* ---- Dying, and the arcade's opinion of it ---- */
+
+function shino_die() {
+	if (shino.mode !== "play" || shino.man.gone || shino.god) return
+	shino.man.gone = 1
+	shino.man.vy = -170
+	shino.man.air = true
+	shino.mode = "dying"
+	shino.wait = 1.3
+	shino.shake = 0.5
+	shino.lives--
+	shino_bits(shino.man.x, shino_man_y() - 12, 6, "y")
+	shino_beep(300, 70, 0.4)
+}
+
+function shino_next_life() {
+	if (shino.lives <= 0) {
+		shino.mode = "over"
+		if (shino.score > shino_best) {
+			shino_best = shino.score
+			localStorage.setItem("postboi:shinoboi", String(shino_best))
+		}
+		return
+	}
+	shino_place_man(SHINO_CHECKS[shino.check])
+	// The boss is not fought twice from the start: it keeps the damage it has taken.
+	shino.mode = "ready"
+	shino.wait = 1.2
+	shino_cam()
+}
+
+/* ---- The thing behind the shutter ---- */
+
+/*
+ * MAILER DAEMON: an envelope the size of a doorway on a franking machine's legs, with a dead
+ * letter stamp where its face should be. It hops, and every landing posts three bounces at
+ * whichever lane you are standing in. It cannot be gone round -- the shutter is down.
+ */
+function shino_wake_boss() {
+	shino.boss = { x: SHINO_GATE + 220, hp: 10 + (shino.round - 1) * 4, max: 10 + (shino.round - 1) * 4, vy: 0, oy: 0, t: 0, hurt: 0, dying: 0 }
+	shino.gate = 0.01
+	shino_say("MAILER DAEMON")
+	shino_beep(90, 40, 0.6)
+}
+
+function shino_boss_box() {
+	var boss = shino.boss
+	return { x: boss.x - 20, y: SHINO_FRONT + boss.oy - 52, w: 40, h: 52 }
+}
+
+function shino_boss_hurt(amount) {
+	var boss = shino.boss
+	if (boss.hp <= 0) return
+	boss.hp -= amount
+	boss.hurt = 0.18
+	shino.score += 100 * amount
+	shino_bits(boss.x, SHINO_FRONT + boss.oy - 30, 4, "c")
+	shino_beep(160, 60, 0.12)
+	if (boss.hp > 0) return
+	boss.dying = 1.4
+	shino.shake = 1
+	shino_bits(boss.x, SHINO_FRONT + boss.oy - 30, 26, "c")
+	shino_beep(80, 30, 0.9)
+}
+
+function shino_step_boss(dt) {
+	var boss = shino.boss
+	var man = shino.man
+	if (boss.dying > 0) {
+		boss.dying -= dt
+		if (boss.dying % 0.2 < dt) shino_bits(boss.x + (Math.random() - 0.5) * 30, SHINO_FRONT - 20 - Math.random() * 26, 4, "y")
+		if (boss.dying <= 0) shino_clear()
+		return
+	}
+	boss.hurt = Math.max(0, boss.hurt - dt)
+	boss.t += dt
+	if (boss.oy < 0 || boss.vy) {
+		boss.oy += boss.vy * dt
+		boss.vy += SHINO_GRAV * 0.8 * dt
+		boss.x += boss.dir * 46 * dt
+		if (boss.oy >= 0) {
+			boss.oy = 0
+			boss.vy = 0
+			shino.shake = 0.4
+			shino_beep(70, 50, 0.25)
+			// It lands, and posts three at once: one along the road, one high, one at the
+			// pavement. Standing still through that is not a plan.
+			var lanes = [{ p: 0, y: SHINO_FRONT - 8 }, { p: 0, y: SHINO_FRONT - 20 }, { p: 1, y: SHINO_BACK - 12 }]
+			lanes.forEach(function (lane) {
+				shino.offers.push({
+					x: boss.x - 18, y: lane.y, vx: -104 * shino.pace, plane: lane.p, t: 0,
+				})
+			})
+		}
+	} else if (boss.t > 1.5 / shino.pace) {
+		boss.t = 0
+		boss.dir = man.x < boss.x ? -1 : 1
+		boss.vy = -250
+	}
+	boss.x = Math.max(SHINO_GATE + 60, Math.min(SHINO_LEN - 30, boss.x))
+	if (man.safe <= 0 && man.hop <= 0 && man.plane === 0 && shino_hit(shino_man_box(), shino_boss_box())) shino_die()
+}
+
+/** The tally. Time and mail are worth more than anything you shot on the way here. */
+function shino_clear() {
+	shino.mode = "clear"
+	shino.time_bonus = Math.round(shino.time) * 10
+	shino.mail_bonus = shino.freed * 500
+	shino.score += shino.time_bonus + shino.mail_bonus
+	if (shino.score > shino_best) {
+		shino_best = shino.score
+		localStorage.setItem("postboi:shinoboi", String(shino_best))
+	}
+	shino_say(shino.freed === shino.sacks.length ? "EVERY SACK ACCOUNTED FOR" : "MISSION CLEAR")
+}
+
+function shino_begin() {
+	shino.mode = "ready"
+	shino.wait = 1.2
+}
+
+/*
+ * The cabinet's voice: one oscillator a blip, no samples, and nothing at all when the inbox
+ * is muted -- the toolbar's speaker owns every sound this page makes.
+ */
+var shino_audio = null
+function shino_beep(from, to, len) {
+	if (muted) return
+	try {
+		var Ctor = window.AudioContext || window.webkitAudioContext
+		if (!Ctor) return
+		if (!shino_audio) shino_audio = new Ctor()
+		var now = shino_audio.currentTime
+		var osc = shino_audio.createOscillator()
+		var gain = shino_audio.createGain()
+		osc.type = "square"
+		osc.frequency.setValueAtTime(from, now)
+		osc.frequency.exponentialRampToValueAtTime(Math.max(30, to), now + len)
+		gain.gain.setValueAtTime(0.05, now)
+		gain.gain.exponentialRampToValueAtTime(0.0001, now + len)
+		osc.connect(gain)
+		gain.connect(shino_audio.destination)
+		osc.start(now)
+		osc.stop(now + len)
+	} catch (err) {
+		/* No audio context, no sound. It is a game in a mail client; it can do without. */
+	}
+}
+
+/* ---- The renderer ---- */
+
+/*
+ * The mark on the ground under everything that stands on it. Without one, a sprite drawn
+ * against a wall is a sticker on the wall, which is the one thing that gives a flat game away.
+ */
+function shino_shade(g, x, ground, w, lift) {
+	g.fillStyle = "rgba(5,7,15,0.38)"
+	var narrow = Math.max(4, Math.round(w - (lift || 0) / 4))
+	g.fillRect(Math.round(x - narrow / 2), Math.round(ground) - 1, narrow, 2)
+}
+
+function shino_blit(g, art, x, y, face) {
+	if (face < 0) {
+		g.save()
+		g.translate(Math.round(x) + art.width, Math.round(y))
+		g.scale(-1, 1)
+		g.drawImage(art, 0, 0)
+		g.restore()
+		return
+	}
+	g.drawImage(art, Math.round(x), Math.round(y))
+}
+
+/** Arcade text: the same line twice, black underneath, because a sky is not a background. */
+function shino_text(g, text, x, y, colour, align, size) {
+	g.font = "bold " + (size || 8) + 'px "Lucida Console", "Courier New", monospace'
+	g.textBaseline = "top"
+	var w = g.measureText(text).width
+	var tx = align === "c" ? Math.round(x - w / 2) : align === "r" ? Math.round(x - w) : Math.round(x)
+	g.fillStyle = "#05070f"
+	g.fillText(text, tx + 1, Math.round(y) + 1)
+	g.fillStyle = colour
+	g.fillText(text, tx, Math.round(y))
+	return w
+}
+
+/** Scores are seven digits with the leading zeros still on them. That is the whole joke. */
+function shino_digits(value) {
+	var out = String(Math.max(0, Math.round(value)))
+	while (out.length < 7) out = "0" + out
+	return out
+}
+
+/** A tile, laid across the view from wherever the parallax has pushed it. */
+function shino_tile(g, art, y, shift) {
+	var start = -Math.floor(shift % art.width)
+	if (start > 0) start -= art.width
+	for (var x = start; x < SHINO_W; x += art.width) g.drawImage(art, x, y)
+}
+
+function shino_draw() {
+	var canvas = $("shino-view")
+	var g = canvas.getContext("2d")
+	var shake = shino.shake > 0 ? Math.round((Math.random() - 0.5) * shino.shake * 7) : 0
+	g.setTransform(SHINO_SCALE, 0, 0, SHINO_SCALE, 0, 0)
+	g.imageSmoothingEnabled = false
+	g.clearRect(0, 0, SHINO_W, SHINO_H)
+	g.save()
+	g.translate(shake, 0)
+
+	var cam = shino.cam
+	g.drawImage(shino_art.sky, 0, 0)
+	shino_tile(g, shino_art.far, 32, cam * 0.28)
+	shino_tile(g, shino_art.mid, 82, cam * 0.55)
+	shino_tile(g, shino_art.near, SHINO_BACK, cam)
+
+	// The furniture on the pavement, drawn before anybody standing on it.
+	SHINO_PROPS.forEach(function (prop) {
+		var x = prop.x - cam
+		if (x < -80 || x > SHINO_W + 80) return
+		if (prop.kind === "lamp") shino_lamp(g, x)
+		if (prop.kind === "pillar") shino_pillar(g, x)
+		if (prop.kind === "crates") shino_crates(g, x)
+	})
+	if (shino.gate > 0) shino_shutter(g, SHINO_GATE - cam, shino.gate)
+
+	shino_draw_lane(g, 1)
+	// The vans park in the near lane, so they hide the pavement and nothing in front of it.
+	SHINO_PROPS.forEach(function (prop) {
+		if (prop.kind !== "van") return
+		var x = prop.x - cam
+		if (x > -80 && x < SHINO_W + 80) shino_van(g, x)
+	})
+	if (shino.boss) shino_draw_boss(g)
+	shino_draw_lane(g, 0)
+
+	shino.bits.forEach(function (bit) {
+		g.fillStyle = SHINO_PAL[bit.colour]
+		g.fillRect(Math.round(bit.x - cam), Math.round(bit.y), 2, 2)
+	})
+	g.restore()
+
+	// The night, put back over everything: a street lit by two lamps is not evenly lit. Kept
+	// light -- a road dark enough to be convincing is a road you cannot see the crawlers on.
+	var dark = g.createLinearGradient(0, 96, 0, SHINO_H)
+	dark.addColorStop(0, "rgba(5,7,15,0)")
+	dark.addColorStop(1, "rgba(5,7,15,0.24)")
+	g.fillStyle = dark
+	g.fillRect(0, 96, SHINO_W, SHINO_H - 96)
+	if (shino.flash > 0) {
+		g.fillStyle = "rgba(246,241,228," + (shino.flash * 0.8).toFixed(3) + ")"
+		g.fillRect(0, 0, SHINO_W, SHINO_H)
+	}
+	shino_hud(g)
+	shino_banner(g)
+}
+
+/** One lane's worth of everything that stands on the ground, back to front. */
+function shino_draw_lane(g, plane) {
+	var cam = shino.cam
+	var art = shino_art
+	shino.sacks.forEach(function (sack) {
+		if (sack.plane !== plane) return
+		var x = sack.x - cam
+		if (x < -20 || x > SHINO_W + 20) return
+		shino_shade(g, x, shino_ground(plane), 12)
+		shino_blit(g, sack.freed ? art.sack.free : art.sack.tied, x - 6, shino_ground(plane) - 13, 1)
+	})
+	shino.mobs.forEach(function (mob) {
+		if (mob.plane !== plane || mob.dead || !mob.awake) return
+		var x = mob.x - cam
+		if (x < -30 || x > SHINO_W + 30) return
+		var ground = shino_ground(plane)
+		shino_shade(g, x, ground, SHINO_SIZE[mob.kind].w)
+		if (mob.kind === "grunt") shino_blit(g, art.mob[mob.frame ? "grunt2" : "grunt1"], x - 8, ground - 16, mob.dir)
+		if (mob.kind === "crawl") shino_blit(g, art.mob[mob.frame ? "crawl2" : "crawl1"], x - 9, ground - 9, mob.dir)
+		if (mob.kind === "toss") shino_blit(g, art.mob[mob.throwing > 0 ? "toss2" : "toss1"], x - 7, ground - 22, mob.dir)
+	})
+	shino.offers.forEach(function (offer) {
+		if (offer.plane !== plane) return
+		shino_blit(g, art.shot.offer, offer.x - cam - 4, offer.y - 3, offer.vx < 0 ? -1 : 1)
+	})
+	shino.shots.forEach(function (shot) {
+		if (shot.plane !== plane) return
+		shino_blit(g, art.shot[Math.floor(shot.spin) % 2 ? "star2" : "star1"], shot.x - cam - 2, shot.y - 2, 1)
+	})
+	if (shino.man && shino.man.plane === plane) shino_draw_man(g)
+}
+
+function shino_draw_man(g) {
+	var man = shino.man
+	// Invulnerable after a life is lost, and blinking to say so.
+	if (man.safe > 0 && Math.floor(shino.t * 20) % 2) return
+	shino_shade(g, man.x - shino.cam, shino_ground(man.plane), 12, -man.oy)
+	var name = "stand"
+	if (man.gone) name = "dead"
+	else if (man.atk > 0) name = man.kind === "slash" ? "slash" : man.crouch ? "cthrow" : "throw"
+	else if (man.air || man.hop > 0) name = "jump"
+	else if (man.crouch) name = "crouch"
+	else if (man.moving) name = ["run1", "run2", "run3", "run2"][Math.floor(man.walk) % 4]
+	shino_blit(g, shino_art.man[name], man.x - shino.cam - 7, shino_man_y() - 22, man.face)
+	// The blade, drawn rather than sprited: it is a white arc for two frames and then gone.
+	if (man.atk > 0.06 && man.kind === "slash") {
+		g.strokeStyle = "#f6f1e4"
+		g.lineWidth = 2
+		g.beginPath()
+		g.arc(man.x - shino.cam + man.face * 8, shino_man_y() - 12, 13, -1.1, 0.9)
+		g.stroke()
+	}
+}
+
+function shino_draw_boss(g) {
+	var boss = shino.boss
+	var x = Math.round(boss.x - shino.cam)
+	var base = Math.round(SHINO_FRONT + boss.oy)
+	var lean = Math.round(Math.sin(boss.t * 3) * 1.5)
+	var swing = Math.sin(boss.t * 3.4) * 4
+	shino_shade(g, x, SHINO_FRONT, 40, -boss.oy)
+	var top = base - 52
+	var pale = boss.hurt > 0
+	// The legs: two franking-machine pistons, out of step with each other.
+	g.fillStyle = "#3b3846"
+	g.fillRect(x - 14, base - 18, 8, 18)
+	g.fillRect(x + 6, base - 18, 8, 18)
+	g.fillStyle = "#6d6779"
+	g.fillRect(x - 15, base - 4, 10, 4)
+	g.fillRect(x + 5, base - 4, 10, 4)
+	// The arms: chain, and a fist of franked mail on the end of each.
+	;[-1, 1].forEach(function (side) {
+		var ay = top + 22 + (side > 0 ? swing : -swing)
+		g.fillStyle = "#3b3846"
+		g.fillRect(x + side * 24 - 2, top + 18, 4, Math.max(4, ay - top - 14))
+		g.fillStyle = pale ? "#f6f1e4" : "#e8e0cc"
+		g.fillRect(x + side * 24 - 5, ay, 10, 8)
+		g.strokeStyle = "#2b2119"
+		g.lineWidth = 2
+		g.strokeRect(x + side * 24 - 5, ay, 10, 8)
+	})
+	// The body: an envelope, at a size that stops being funny.
+	g.fillStyle = pale ? "#f6f1e4" : "#e8e0cc"
+	g.fillRect(x - 20, top, 40, 36)
+	g.strokeStyle = "#2b2119"
+	g.lineWidth = 2
+	g.strokeRect(x - 20, top, 40, 36)
+	// The flap: two folds off the top corners, which is all an envelope has ever been.
+	g.beginPath()
+	g.moveTo(x - 20, top)
+	g.lineTo(x, top + 15)
+	g.lineTo(x + 20, top)
+	g.stroke()
+	// Eyes under the fold, and the letter slot it speaks through.
+	g.fillStyle = "#2b2119"
+	g.fillRect(x - 13 + lean, top + 18, 8, 5)
+	g.fillRect(x + 5 + lean, top + 18, 8, 5)
+	g.fillRect(x - 13, top + 27, 26, 5)
+	g.fillStyle = pale ? "#f6f1e4" : "#e8e0cc"
+	for (var t = 0; t < 5; t++) g.fillRect(x - 12 + t * 6, top + 27, 3, 2)
+	// The stamp, in the corner, cancelled: this one has been through the machine already.
+	g.fillStyle = "#b8332a"
+	g.fillRect(x + 7, top + 3, 11, 8)
+	g.fillStyle = "#7f2119"
+	g.fillRect(x + 7, top + 3, 11, 2)
+	g.strokeStyle = "#7f2119"
+	g.lineWidth = 1
+	for (var c = 0; c < 3; c++) {
+		g.beginPath()
+		g.moveTo(x + 5, top + 5 + c * 3)
+		g.lineTo(x + 20, top + 2 + c * 3)
+		g.stroke()
+	}
+	// The bar of health it has left, over its head, because you have to know it is working.
+	var wide = 44
+	g.fillStyle = "#05070f"
+	g.fillRect(x - wide / 2 - 1, top - 10, wide + 2, 5)
+	g.fillStyle = "#b8332a"
+	g.fillRect(x - wide / 2, top - 9, Math.max(0, Math.round((wide * boss.hp) / boss.max)), 3)
+}
+
+/* The score, the clock, the mail and what is left of you -- laid out the way a cabinet did. */
+function shino_hud(g) {
+	// The title and the tally have the screen to themselves; a cabinet's overlay is for
+	// the part you are playing.
+	if (shino.mode === "title" || shino.mode === "clear" || shino.mode === "over") return
+	var band = g.createLinearGradient(0, 0, 0, 30)
+	band.addColorStop(0, "rgba(5,7,15,0.55)")
+	band.addColorStop(1, "rgba(5,7,15,0)")
+	g.fillStyle = band
+	g.fillRect(0, 0, SHINO_W, 30)
+	shino_text(g, "1UP", 6, 3, "#b8332a")
+	shino_text(g, shino_digits(shino.score), 6, 12, "#f6f1e4")
+	shino_text(g, "HI", 88, 3, "#b8332a")
+	shino_text(g, shino_digits(shino_best), 80, 12, "#8f96c0")
+	var left = Math.ceil(shino.time)
+	var late = left <= 15 && Math.floor(shino.t * 4) % 2
+	shino_text(g, "TIME", 200, 3, "#b8332a", "c")
+	shino_text(g, String(left), 200, 12, late ? "#b8332a" : "#f6f1e4", "c")
+	shino_text(g, "MAIL " + shino.freed + "/" + shino.sacks.length, 314, 3, "#fdc005", "r")
+	// The lives, as the stars he has left to throw with.
+	for (var i = 0; i < Math.min(5, Math.max(0, shino.lives)); i++) {
+		g.drawImage(shino_art.shot.star2, 314 - 6 - i * 7, 13)
+	}
+	shino_text(g, "ROUND " + shino.round, 6, 22, "#8f96c0")
+	if (shino.god) shino_text(g, "ZEED IS AFRAID OF YOU", 200, 22, "#fdc005", "c")
+	if (shino.magic > 0) shino_text(g, "NINJUTSU", 314, 22, "#fdc005", "r")
+	// Whatever the game last said about itself, for a second and a half.
+	if (shino.t - shino.note_at < 1.6 && shino.note) {
+		shino_text(g, shino.note, SHINO_W / 2, 42, "#fdc005", "c")
+	}
+}
+
+/* The screens between the playing: the title, the round card, the tally and the end of it. */
+function shino_banner(g) {
+	if (shino.mode === "play" || shino.mode === "dying") return
+	var blink = Math.floor(shino.t * 2) % 2
+	if (shino.mode === "ready") {
+		shino_text(g, "ROUND " + shino.round, SHINO_W / 2, 74, "#f6f1e4", "c", 14)
+		shino_text(g, "READY", SHINO_W / 2, 94, "#fdc005", "c", 10)
+		return
+	}
+	g.fillStyle = "rgba(5,7,15,0.72)"
+	g.fillRect(0, 0, SHINO_W, SHINO_H)
+	if (shino.mode === "title") {
+		// The sun off the marquee, the man standing in front of it, and the wordmark under.
+		g.fillStyle = "#b8332a"
+		g.beginPath()
+		g.arc(SHINO_W / 2, 56, 34, 0, Math.PI * 2)
+		g.fill()
+		g.fillStyle = "#8d251d"
+		g.fillRect(SHINO_W / 2 - 34, 68, 68, 2)
+		g.fillRect(SHINO_W / 2 - 30, 74, 60, 2)
+		var man = shino_art.man.stand
+		g.imageSmoothingEnabled = false
+		g.drawImage(man, SHINO_W / 2 - man.width, 28, man.width * 2, man.height * 2)
+		shino_text(g, "SHINOBOI", SHINO_W / 2, 92, "#fdc005", "c", 26)
+		shino_text(g, "THE MAIL IS BEING HELD. GET IT BACK.", SHINO_W / 2, 126, "#e8e0cc", "c")
+		if (blink) shino_text(g, "PRESS SPACE TO START", SHINO_W / 2, 146, "#f6f1e4", "c", 10)
+		shino_text(g, "NO COIN REQUIRED   (C) POSTBOI", SHINO_W / 2, 172, "#8f96c0", "c")
+		return
+	}
+	if (shino.mode === "clear") {
+		shino_text(g, "MISSION CLEAR", SHINO_W / 2, 40, "#fdc005", "c", 18)
+		shino_text(g, "MAIL RECOVERED  " + shino.freed + "/" + shino.sacks.length, SHINO_W / 2, 76, "#e8e0cc", "c")
+		shino_text(g, "MAIL BONUS      " + shino_digits(shino.mail_bonus), SHINO_W / 2, 90, "#e8e0cc", "c")
+		shino_text(g, "TIME BONUS      " + shino_digits(shino.time_bonus), SHINO_W / 2, 104, "#e8e0cc", "c")
+		shino_text(g, "SCORE           " + shino_digits(shino.score), SHINO_W / 2, 122, "#f6f1e4", "c", 10)
+		if (blink) shino_text(g, "SPACE FOR ROUND " + (shino.round + 1), SHINO_W / 2, 150, "#fdc005", "c")
+		return
+	}
+	shino_text(g, "GAME OVER", SHINO_W / 2, 62, "#b8332a", "c", 22)
+	shino_text(g, "SCORE " + shino_digits(shino.score), SHINO_W / 2, 100, "#f6f1e4", "c", 10)
+	shino_text(g, shino.score >= shino_best ? "A NEW BEST" : "BEST " + shino_digits(shino_best), SHINO_W / 2, 118, "#fdc005", "c")
+	if (blink) shino_text(g, "PRESS ENTER TO PLAY AGAIN", SHINO_W / 2, 146, "#e8e0cc", "c")
+}
+
+/* ---- The cabinet's controls ---- */
+
+/*
+ * Held keys steer; the rest are pressed. A joystick and two buttons is what this was played
+ * with, so the whole of it fits in the hand: arrows to move and duck, up to jump, space for
+ * the star, shift to change lanes, E for the one bit of magic you get.
+ */
+var SHINO_KEYS = {
+	ArrowLeft: "left", ArrowRight: "right", ArrowDown: "down",
+	a: "left", d: "right", s: "down",
+}
+
+/*
+ * The cheat, typed rather than pressed, exactly as POOM's is. Zeed is the syndicate whose
+ * ninja game this is doing an impression of, and it is the only word that would do.
+ */
+var SHINO_TYPED = ""
+function shino_cheat(key) {
+	if (key.length !== 1) return false
+	SHINO_TYPED = (SHINO_TYPED + key.toLowerCase()).slice(-8)
+	if (SHINO_TYPED.slice(-4) !== "zeed") return false
+	SHINO_TYPED = ""
+	shino.god = !shino.god
+	shino_say(shino.god ? "ZEED CANNOT TOUCH YOU" : "ZEED CAN TOUCH YOU AGAIN")
+	return true
+}
+
+function shino_restart() {
+	shino_start()
+	shino_begin()
+}
+
+document.addEventListener("keydown", function (event) {
+	if (focused !== "shino" || !shino) return
+	if (shino_cheat(event.key)) return
+	if (event.key === "Enter") {
+		event.preventDefault()
+		if (shino.mode === "over") return shino_restart()
+		if (shino.mode === "clear") return shino_start(true)
+		if (shino.mode === "title") return shino_begin()
+		return
+	}
+	if (event.key === " ") {
+		event.preventDefault()
+		if (!event.repeat) shino_attack()
+		return
+	}
+	if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
+		event.preventDefault()
+		if (!event.repeat) shino_jump()
+		return
+	}
+	if (event.key === "Shift") {
+		event.preventDefault()
+		if (!event.repeat) shino_lane()
+		return
+	}
+	if (event.key === "e" || event.key === "E") {
+		event.preventDefault()
+		if (!event.repeat) shino_magic()
+		return
+	}
+	var name = SHINO_KEYS[event.key]
+	if (!name) return
+	event.preventDefault()
+	shino_keys[name] = true
+})
+document.addEventListener("keyup", function (event) {
+	var name = SHINO_KEYS[event.key]
+	if (name) shino_keys[name] = false
+})
+// A key held while the window loses the focus is a key held for ever, so let them all go.
+window.addEventListener("blur", function () { shino_keys = {} })
+/* One button on the mouse, in case the keyboard is somewhere else. */
+$("shino-view").addEventListener("mousedown", function (event) {
+	event.preventDefault()
+	if (shino) shino_attack()
+})
+
+function shino_open() {
+	ensure_signed_on()
+	open_window("shino")
+	if (!shino) return shino_start()
+	if (!shino_frame) shino_loop()
+}
+
+/*
  * The voice. Muted state is remembered, and defaults to whatever the server was configured
  * with — a shared machine or a pairing session is exactly where an unexpected "Welcome!"
  * is least welcome.
@@ -3665,6 +5501,13 @@ function close_window(win) {
 		cancelAnimationFrame(poom_frame)
 		poom_frame = null
 		poom = null
+	}
+	// Same for the other cabinet: a game left running behind a shut window is a loop nobody
+	// can see, and it would start again where it was left rather than at the title.
+	if (win.id === "shino") {
+		cancelAnimationFrame(shino_frame)
+		shino_frame = null
+		shino = null
 	}
 	win.el.classList.add("closed")
 	if (focused === win.id) focused = null
@@ -4155,7 +5998,7 @@ $("bliss").src = api + "/desktop/blissy"
  * The desktop shortcuts. Double click to launch, the way a desktop icon works — and the drag
  * has to distinguish itself from a click, or picking an icon up would open it as well.
  */
-var LAUNCH = { "sc-app": launch_app, "sc-poom": poom_open }
+var LAUNCH = { "sc-app": launch_app, "sc-poom": poom_open, "sc-shino": shino_open }
 var icons = [].slice.call(document.querySelectorAll(".shortcut"))
 icons.forEach(function (icon) {
 	icon.ondblclick = LAUNCH[icon.id]
@@ -4333,6 +6176,15 @@ register("poom", "POOM.EXE", {
 	w: pm.w,
 	h: pm.h,
 })
+/* Sized so the stage comes out at the 5:3 the game is drawn in, once the title bar and
+   the control panel under it have taken their share. */
+var sb = { w: Math.min(664, box.w - 40), h: Math.min(462, box.h - 30) }
+register("shino", "SHINOBOI.EXE", {
+	x: Math.max(0, Math.round((box.w - sb.w) / 2) + 10),
+	y: Math.max(0, Math.round((box.h - sb.h) / 2) + 10),
+	w: sb.w,
+	h: sb.h,
+})
 /*
  * The handset leans against the right edge, fixed-size — relayout() re-centres windows
  * nobody has moved, and a phone snapping to the middle of the desk would break the
@@ -4435,6 +6287,9 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 		</button>
 		<button class="shortcut" id="sc-poom" style="left:22px;top:112px">
 			<img src="${POOM_ICON}" alt=""><span>POOM.EXE</span>
+		</button>
+		<button class="shortcut" id="sc-shino" style="left:22px;top:206px">
+			<img src="${SHINO_ICON}" alt=""><span>SHINOBOI.EXE</span>
 		</button>
 	</div>
 
@@ -4771,6 +6626,27 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			<span class="stat">SPAM<b id="poom-spam">20</b></span>
 			<span class="spacer"></span>
 			<span class="keys">Arrows / WASD move &#183; drag to look<br>Space shoots. Clear the inbox.</span>
+		</div>
+		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	</div>
+
+	<!-- The other cabinet, closed for the same reason: it is an icon on the desktop, not
+	     something the inbox opens for you. The canvas is twice the size the game is drawn
+	     at, so a pixel is two and the text is asked for at a size a machine can set. -->
+	<div id="shino" class="child window closed">
+		<div class="title-bar">
+			<div class="title-bar-text">&#10022; <span>SHINOBOI.EXE</span></div>
+			<div class="title-bar-controls">
+				<button aria-label="Minimize" data-act="min"></button>
+				<button aria-label="Maximize" data-act="max"></button>
+				<button aria-label="Close" data-act="close"></button>
+			</div>
+		</div>
+		<div id="shinostage"><canvas id="shino-view" width="640" height="384"></canvas></div>
+		<div id="shinohud">
+			<span class="plate">SHINOBOI</span>
+			<span class="spacer"></span>
+			<span class="keys">Arrows run, duck and jump &#183; <b>Shift</b> changes lane &#183; <b>E</b> returns to sender<br><b>Space</b> throws a star, and draws the sword when they are on top of you</span>
 		</div>
 		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 	</div>
