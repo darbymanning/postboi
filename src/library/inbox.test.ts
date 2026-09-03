@@ -127,11 +127,11 @@ describe("inbox middleware", () => {
 		// The mailbox closes too, and the Start menu is how it comes back.
 		expect(html).toContain('id="m-mailbox"')
 		// Resize handles on the mailbox, the reader, the messenger, the three channel app
-		// windows (WhatsApp, chat, notifications), the capture viewer, POOM.EXE and the app
+		// windows (WhatsApp, chat, notifications), the capture viewer, both games and the app
 		// frame itself — the reading pane is only ever big enough because you can make it
 		// bigger, and a client capture is a tall render you want room for. The Pokia has
 		// none: a handset is not resizable, which is rather the point of it.
-		expect(html.match(/class="grip"/g)).toHaveLength(9)
+		expect(html.match(/class="grip"/g)).toHaveLength(10)
 	})
 
 	it("is branded Postboi, not the client it's dressed as", async () => {
@@ -669,7 +669,7 @@ describe("channel captures", () => {
 		expect(html).toContain("td.chanco {")
 	})
 
-	it("ships the two things on the desktop that aren't mail", () => {
+	it("ships the three things on the desktop that aren't mail", () => {
 		const html = inbox_ui()
 		// Snake, on the handset's screen, over the same LCD the texts are drawn on.
 		expect(html).toContain('id="nk-game"')
@@ -700,6 +700,18 @@ describe("channel captures", () => {
 		// The cheat, and the frame the weapon rests in when it isn't being fired.
 		expect(html).toContain('"iddqd"')
 		expect(html).toContain('"gunidle"')
+		// PAPERBOI.EXE, which is a mailing list with a bicycle attached: the round across
+		// the top of the screen, the week it is ridden over, and its own cheat.
+		expect(html).toContain('id="paperboi"')
+		expect(html).toContain('id="pb-view"')
+		expect(html).toContain('id="sc-paperboi"')
+		expect(html).toContain('id="pb-subs"')
+		expect(html).toContain('"MON", "TUE"')
+		expect(html).toContain("ArrowUp ArrowUp ArrowDown ArrowDown")
+		// Both games hang off the same offscreen canvas and the same repeatable random —
+		// neither is POOM's private property any more.
+		expect(html).toContain("function off_canvas(")
+		expect(html).toContain("function seeded_rand(")
 	})
 
 	it("keeps the platform on a chat capture so the window can dress as it", async () => {

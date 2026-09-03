@@ -210,9 +210,11 @@ each in its own window on the desktop:
   its crown. The keypad types, and the letters printed on the keys still spell
   something.
 
-The desktop has one other icon on it, and it isn't a mail client. Its weapon sprites come
-from the [Freedoom](https://github.com/freedoom/freedoom) project, under the 3-clause BSD
-licence — the notice ships with the package as `FREEDOOM-LICENSE.txt`.
+Two of the icons on the desktop aren't mail clients. One of them is a suburb with a shotgun
+in it: its weapon sprites come from the [Freedoom](https://github.com/freedoom/freedoom)
+project, under the 3-clause BSD licence — the notice ships with the package as
+`FREEDOOM-LICENSE.txt`. The other is a paper round, and the round is a list — twelve houses,
+ten papers, and a week in which to find out that a house you ride past isn't on it tomorrow.
 
 Conversations thread by channel and destination — send three texts to the same number
 and the phone reads them as one inbox. Channel details ride along in each skin: SMS

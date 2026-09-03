@@ -73,6 +73,35 @@ const POOM_ICON =
 			"</svg>"
 	)
 
+/*
+ * PAPERBOI's desktop icon: the marquee off the side of a cabinet — the wordmark in hot metal
+ * over the street it is set on, stacked on two lines because eight letters across 48 pixels
+ * is a smear. Drawn rather than lifted, for the same reason POOM's is.
+ */
+const PAPERBOI_ICON =
+	"data:image/svg+xml," +
+	encodeURIComponent(
+		'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 60" width="64" height="60">' +
+			"<defs>" +
+			'<linearGradient id="pw" x1="0" y1="0" x2="0" y2="1">' +
+			'<stop offset="0" stop-color="#fff6d0"/><stop offset=".52" stop-color="#FDC005"/>' +
+			'<stop offset="1" stop-color="#c96f0c"/>' +
+			"</linearGradient>" +
+			'<linearGradient id="ps" x1="0" y1="0" x2="0" y2="1">' +
+			'<stop offset="0" stop-color="#8fd0ef"/><stop offset="1" stop-color="#3a7cb4"/>' +
+			"</linearGradient>" +
+			"</defs>" +
+			'<rect x="2" y="4" width="60" height="52" rx="5" fill="url(#ps)" stroke="#0F1C41" stroke-width="3"/>' +
+			'<path d="M3 45 L61 29 L61 55 L3 55 Z" fill="#4c5160"/>' +
+			'<path d="M3 48 L61 32" stroke="#efe6d0" stroke-width="1.6" stroke-dasharray="5 5" fill="none"/>' +
+			'<g font-family="Impact, Haettenschweiler, \'Arial Narrow\', sans-serif" text-anchor="middle" ' +
+			'paint-order="stroke" stroke="#0F1C41" stroke-width="4.5" stroke-linejoin="round" fill="url(#pw)">' +
+			'<text x="32" y="27" font-size="20" textLength="52" lengthAdjust="spacingAndGlyphs">PAPER</text>' +
+			'<text x="32" y="43" font-size="20" textLength="34" lengthAdjust="spacingAndGlyphs">BOI</text>' +
+			"</g>" +
+			"</svg>"
+	)
+
 const CSS = `
 * { box-sizing: border-box }
 
@@ -894,6 +923,33 @@ tr.on .chan { background: #2f5db3; color: #fff; border-color: #7aa0dc }
 /* God mode: nothing can touch you, and the face knows it. */
 #poom-faces.face-god, #poom-faces.face-godwink { background: #2a2410; box-shadow: inset 0 0 8px rgba(255,208,80,.55) }
 #poom-faces.hit { background: #5a1410; translate: 0 1px }
+
+/*
+ * ---- PAPERBOI.EXE ----
+ *
+ * The cabinet rather than the PC: a black surround, and a control panel under the glass with
+ * the day of the week on it. The picture keeps its own shape whatever the window is doing —
+ * object-fit does for a canvas what the plastic bezel did for the tube, and a street stretched
+ * to a wide window stops being drawn at 2:1, which is the only reason any of it lines up.
+ */
+#paperboi .title-bar-text { letter-spacing: .04em }
+#pbstage { flex: 1; min-height: 0; background: #07080d; display: flex; padding: 3px }
+#pb-view {
+	width: 100%; height: 100%; display: block; image-rendering: pixelated;
+	object-fit: contain; background: #0b0d14; border: 1px solid #1e2029;
+}
+#pbhud {
+	flex: none; display: flex; align-items: center; gap: 12px; padding: 5px 12px; overflow: hidden;
+	background: linear-gradient(180deg, #262a34 0%, #171922 60%, #0d0e13 100%);
+	border-top: 2px solid #05060a; font: bold 11px "Courier New", monospace; color: #9aa0ac;
+}
+#pbhud .stat { display: flex; flex-direction: column; align-items: center; line-height: 1.1 }
+#pbhud .stat b { font-size: 16px; color: #FDC005; text-shadow: 0 0 6px rgba(253,192,5,.45) }
+/* The day is the one number on the panel that isn't a score, so it isn't the score's colour. */
+#pbhud .stat.day b { color: #7fd0f0; text-shadow: 0 0 6px rgba(127,208,240,.4) }
+#pbhud .spacer { flex: 1 }
+/* Clipped rather than wrapped, for the reason POOM's is. */
+#pbhud .keys { font-size: 10px; color: #6f7684; text-align: right; line-height: 1.35; white-space: nowrap }
 
 /*
  * ---- The Pokia ----
@@ -2453,7 +2509,8 @@ function poom_tall(x, y) { return POOM_TALL.indexOf(poom_cell(x, y)) !== -1 }
 
 /* ---- The art department ---- */
 
-function poom_canvas(w, h) {
+/* Somewhere to draw a texture or a sprite that isn't the screen. PAPERBOI borrows it. */
+function off_canvas(w, h) {
 	var c = document.createElement("canvas")
 	c.width = w
 	c.height = h
@@ -2463,8 +2520,10 @@ function poom_canvas(w, h) {
 /*
  * A repeatable stream of "random" numbers. Textures generated from Math.random would be a
  * different house every time the window opened, which is the sort of thing you notice.
+ * PAPERBOI leans on it harder: its grass is scattered afresh every frame, and a seed is the
+ * difference between a lawn and a swarm of flies.
  */
-function poom_rand(seed) {
+function seeded_rand(seed) {
 	var state = seed
 	return function () {
 		state = (state * 1103515245 + 12345) % 2147483648
@@ -2473,7 +2532,7 @@ function poom_rand(seed) {
 }
 
 function poom_grime(g, seed, strength, w, h) {
-	var rand = poom_rand(seed)
+	var rand = seeded_rand(seed)
 	for (var i = 0; i < (w * h) / 5; i++) {
 		var dark = rand() > 0.5
 		g.fillStyle = (dark ? "rgba(0,0,0," : "rgba(255,255,255,") + (rand() * strength).toFixed(3) + ")"
@@ -2483,7 +2542,7 @@ function poom_grime(g, seed, strength, w, h) {
 
 /** Tarmac, with the worn white line down the middle of the road. */
 function poom_tex_road() {
-	var c = poom_canvas(TEX, TEX)
+	var c = off_canvas(TEX, TEX)
 	var g = c.getContext("2d")
 	g.fillStyle = "#3b3b40"
 	g.fillRect(0, 0, TEX, TEX)
@@ -2494,7 +2553,7 @@ function poom_tex_road() {
 	return c
 }
 function poom_tex_pavement() {
-	var c = poom_canvas(TEX, TEX)
+	var c = off_canvas(TEX, TEX)
 	var g = c.getContext("2d")
 	g.fillStyle = "#8d8b84"
 	g.fillRect(0, 0, TEX, TEX)
@@ -2507,11 +2566,11 @@ function poom_tex_pavement() {
 	return c
 }
 function poom_tex_grass() {
-	var c = poom_canvas(TEX, TEX)
+	var c = off_canvas(TEX, TEX)
 	var g = c.getContext("2d")
 	g.fillStyle = "#4b7233"
 	g.fillRect(0, 0, TEX, TEX)
-	var rand = poom_rand(17)
+	var rand = seeded_rand(17)
 	for (var i = 0; i < 700; i++) {
 		var tone = 46 + Math.floor(rand() * 46)
 		g.fillStyle = "rgb(" + Math.round(tone * 0.85) + "," + (tone + 44) + "," + Math.round(tone * 0.7) + ")"
@@ -2522,11 +2581,11 @@ function poom_tex_grass() {
 
 /** The hedge that closes the road off at both ends. Nobody's round goes on for ever. */
 function poom_tex_hedge() {
-	var c = poom_canvas(TEX, TEX)
+	var c = off_canvas(TEX, TEX)
 	var g = c.getContext("2d")
 	g.fillStyle = "#24401f"
 	g.fillRect(0, 0, TEX, TEX)
-	var rand = poom_rand(29)
+	var rand = seeded_rand(29)
 	for (var i = 0; i < 900; i++) {
 		var tone = 40 + Math.floor(rand() * 60)
 		g.fillStyle = "rgb(" + Math.round(tone * 0.55) + "," + tone + "," + Math.round(tone * 0.42) + ")"
@@ -2550,7 +2609,7 @@ var POOM_HOUSES = [
 ]
 
 function poom_tex_house(look) {
-	var c = poom_canvas(TEX, TEX)
+	var c = off_canvas(TEX, TEX)
 	var g = c.getContext("2d")
 	g.fillStyle = look.wall
 	g.fillRect(0, 0, TEX, TEX)
@@ -2617,7 +2676,7 @@ function poom_tex_house(look) {
 
 /** A picket fence, with the gaps actually missing so you see the garden through it. */
 function poom_tex_fence(sign) {
-	var c = poom_canvas(TEX, TEX)
+	var c = off_canvas(TEX, TEX)
 	var g = c.getContext("2d")
 	// The texture is a full 64 tall but only the bottom third is ever drawn: a fence is
 	// rendered as a short wall, and the render takes the strip it needs from the bottom.
@@ -2665,11 +2724,11 @@ function poom_tex_fence(sign) {
 
 /** A tree, and a pillar box: the two things a street this shape needs to not read as a corridor. */
 function poom_tex_tree() {
-	var c = poom_canvas(TEX, TEX)
+	var c = off_canvas(TEX, TEX)
 	var g = c.getContext("2d")
 	g.fillStyle = "#5b3f2a"
 	g.fillRect(TEX / 2 - 4, 34, 8, TEX - 34)
-	var rand = poom_rand(53)
+	var rand = seeded_rand(53)
 	for (var i = 0; i < 90; i++) {
 		var r = 7 + rand() * 9
 		var x = TEX / 2 + (rand() - 0.5) * 44
@@ -2683,7 +2742,7 @@ function poom_tex_tree() {
 	return c
 }
 function poom_tex_pillar() {
-	var c = poom_canvas(TEX, TEX)
+	var c = off_canvas(TEX, TEX)
 	var g = c.getContext("2d")
 	g.fillStyle = "#a51f1a"
 	g.fillRect(TEX / 2 - 13, 18, 26, TEX - 18)
@@ -2704,7 +2763,7 @@ function poom_tex_pillar() {
 var SKY_W = 512
 var SKY_H = 96
 function poom_tex_sky() {
-	var c = poom_canvas(SKY_W, SKY_H)
+	var c = off_canvas(SKY_W, SKY_H)
 	var g = c.getContext("2d")
 	var grad = g.createLinearGradient(0, 0, 0, SKY_H)
 	grad.addColorStop(0, "#2f6fb5")
@@ -2712,7 +2771,7 @@ function poom_tex_sky() {
 	grad.addColorStop(1, "#cfe0e8")
 	g.fillStyle = grad
 	g.fillRect(0, 0, SKY_W, SKY_H)
-	var rand = poom_rand(71)
+	var rand = seeded_rand(71)
 	for (var i = 0; i < 26; i++) {
 		var cx = rand() * SKY_W
 		var cy = 8 + rand() * 52
@@ -2746,7 +2805,7 @@ function poom_tex_sky() {
  */
 var POOM_FRAMES = 8
 function poom_mob_frame(open) {
-	var c = poom_canvas(TEX, TEX)
+	var c = off_canvas(TEX, TEX)
 	var g = c.getContext("2d")
 	var left = 7
 	var right = TEX - 7
@@ -3411,6 +3470,1246 @@ function poom_open() {
 }
 
 /*
+ * ---- PAPERBOI.EXE ----
+ *
+ * The other icon, and the one this company is actually about. Paperboy came out in 1985 and
+ * underneath the bicycle it was a list: twelve houses on a street, the ones that take the
+ * paper drawn bright and the ones that don't drawn grey, and the same round again every
+ * morning. Land a paper and they are still on it tomorrow. Ride past and they are not.
+ *
+ * So that is what this is. The route is a mailing list, the houses are addresses on it, and
+ * a day you finish clean brings somebody back — which is the only thing anyone here has ever
+ * wanted to say about sending mail regularly.
+ *
+ * The street is drawn obliquely rather than raycast: one unit up the road is up and a little
+ * to the right, one unit across it is down and to the right at half the rate, so a square
+ * lawn comes out as a diamond and the whole world slides diagonally past the bike. Everything
+ * standing on it is the same primitive — a box: its top, and the two faces this camera can
+ * see, projected through those two axes. Houses, wheelie bins, cars and the mailbox itself
+ * are that box at different sizes, which is why there isn't a house sprite in here.
+ *
+ * ponytail: one street, and no BMX course at the end of it. No tornado and no Grim Reaper.
+ * The dog doesn't bite either — it just gets in the way, which at this speed is plenty.
+ */
+var PB_W = 320
+var PB_H = 208
+/* Screen pixels per world unit: along the street, and across it. */
+var PB_AU = { x: 10, y: -12 }
+var PB_AV = { x: 18, y: 9 }
+/* Where the bike is pinned. Low and left, with the rest of the round up and to the right. */
+var PB_ANCHOR = { x: 96, y: 150 }
+/*
+ * The middle of the pavement. The camera follows the bike up the street and no further —
+ * steering across it moves the rider on screen instead, which is what makes the road feel
+ * like somewhere you have decided to go.
+ */
+var PB_MID = 2.8
+
+/*
+ * The street, across. House fronts stand at 0; the lawn runs out to the kerb; the pavement
+ * is the lane you are meant to be in; the road is the one you are not. Everything past the
+ * far verge is only there so the corner of the screen has something in it.
+ */
+var PB_LAWN = 1.95
+var PB_WALK0 = 2.05
+var PB_WALK1 = 3.6
+var PB_ROAD0 = 3.78
+var PB_ROAD1 = 6.5
+var PB_VERGE = 8.2
+/* How far across you may steer: up the lawn on one side, into the traffic on the other. */
+var PB_IN = 0.55
+var PB_OUT = 6.05
+/* The mailbox: at the end of the path, stood to one side of it so the path stays clear. */
+var PB_BOX_AT = 0.85
+var PB_BOX_V = 1.45
+/* How far behind the houses the world stops, and the treeline that stops it. */
+var PB_BACK = -3.3
+
+var PB_DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+var PB_HOMES = 12
+var PB_GAP = 5.4
+var PB_FIRST = 11
+var PB_FINISH = PB_FIRST + (PB_HOMES - 1) * PB_GAP + 11
+/* Where the bike is let go, which is as far back as the first house can still be seen from. */
+var PB_START = 4
+/* What you set off with. It is not enough for twelve houses, which is what the bundles are for. */
+var PB_BAG = 10
+
+/* Nobody on this street agreed on a colour, which is the only way you tell one house from another. */
+var PB_LOOKS = [
+	{ wall: "#e6d6b4", side: "#cbb994", roof: "#a4503c", door: "#2f5d78" },
+	{ wall: "#d8e1e6", side: "#bcc7cd", roof: "#5d6f7e", door: "#7b3a33" },
+	{ wall: "#f0c6a2", side: "#d2a67e", roof: "#7a5230", door: "#33613f" },
+	{ wall: "#cfe0cd", side: "#b2c5b1", roof: "#8d6a3f", door: "#3a3f6b" },
+]
+/* A house that has stopped taking the paper. Curtains shut, lights off, nothing personal. */
+var PB_LAPSED = { wall: "#9d9d97", side: "#84847f", roof: "#616160", door: "#4a4a48" }
+
+/* What each thing in the way is called when you ride into it. It is a mail library. */
+var PB_BOUNCE = {
+	bin: "HARD BOUNCE",
+	cone: "SOFT BOUNCE",
+	tyre: "DEFERRED",
+	skater: "GREYLISTED",
+	hedge: "FILTERED",
+	tree: "BLOCKLISTED",
+	dog: "SPAM TRAP",
+	car: "RETURNED TO SENDER",
+}
+
+var pb = null
+var pb_frame = null
+var pb_keys = {}
+var pb_art = null
+var pb_last = 0
+var pb_best = Number(localStorage.getItem("postboi:paperboi") || 0)
+
+/** A point on the ground, in screen pixels. Everything in here goes through this. */
+function pb_at(u, v) {
+	var du = u - pb.cam
+	var dv = v - PB_MID
+	return {
+		x: PB_ANCHOR.x + du * PB_AU.x + dv * PB_AV.x,
+		y: PB_ANCHOR.y + du * PB_AU.y + dv * PB_AV.y,
+	}
+}
+
+/** A flat shape on the ground: four world corners, one fill. */
+function pb_quad(g, pts, fill) {
+	g.fillStyle = fill
+	g.beginPath()
+	g.moveTo(pts[0].x, pts[0].y)
+	for (var i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y)
+	g.closePath()
+	g.fill()
+}
+
+/** A strip of ground running the length of the visible street, between two lines across it. */
+function pb_band(g, v0, v1, fill) {
+	var u0 = pb.cam - 10
+	var u1 = pb.cam + 24
+	pb_quad(g, [pb_at(u0, v0), pb_at(u1, v0), pb_at(u1, v1), pb_at(u0, v1)], fill)
+}
+
+/** Lift a ground point by a height in screen pixels. Nothing here has perspective, so it's a subtraction. */
+function pb_up(p, h) {
+	return { x: p.x, y: p.y - h }
+}
+
+/*
+ * The one primitive. A box standing on the ground between two lines each way, drawn as its
+ * top and the two faces this camera can see — the near one across the street, and the one
+ * at its low-u end. Which two those are never changes, because the camera never turns.
+ */
+function pb_box(g, u0, u1, v0, v1, base, top, look) {
+	var near = Math.max(v0, v1)
+	var far = Math.min(v0, v1)
+	var a = pb_at(u0, far)
+	var b = pb_at(u1, far)
+	var c = pb_at(u1, near)
+	var d = pb_at(u0, near)
+	pb_quad(g, [pb_up(a, top), pb_up(b, top), pb_up(c, top), pb_up(d, top)], look.top)
+	pb_quad(g, [pb_up(d, top), pb_up(c, top), pb_up(c, base), pb_up(d, base)], look.face)
+	pb_quad(g, [pb_up(a, top), pb_up(d, top), pb_up(d, base), pb_up(a, base)], look.side)
+}
+
+/* ---- The round ---- */
+
+function pb_route() {
+	var homes = []
+	for (var i = 0; i < PB_HOMES; i++) {
+		homes.push({ u: PB_FIRST + i * PB_GAP, look: i % PB_LOOKS.length, sub: true })
+	}
+	return homes
+}
+
+function pb_subs() {
+	return pb.homes.filter(function (home) { return home.sub }).length
+}
+
+/*
+ * What is standing in the road today. Laid out from a seed made of the day, so a Wednesday
+ * is the same Wednesday twice — a round you can learn is the difference between a game and
+ * a coin-op that just knocks you off.
+ */
+function pb_lay_out() {
+	var rand = seeded_rand(pb.day * 7919 + 131)
+	var busy = 0.3 + pb.day * 0.045
+	pb.props = []
+	pb.bundles = []
+	for (var u = PB_FIRST - 3; u < PB_FINISH - 5; u += 1.9) {
+		if (rand() > busy) continue
+		var roll = rand()
+		var kind = roll < 0.26 ? "bin" : roll < 0.44 ? "cone" : roll < 0.56 ? "tyre" : roll < 0.72 ? "skater" : roll < 0.84 ? "dog" : roll < 0.93 ? "hedge" : "tree"
+		var lawn = kind === "dog" || kind === "hedge" || kind === "tree"
+		var at = u + rand() * 1.2
+		// Nothing on the lawn stands where a mailbox is, or the path to it: a house you
+		// cannot throw at is a house that unsubscribes for reasons nobody chose.
+		if (lawn && pb_near_path(at)) continue
+		pb.props.push({
+			kind: kind,
+			u: at,
+			v: lawn ? 0.5 + rand() * 0.9 : PB_WALK0 + 0.2 + rand() * 1.1,
+			ru: kind === "hedge" ? 1 : 0.55,
+			rv: kind === "hedge" ? 0.5 : 0.45,
+			speed: kind === "skater" ? -(2.4 + rand() * 1.6) : 0,
+			wake: 0,
+			step: rand() * 6,
+		})
+	}
+	// Ten papers, twelve houses. The bundles are not a bonus, they are the arithmetic.
+	for (var b = 0; b < 3; b++) {
+		pb.bundles.push({ u: PB_FIRST + 7 + b * 15 + rand() * 3, v: PB_WALK0 + 0.3 + rand() * 0.9, gone: false })
+	}
+	pb.cars = []
+	for (var c = 0; c < 5; c++) {
+		var back = c % 2 === 0
+		pb.cars.push({
+			u: pb.u + 8 + c * 11,
+			v: back ? PB_ROAD0 + 0.78 : PB_ROAD1 - 0.78,
+			speed: back ? 7.5 + pb.day * 0.4 : -(10 + pb.day * 0.5),
+			look: c % PB_CARS.length,
+		})
+	}
+}
+
+/** Is this spot in front of somebody's door? Used to keep the throwing lines clear. */
+function pb_near_path(u) {
+	return pb.homes.some(function (home) { return Math.abs(home.u - u) < 1.6 })
+}
+
+function pb_start() {
+	pb_build_art()
+	// One loop, ever — the same rule POOM learned the hard way.
+	cancelAnimationFrame(pb_frame)
+	pb_frame = null
+	pb_keys = {}
+	pb = {
+		phase: "title",
+		day: 0,
+		score: 0,
+		lives: 4,
+		master: false,
+		homes: pb_route(),
+		// Parked in sight of the first house: an attract screen showing an empty road is a
+		// screenshot of nothing at all.
+		u: PB_START + 3, v: PB_MID, cam: PB_START + 3, speed: 0, lean: 0, pedal: 0,
+		papers: PB_BAG,
+		flying: [],
+		props: [], bundles: [], cars: [],
+		down: 0, spin: 0, safe: 0, throwing: 0,
+		time: 0, note: "", note_at: -9,
+		done_today: 0, missed_today: 0, perfect: false,
+	}
+	// The title card is drawn over a real street rather than a black screen, because the
+	// street is the thing worth looking at and the attract mode always showed it.
+	pb_lay_out()
+	pb_loop()
+}
+
+/** A fresh morning: same route, one day older, everything back on the bike. */
+function pb_day(index) {
+	pb.day = index
+	pb.u = PB_START
+	pb.cam = PB_START
+	pb.v = PB_MID
+	pb.speed = 3
+	pb.papers = PB_BAG
+	pb.flying = []
+	pb.down = 0
+	pb.spin = 0
+	pb.safe = 1.2
+	pb.done_today = 0
+	pb.missed_today = 0
+	pb.perfect = false
+	pb.homes.forEach(function (home) {
+		home.done = false
+		home.missed = false
+		home.judged = false
+		home.smashed = false
+		home.joined = false
+		home.lapsed = false
+		home.hit = 0
+	})
+	pb_lay_out()
+	pb.phase = "ride"
+	pb_say(PB_DAYS[index] + " — " + pb_subs() + " ON THE ROUND")
+}
+
+function pb_loop(now) {
+	if (!pb) { pb_frame = null; return }
+	pb_frame = requestAnimationFrame(pb_loop)
+	var win = find("paperboi")
+	// Minimised, no time passes: coming back to a crashed bike you never saw crash is the
+	// sort of thing that only ever reads as a bug.
+	if (!win || !win.open || win.min) { pb_last = now || pb_last; return }
+	var dt = Math.min(0.05, (now - pb_last) / 1000 || 0.016)
+	pb_last = now
+	pb.time += dt
+	pb_step(dt)
+	pb_draw()
+}
+
+function pb_step(dt) {
+	if (pb.phase !== "ride") return
+	pb_ride(dt)
+	pb_fly(dt)
+	pb_traffic(dt)
+	pb_move_props(dt)
+	if (pb.down <= 0) {
+		pb_pickups()
+		pb_bumps()
+		pb_passing()
+	}
+}
+
+function pb_ride(dt) {
+	pb.throwing = Math.max(0, pb.throwing - dt * 4)
+	pb.safe = Math.max(0, pb.safe - dt)
+	pb.homes.forEach(function (home) { home.hit = Math.max(0, home.hit - dt * 2) })
+
+	// Off the bike: it carries on without you for a moment, and so does the round.
+	if (pb.down > 0) {
+		pb.down -= dt
+		pb.spin += dt * 11
+		pb.speed *= 0.9
+		pb.u += pb.speed * dt
+		pb.cam = pb.u
+		if (pb.down <= 0) {
+			if (pb.lives <= 0) return pb_over()
+			pb.v = PB_MID
+			pb.speed = 3
+			pb.spin = 0
+			pb.safe = 1.8
+		}
+		return
+	}
+
+	// The throttle is a target rather than a switch: a bike carries its speed, and a round
+	// where the pedals are a light switch has no corners to take badly.
+	var want = 5.6 + pb.day * 0.3
+	if (pb_keys.faster) want += 3.2
+	if (pb_keys.slower) want -= 3.4
+	pb.speed += (Math.max(2.2, want) - pb.speed) * Math.min(1, dt * 2.6)
+	pb.u += pb.speed * dt
+	pb.cam = pb.u
+	pb.pedal += pb.speed * dt * 1.7
+
+	var steer = (pb_keys.road ? 1 : 0) - (pb_keys.houses ? 1 : 0)
+	pb.v = Math.max(PB_IN, Math.min(PB_OUT, pb.v + steer * 3.6 * dt))
+	pb.lean += (steer - pb.lean) * Math.min(1, dt * 9)
+
+	if (pb.u >= PB_FINISH) pb_end_day()
+}
+
+/*
+ * A paper in the air. It leaves the bag on a fixed arc — the throw is the one thing you
+ * cannot aim, so where you are on the street when you let go is the whole skill of it.
+ * From the pavement it reaches the box; from the lawn it reaches the mat; from right up
+ * against the hedge it reaches the window, which is a decision rather than an accident.
+ */
+function pb_throw() {
+	if (!pb || pb.phase !== "ride" || pb.down > 0) return
+	if (pb.papers <= 0) return pb_say("OUT OF PAPERS")
+	pb.papers--
+	pb.throwing = 1
+	pb.flying.push({
+		u: pb.u + 0.2,
+		v: pb.v - 0.25,
+		z: 0.55,
+		vu: 2.4 + pb.speed * 0.22,
+		vv: -2.7,
+		vz: 5.5,
+		spin: 0,
+	})
+}
+
+function pb_fly(dt) {
+	for (var i = pb.flying.length - 1; i >= 0; i--) {
+		var paper = pb.flying[i]
+		paper.u += paper.vu * dt
+		paper.v += paper.vv * dt
+		paper.z += paper.vz * dt
+		paper.vz -= 22 * dt
+		paper.spin += dt * 13
+		if (paper.z > 0) continue
+		pb.flying.splice(i, 1)
+		pb_land(paper)
+	}
+}
+
+/** Where it came down, and what that is worth. */
+function pb_land(paper) {
+	var home = null
+	pb.homes.forEach(function (each) {
+		if (Math.abs(each.u - paper.u) > 2.2) return
+		if (!home || Math.abs(each.u - paper.u) < Math.abs(home.u - paper.u)) home = each
+	})
+	if (!home) return
+	var du = paper.u - home.u
+	if (paper.v > 0.95 && paper.v < 2.05 && Math.abs(du - PB_BOX_AT) < 0.75) return pb_deliver(home, "box")
+	if (paper.v > -0.4 && Math.abs(du) < 1.5) return pb_deliver(home, "mat")
+	if (paper.v <= -0.4 && Math.abs(du) < 1.7) return pb_window(home)
+}
+
+function pb_deliver(home, where) {
+	if (!home.sub) return pb_say("NOT ON THE LIST — THAT'S SPAM")
+	if (home.done) return
+	home.done = true
+	home.hit = 1
+	pb.done_today++
+	// A paper that lands after you have gone past unmisses the house: the round is judged
+	// on what is on the step, not on where the bike was when it left your hand.
+	if (home.missed) {
+		home.missed = false
+		pb.missed_today--
+	}
+	var worth = where === "box" ? 250 : 100
+	pb.score += worth
+	pb_say((where === "box" ? "IN THE BOX" : "ON THE MAT") + "  +" + worth)
+}
+
+/*
+ * A window. On a house that has already left the list this is worth points and nothing else
+ * — the arcade paid you for it and so does this. On a house that is still on it, it is worth
+ * exactly one subscriber.
+ */
+function pb_window(home) {
+	if (home.smashed) return
+	home.hit = 1
+	home.smashed = true
+	if (!home.sub) {
+		pb.score += 150
+		return pb_say("COMPLAINT FILED  +150")
+	}
+	home.sub = false
+	home.judged = true
+	home.lapsed = true
+	pb_say("UNSUBSCRIBED — THAT WAS THEIR WINDOW")
+}
+
+function pb_pickups() {
+	pb.bundles.forEach(function (bundle) {
+		if (bundle.gone) return
+		if (Math.abs(bundle.u - pb.u) > 0.7 || Math.abs(bundle.v - pb.v) > 0.6) return
+		bundle.gone = true
+		pb.papers = Math.min(30, pb.papers + 5)
+		pb.score += 50
+		pb_say("BUNDLE  +5 PAPERS")
+	})
+}
+
+function pb_bumps() {
+	if (pb.safe > 0 || pb.master) return
+	var into = null
+	pb.props.forEach(function (prop) {
+		if (Math.abs(prop.u - pb.u) < prop.ru && Math.abs(prop.v - pb.v) < prop.rv) into = prop.kind
+	})
+	pb.cars.forEach(function (car) {
+		if (Math.abs(car.u - pb.u) < 1.5 && Math.abs(car.v - pb.v) < 0.75) into = "car"
+	})
+	if (into) pb_crash(into)
+}
+
+function pb_crash(kind) {
+	pb.lives--
+	pb.down = 1.25
+	pb.spin = 0
+	pb_say(PB_BOUNCE[kind] || "BOUNCED")
+}
+
+/*
+ * Passing a house is the moment it is judged: the paper is either on the step or it is a
+ * street away, and no amount of pedalling backwards was ever on offer.
+ */
+function pb_passing() {
+	pb.homes.forEach(function (home) {
+		if (home.judged || pb.u < home.u + 3.2) return
+		home.judged = true
+		if (!home.sub || home.done) return
+		home.missed = true
+		pb.missed_today++
+		pb_say("MISSED — THEY'LL DROP OFF")
+	})
+}
+
+/*
+ * The end of the street. Everything still on the list and still undelivered comes off it,
+ * which is the whole game: the round gets shorter until you start turning up. A clean day
+ * brings one of them back, because that is what turning up does.
+ */
+function pb_end_day() {
+	pb.phase = "day"
+	var perfect = true
+	pb.homes.forEach(function (home) {
+		if (!home.sub || home.done) return
+		perfect = false
+		home.sub = false
+		home.lapsed = true
+	})
+	pb.perfect = perfect && pb.done_today > 0
+	if (pb.perfect) {
+		// The arcade gave you a life for a clean day and so does this, because a round you
+		// finished is exactly the round you want to be able to afford to ride again.
+		pb.score += 1000
+		pb.lives = Math.min(5, pb.lives + 1)
+		var back = null
+		pb.homes.forEach(function (home) { if (!home.sub && !back) back = home })
+		if (back) {
+			back.sub = true
+			back.joined = true
+		}
+	}
+	pb_record()
+}
+
+function pb_over() {
+	pb.phase = "over"
+	pb_record()
+}
+
+function pb_record() {
+	if (pb.score <= pb_best) return
+	pb_best = pb.score
+	localStorage.setItem("postboi:paperboi", String(pb_best))
+}
+
+/** Enter, wherever you happen to be in the week. */
+function pb_next() {
+	if (pb.phase === "title") return pb_day(0)
+	if (pb.phase === "ride") return
+	if (pb.phase === "day") {
+		// An empty round is the end of the week whatever day it is. There is nothing to
+		// deliver and no way back onto a list nobody is on.
+		if (pb_subs() > 0 && pb.day + 1 < PB_DAYS.length) return pb_day(pb.day + 1)
+		pb.phase = "week"
+		return
+	}
+	pb_start()
+}
+
+/** Doom put its pickups in the top-left corner. This one is no different. */
+function pb_say(text) {
+	pb.note = text
+	pb.note_at = pb.time
+}
+
+function pb_traffic(dt) {
+	pb.cars.forEach(function (car) {
+		car.u += car.speed * dt
+		if (car.speed > 0 && car.u > pb.u + 30) car.u = pb.u - 14 - Math.random() * 10
+		if (car.speed < 0 && car.u < pb.u - 14) car.u = pb.u + 30 + Math.random() * 12
+	})
+}
+
+function pb_move_props(dt) {
+	pb.props.forEach(function (prop) {
+		prop.step += dt * 6
+		if (prop.kind === "skater") {
+			prop.u += prop.speed * dt
+			if (prop.u < pb.u - 12) prop.u = pb.u + 26 + Math.random() * 8
+			return
+		}
+		if (prop.kind !== "dog") return
+		// The dog wakes up when you come up its lawn, and then it is very pleased to see you.
+		var near = Math.abs(prop.u - pb.u) < 4 && pb.v < PB_WALK1
+		if (near) prop.wake = 1.4
+		prop.wake = Math.max(0, prop.wake - dt)
+		if (prop.wake <= 0 || pb.down > 0) return
+		var du = pb.u - prop.u
+		var dv = pb.v - prop.v
+		var far = Math.hypot(du, dv) || 1
+		prop.u += (du / far) * 2.6 * dt
+		prop.v += (dv / far) * 2.6 * dt
+	})
+}
+
+/* ---- The art department ---- */
+
+/* The traffic. Five cars, five paint jobs, and one of them is always beige. */
+var PB_CARS = [
+	{ body: "#c0392b", top: "#8f2a20" },
+	{ body: "#2d6ca8", top: "#1f4d78" },
+	{ body: "#e0b02a", top: "#a87f18" },
+	{ body: "#3f7d4f", top: "#2c5a39" },
+	{ body: "#d8d3c8", top: "#a9a49a" },
+]
+
+/*
+ * Three things are sprites and everything else is geometry. A bicycle, a dog and a kid on a
+ * skateboard are the only shapes on this street that aren't boxes, and they are drawn once at
+ * boot at the size they are shown — a curve drawn big and scaled down goes to mush, and this
+ * window scales the whole canvas up rather than down.
+ */
+function pb_build_art() {
+	if (pb_art) return
+	pb_art = {
+		sky: pb_tex_sky(),
+		rider: [pb_tex_rider(0), pb_tex_rider(1), pb_tex_rider(2)],
+		dog: [pb_tex_dog(0), pb_tex_dog(1)],
+		skater: [pb_tex_skater(0), pb_tex_skater(1)],
+	}
+}
+
+/** Morning, and the only part of the picture that isn't the street. */
+function pb_tex_sky() {
+	var c = off_canvas(PB_W, PB_H)
+	var g = c.getContext("2d")
+	var wash = g.createLinearGradient(0, 0, 0, PB_H)
+	wash.addColorStop(0, "#7fb6dd")
+	wash.addColorStop(0.55, "#b6d8ea")
+	wash.addColorStop(1, "#dcebef")
+	g.fillStyle = wash
+	g.fillRect(0, 0, PB_W, PB_H)
+	g.fillStyle = "#fff4c8"
+	g.beginPath()
+	g.arc(54, 26, 13, 0, Math.PI * 2)
+	g.fill()
+	g.fillStyle = "rgba(255,244,200,.35)"
+	g.beginPath()
+	g.arc(54, 26, 19, 0, Math.PI * 2)
+	g.fill()
+	return c
+}
+
+/** A wheel: the tyre, the hub and enough spokes to look like it is going round. */
+function pb_wheel(g, x, y, r, turn) {
+	g.strokeStyle = "#191d2b"
+	g.lineWidth = 2
+	g.beginPath()
+	g.arc(x, y, r, 0, Math.PI * 2)
+	g.stroke()
+	g.strokeStyle = "rgba(190,198,212,.8)"
+	g.lineWidth = 1
+	for (var i = 0; i < 3; i++) {
+		var a = turn + (i * Math.PI) / 3
+		g.beginPath()
+		g.moveTo(x - Math.cos(a) * (r - 1), y - Math.sin(a) * (r - 1))
+		g.lineTo(x + Math.cos(a) * (r - 1), y + Math.sin(a) * (r - 1))
+		g.stroke()
+	}
+	g.fillStyle = "#c9cfda"
+	g.fillRect(x - 1, y - 1, 2, 2)
+}
+
+function pb_stroke(g, from, to, colour, width) {
+	g.strokeStyle = colour
+	g.lineWidth = width
+	g.lineCap = "round"
+	g.beginPath()
+	g.moveTo(from[0], from[1])
+	g.lineTo(to[0], to[1])
+	g.stroke()
+}
+
+/*
+ * The bike, from behind and a little to the left, which is where this camera stands. Two
+ * pedalling frames and one with the arm out — the throw is the only thing on the round that
+ * needs a pose of its own, because a paper that leaves a stationary boy looks like a bug.
+ */
+function pb_tex_rider(pose) {
+	var c = off_canvas(28, 32)
+	var g = c.getContext("2d")
+	var turn = pose * 0.9
+	var lift = pose === 1 ? 1 : 0
+	pb_wheel(g, 19, 17, 5.5, turn)
+	pb_wheel(g, 8, 24, 5.5, turn)
+	// Frame, forks and bars, in the red every bike in every arcade game was.
+	pb_stroke(g, [8, 24], [11, 21 - lift], "#d24d3a", 2)
+	pb_stroke(g, [11, 21 - lift], [10, 15 - lift], "#d24d3a", 2)
+	pb_stroke(g, [10, 15 - lift], [19, 11 - lift], "#d24d3a", 2)
+	pb_stroke(g, [11, 21 - lift], [19, 13], "#d24d3a", 2)
+	pb_stroke(g, [19, 11 - lift], [19, 17], "#9aa0ac", 2)
+	pb_stroke(g, [16, 10 - lift], [22, 12 - lift], "#3a3f4c", 2)
+	// The bag, worn across the back, with the top of a paper showing.
+	g.fillStyle = "#c8b58c"
+	g.fillRect(4, 10 - lift, 8, 8)
+	g.fillStyle = "#a89568"
+	g.fillRect(4, 10 - lift, 8, 2)
+	g.fillStyle = "#f4efe2"
+	g.fillRect(6, 8 - lift, 4, 3)
+	// Legs. One pedal is always up, and which one is the whole animation.
+	var knee = pose === 1 ? [13, 19] : [12, 17]
+	pb_stroke(g, [10, 16 - lift], knee, "#2f4a7a", 2)
+	pb_stroke(g, knee, [11, 22], "#2f4a7a", 2)
+	// Torso, arms, head.
+	g.fillStyle = "#FDC005"
+	g.fillRect(8, 7 - lift, 8, 9)
+	g.fillStyle = "#e0a800"
+	g.fillRect(8, 7 - lift, 8, 2)
+	if (pose === 2) pb_stroke(g, [14, 9 - lift], [6, 4], "#f2c197", 2)
+	else pb_stroke(g, [14, 9 - lift], [19, 12 - lift], "#f2c197", 2)
+	g.fillStyle = "#f2c197"
+	g.beginPath()
+	g.arc(15, 4 - lift, 3.4, 0, Math.PI * 2)
+	g.fill()
+	// The cap, backwards, because it was 1985.
+	g.fillStyle = "#c0392b"
+	g.beginPath()
+	g.arc(15, 3.6 - lift, 3.4, Math.PI, Math.PI * 2)
+	g.fill()
+	g.fillRect(10.5, 3 - lift, 4, 2)
+	return c
+}
+
+/** The dog. Two frames, and the difference between them is entirely legs. */
+function pb_tex_dog(frame) {
+	var c = off_canvas(20, 14)
+	var g = c.getContext("2d")
+	g.fillStyle = "#8b5a2b"
+	g.fillRect(3, 5, 11, 5)
+	g.fillRect(12, 2, 6, 4)
+	g.fillStyle = "#6f4622"
+	g.fillRect(12, 2, 6, 1)
+	g.fillRect(3, 5, 11, 1)
+	// Ear, snout, eye.
+	g.fillStyle = "#5c3a1c"
+	g.fillRect(13, 0, 2, 3)
+	g.fillStyle = "#2a1a0d"
+	g.fillRect(17, 4, 2, 2)
+	g.fillRect(15, 3, 1, 1)
+	g.fillStyle = "#8b5a2b"
+	var swing = frame ? 2 : -2
+	g.fillRect(4, 10, 2, 4)
+	g.fillRect(4 + swing + 2, 10, 2, 4)
+	g.fillRect(11, 10, 2, 4)
+	g.fillRect(11 - swing, 10, 2, 4)
+	pb_stroke(g, [3, 6], [0, 2 + (frame ? 2 : 0)], "#8b5a2b", 2)
+	return c
+}
+
+/** The kid on the board, coming the other way and not looking. */
+function pb_tex_skater(frame) {
+	var c = off_canvas(16, 24)
+	var g = c.getContext("2d")
+	g.fillStyle = "#2a2f3c"
+	g.fillRect(1, 20, 14, 2)
+	g.fillStyle = "#c9cfda"
+	g.fillRect(3, 22, 2, 2)
+	g.fillRect(11, 22, 2, 2)
+	// Legs, shorts, shirt, head — a stack of rectangles doing an ollie's worth of work.
+	g.fillStyle = "#f2c197"
+	g.fillRect(5, 15, 2, 5)
+	g.fillRect(9, 15, 2, 5)
+	g.fillStyle = "#3a6ea8"
+	g.fillRect(4, 11, 8, 5)
+	g.fillStyle = frame ? "#d9534f" : "#e07b39"
+	g.fillRect(4, 5, 8, 7)
+	g.fillStyle = "#f2c197"
+	g.fillRect(3, 6 + (frame ? 1 : 0), 3, 2)
+	g.fillRect(10, 6 + (frame ? 0 : 1), 3, 2)
+	g.beginPath()
+	g.arc(8, 3, 3, 0, Math.PI * 2)
+	g.fill()
+	g.fillStyle = "#3a2a1c"
+	g.beginPath()
+	g.arc(8, 2.4, 3, Math.PI, Math.PI * 2)
+	g.fill()
+	return c
+}
+
+/* ---- The renderer ---- */
+
+/** One colour, three faces of it: lit on top, plain in front, in shadow down the side. */
+function pb_look(hex) {
+	return { top: pb_shade(hex, 1.14), face: hex, side: pb_shade(hex, 0.78) }
+}
+
+function pb_shade(hex, mul) {
+	var n = parseInt(hex.slice(1), 16)
+	var r = Math.min(255, Math.round(((n >> 16) & 255) * mul))
+	var g = Math.min(255, Math.round(((n >> 8) & 255) * mul))
+	var b = Math.min(255, Math.round((n & 255) * mul))
+	return "rgb(" + r + "," + g + "," + b + ")"
+}
+
+/** A flat panel on a wall — a door, a window, the number on the gate. */
+function pb_face(g, u0, u1, v, h0, h1, fill) {
+	var a = pb_at(u0, v)
+	var b = pb_at(u1, v)
+	pb_quad(g, [pb_up(a, h1), pb_up(b, h1), pb_up(b, h0), pb_up(a, h0)], fill)
+}
+
+/** The little pool of shade that stops a sprite floating above the pavement. */
+function pb_shadow(g, p, w) {
+	g.fillStyle = "rgba(24,34,26,.26)"
+	g.beginPath()
+	g.ellipse(p.x, p.y, w, w * 0.42, 0, 0, Math.PI * 2)
+	g.fill()
+}
+
+function pb_draw() {
+	var g = $("pb-view").getContext("2d")
+	g.imageSmoothingEnabled = false
+	g.textBaseline = "alphabetic"
+	g.drawImage(pb_art.sky, 0, 0)
+	pb_clouds(g)
+	pb_treeline(g)
+	pb_ground(g)
+	pb_standing(g)
+	pb_overlay(g)
+	pb_hud()
+}
+
+/* Weather. It drifts against the ride rather than with it, which is what sells the speed. */
+function pb_clouds(g) {
+	g.fillStyle = "rgba(255,255,255,.82)"
+	for (var i = 0; i < 3; i++) {
+		var span = PB_W + 140
+		var x = ((-pb.u * 2.4 + i * 130) % span + span) % span - 70
+		var y = 16 + i * 13
+		for (var b = 0; b < 3; b++) {
+			g.beginPath()
+			g.arc(x + b * 11, y + (b === 1 ? -4 : 0), b === 1 ? 10 : 7, 0, Math.PI * 2)
+			g.fill()
+		}
+	}
+}
+
+/*
+ * Where the world stops. A wall of trees stood along the line behind the houses: it hides
+ * the seam between the street and the sky, and because the line runs up the screen at the
+ * same angle as everything else, it reads as a hillside rather than a backdrop.
+ */
+function pb_treeline(g) {
+	var u0 = pb.cam - 10
+	var u1 = pb.cam + 24
+	var a = pb_at(u0, PB_BACK)
+	var b = pb_at(u1, PB_BACK)
+	pb_quad(g, [pb_up(a, 30), pb_up(b, 30), b, a], "#2f5b34")
+	for (var u = Math.floor(u0); u < u1; u += 1.3) {
+		var rand = seeded_rand(Math.floor(u * 17) + 5)
+		var p = pb_up(pb_at(u, PB_BACK), 28 + rand() * 8)
+		g.fillStyle = rand() > 0.5 ? "#376b3b" : "#2f5b34"
+		g.beginPath()
+		g.arc(p.x, p.y, 8 + rand() * 5, 0, Math.PI * 2)
+		g.fill()
+	}
+}
+
+function pb_ground(g) {
+	pb_band(g, PB_BACK, -0.05, "#548d3f")
+	pb_band(g, -0.05, PB_LAWN, "#63a049")
+	pb_band(g, PB_LAWN, PB_WALK0, "#cdc6b2")
+	pb_band(g, PB_WALK0, PB_WALK1, "#b9b2a0")
+	pb_band(g, PB_WALK1, PB_ROAD0, "#cdc6b2")
+	pb_band(g, PB_ROAD0, PB_ROAD1, "#4a4d55")
+	pb_band(g, PB_ROAD1, PB_ROAD1 + 0.18, "#cdc6b2")
+	pb_band(g, PB_ROAD1 + 0.18, PB_VERGE, "#b9b2a0")
+	// Past the far pavement is only there so the bottom corner of the screen has grass in it.
+	pb_band(g, PB_VERGE, PB_VERGE + 8, "#4f8039")
+
+	var from = Math.floor(pb.cam - 10)
+	var to = pb.cam + 24
+	for (var u = from; u < to; u++) {
+		// Slabs, and the joint down the middle of them.
+		pb_band_line(g, u, PB_WALK0, PB_WALK1, "rgba(90,86,74,.35)")
+		pb_band_line(g, u, PB_ROAD1 + 0.18, PB_VERGE, "rgba(90,86,74,.3)")
+		// Grass, in tufts that stay where they were put — the same seed every frame, or the
+		// whole lawn crawls as you ride past it.
+		var rand = seeded_rand(u * 31 + 7)
+		g.strokeStyle = "rgba(40,88,38,.5)"
+		g.lineWidth = 1
+		for (var t = 0; t < 4; t++) {
+			var p = pb_at(u + rand(), -0.05 + rand() * (PB_LAWN + 0.05))
+			g.beginPath()
+			g.moveTo(p.x, p.y)
+			g.lineTo(p.x + 2, p.y - 2)
+			g.stroke()
+		}
+		// The dashes down the middle of the road.
+		if (u % 2) continue
+		pb_quad(g, [
+			pb_at(u, 5.05), pb_at(u + 1.1, 5.05), pb_at(u + 1.1, 5.22), pb_at(u, 5.22),
+		], "rgba(236,230,206,.72)")
+	}
+	pb_edge(g, PB_WALK0, "rgba(70,66,58,.45)")
+	pb_edge(g, PB_ROAD0, "rgba(40,40,46,.55)")
+	pb_edge(g, PB_ROAD1, "rgba(40,40,46,.55)")
+	// The path up to each door, and the step at the end of it.
+	pb.homes.forEach(function (home) {
+		pb_quad(g, [
+			pb_at(home.u - 0.36, -0.05), pb_at(home.u + 0.36, -0.05),
+			pb_at(home.u + 0.36, PB_LAWN), pb_at(home.u - 0.36, PB_LAWN),
+		], home.sub ? "#d8d1bd" : "#b6b1a6")
+		pb_quad(g, [
+			pb_at(home.u - 0.6, -0.05), pb_at(home.u + 0.6, -0.05),
+			pb_at(home.u + 0.6, 0.42), pb_at(home.u - 0.6, 0.42),
+		], home.sub ? "#e4ddc9" : "#c0bbb0")
+	})
+}
+
+/** One line across the street at a given point along it: a paving joint. */
+function pb_band_line(g, u, v0, v1, colour) {
+	var a = pb_at(u, v0)
+	var b = pb_at(u, v1)
+	g.strokeStyle = colour
+	g.lineWidth = 1
+	g.beginPath()
+	g.moveTo(a.x, a.y)
+	g.lineTo(b.x, b.y)
+	g.stroke()
+}
+
+/** One line along the street: a kerb. */
+function pb_edge(g, v, colour) {
+	var a = pb_at(pb.cam - 10, v)
+	var b = pb_at(pb.cam + 24, v)
+	g.strokeStyle = colour
+	g.lineWidth = 1
+	g.beginPath()
+	g.moveTo(a.x, a.y)
+	g.lineTo(b.x, b.y)
+	g.stroke()
+}
+
+/*
+ * Everything that stands up, painted back to front. In a projection with no perspective the
+ * only depth there is is where a thing's feet are on the screen — so that is the sort key,
+ * and a wheelie bin in front of the bike covers the bike without anybody having to say so.
+ */
+function pb_standing(g) {
+	var list = []
+	function add(u, v, draw) {
+		var p = pb_at(u, v)
+		if (p.x < -170 || p.x > PB_W + 170 || p.y < -240 || p.y > PB_H + 190) return
+		list.push({ y: p.y, draw: draw })
+	}
+	pb.homes.forEach(function (home) {
+		add(home.u, 0, function (g) { pb_home(g, home) })
+		add(home.u + PB_BOX_AT, PB_BOX_V, function (g) { pb_mailbox(g, home) })
+	})
+	pb.props.forEach(function (prop) {
+		add(prop.u, prop.v, function (g) { pb_prop(g, prop) })
+	})
+	pb.bundles.forEach(function (bundle) {
+		if (bundle.gone) return
+		add(bundle.u, bundle.v, function (g) { pb_bundle(g, bundle) })
+	})
+	pb.cars.forEach(function (car) {
+		add(car.u, car.v, function (g) { pb_car(g, car) })
+	})
+	pb.flying.forEach(function (paper) {
+		add(paper.u, paper.v, function (g) { pb_paper(g, paper) })
+	})
+	add(pb.u, pb.v, pb_rider)
+	list.sort(function (a, b) { return a.y - b.y })
+	list.forEach(function (item) { item.draw(g) })
+}
+
+function pb_home(g, home) {
+	var look = home.sub ? PB_LOOKS[home.look] : PB_LAPSED
+	var u0 = home.u - 1.9
+	var u1 = home.u + 1.9
+	var mid = home.u
+	var back = -2.9
+	var wall = 34
+	var ridge = 17
+	pb_box(g, u0, u1, back, 0, 0, wall, { top: look.wall, face: look.wall, side: look.side })
+	// The ridge runs from the street to the back garden, so the gable is what faces you —
+	// which is the shape a child draws when you ask them for a house.
+	var roof = pb_look(look.roof)
+	pb_quad(g, [
+		pb_up(pb_at(u0 - 0.25, back), wall), pb_up(pb_at(u0 - 0.25, 0), wall),
+		pb_up(pb_at(mid, 0), wall + ridge), pb_up(pb_at(mid, back), wall + ridge),
+	], roof.side)
+	pb_quad(g, [
+		pb_up(pb_at(mid, back), wall + ridge), pb_up(pb_at(mid, 0), wall + ridge),
+		pb_up(pb_at(u1 + 0.25, 0), wall), pb_up(pb_at(u1 + 0.25, back), wall),
+	], roof.top)
+	pb_quad(g, [
+		pb_up(pb_at(u0, 0), wall), pb_up(pb_at(u1, 0), wall), pb_up(pb_at(mid, 0), wall + ridge),
+	], look.wall)
+	// The door, the step light, and two windows either side of it.
+	pb_face(g, mid - 0.44, mid + 0.44, 0, 0, 17, look.door)
+	pb_face(g, mid - 0.44, mid + 0.44, 0, 16, 17, "rgba(255,255,255,.35)")
+	pb_pane(g, home, u0 + 0.35, u0 + 1.15, 6, 15)
+	pb_pane(g, home, u1 - 1.15, u1 - 0.35, 6, 15)
+	pb_pane(g, home, mid - 1.15, mid - 0.45, 21, 30)
+	pb_pane(g, home, mid + 0.45, mid + 1.15, 21, 30)
+	if (home.hit > 0) {
+		g.globalAlpha = Math.min(0.5, home.hit * 0.5)
+		pb_face(g, u0, u1, 0, 0, wall, "#fff6d8")
+		g.globalAlpha = 1
+	}
+}
+
+/** A window: lit if somebody there still wants the paper, and broken if you did that. */
+function pb_pane(g, home, u0, u1, h0, h1) {
+	pb_face(g, u0 - 0.06, u1 + 0.06, 0, h0 - 0.8, h1 + 0.8, home.sub ? "#f2ece0" : "#8e8e88")
+	pb_face(g, u0, u1, 0, h0, h1, home.smashed ? "#1d2430" : home.sub ? "#f7e3a4" : "#49525c")
+	if (!home.smashed) {
+		pb_face(g, (u0 + u1) / 2 - 0.03, (u0 + u1) / 2 + 0.03, 0, h0, h1, "rgba(255,255,255,.4)")
+		return
+	}
+	// Broken, drawn as what is left in the frame rather than as a crack over the glass.
+	pb_face(g, u0, u0 + (u1 - u0) * 0.4, 0, h1 - 2.5, h1, "#cfd8dd")
+	pb_face(g, u1 - (u1 - u0) * 0.3, u1, 0, h0, h0 + 2, "#cfd8dd")
+}
+
+function pb_mailbox(g, home) {
+	var u = home.u + PB_BOX_AT
+	pb_box(g, u - 0.05, u + 0.05, PB_BOX_V - 0.05, PB_BOX_V + 0.05, 0, 11, pb_look(home.sub ? "#6b4b2f" : "#5c574f"))
+	var body = home.done ? "#FDC005" : home.sub ? "#3f6ea8" : "#6d6a63"
+	pb_box(g, u - 0.2, u + 0.2, PB_BOX_V - 0.16, PB_BOX_V + 0.16, 11, 19, pb_look(body))
+	// The flag is up while there is nothing in it. It is the only instruction this game gives.
+	if (!home.sub || home.done) return
+	pb_face(g, u + 0.2, u + 0.24, PB_BOX_V - 0.16, 15, 24, "#c0392b")
+}
+
+function pb_prop(g, prop) {
+	var p = pb_at(prop.u, prop.v)
+	if (prop.kind === "bin") {
+		pb_shadow(g, p, 7)
+		pb_box(g, prop.u - 0.26, prop.u + 0.26, prop.v - 0.24, prop.v + 0.24, 0, 13, pb_look("#3f6b45"))
+		pb_box(g, prop.u - 0.3, prop.u + 0.3, prop.v - 0.28, prop.v + 0.28, 13, 15, pb_look("#2c4c31"))
+		return
+	}
+	if (prop.kind === "hedge") {
+		pb_box(g, prop.u - 0.95, prop.u + 0.95, prop.v - 0.35, prop.v + 0.35, 0, 14, pb_look("#3d7a3c"))
+		return
+	}
+	if (prop.kind === "tree") {
+		pb_shadow(g, p, 9)
+		pb_box(g, prop.u - 0.1, prop.u + 0.1, prop.v - 0.1, prop.v + 0.1, 0, 18, pb_look("#6b4a2c"))
+		var rand = seeded_rand(Math.floor(prop.u * 13) + 3)
+		for (var i = 0; i < 5; i++) {
+			g.fillStyle = i % 2 ? "#3f7d3e" : "#4c9147"
+			g.beginPath()
+			g.arc(p.x - 6 + rand() * 12, p.y - 24 - rand() * 8, 6 + rand() * 4, 0, Math.PI * 2)
+			g.fill()
+		}
+		return
+	}
+	if (prop.kind === "cone") {
+		pb_shadow(g, p, 5)
+		g.fillStyle = "#e2622a"
+		g.beginPath()
+		g.moveTo(p.x, p.y - 13)
+		g.lineTo(p.x + 4.5, p.y)
+		g.lineTo(p.x - 4.5, p.y)
+		g.closePath()
+		g.fill()
+		g.fillStyle = "#f4f0e4"
+		g.fillRect(p.x - 3, p.y - 7, 6, 2)
+		return
+	}
+	if (prop.kind === "tyre") {
+		pb_shadow(g, p, 7)
+		g.fillStyle = "#22242c"
+		g.beginPath()
+		g.ellipse(p.x, p.y - 3, 7, 4.5, 0, 0, Math.PI * 2)
+		g.fill()
+		g.fillStyle = "#3a3d47"
+		g.beginPath()
+		g.ellipse(p.x, p.y - 3, 3, 1.9, 0, 0, Math.PI * 2)
+		g.fill()
+		return
+	}
+	if (prop.kind === "dog") {
+		pb_shadow(g, p, 8)
+		g.drawImage(pb_art.dog[Math.floor(prop.step) % 2], Math.round(p.x - 10), Math.round(p.y - 13))
+		return
+	}
+	pb_shadow(g, p, 7)
+	g.drawImage(pb_art.skater[Math.floor(prop.step) % 2], Math.round(p.x - 8), Math.round(p.y - 23))
+}
+
+function pb_bundle(g, bundle) {
+	pb_shadow(g, pb_at(bundle.u, bundle.v), 6)
+	pb_box(g, bundle.u - 0.24, bundle.u + 0.24, bundle.v - 0.2, bundle.v + 0.2, 0, 7, pb_look("#e0d4b2"))
+	pb_face(g, bundle.u - 0.24, bundle.u + 0.24, bundle.v + 0.2, 2, 4, "#c0392b")
+}
+
+function pb_car(g, car) {
+	var look = PB_CARS[car.look]
+	pb_shadow(g, pb_at(car.u, car.v), 15)
+	pb_box(g, car.u - 1.4, car.u + 1.4, car.v - 0.55, car.v + 0.55, 2, 10, pb_look(look.body))
+	pb_box(g, car.u - 0.7, car.u + 0.65, car.v - 0.46, car.v + 0.46, 10, 16, pb_look(look.top))
+	pb_face(g, car.u - 0.55, car.u + 0.5, car.v + 0.46, 11, 15, "#2b3446")
+	// Wheels, and the lights on whichever end this one is pointing.
+	pb_face(g, car.u - 1.1, car.u - 0.55, car.v + 0.55, 0, 4, "#191d2b")
+	pb_face(g, car.u + 0.55, car.u + 1.1, car.v + 0.55, 0, 4, "#191d2b")
+	var nose = car.speed > 0 ? car.u + 1.4 : car.u - 1.4
+	pb_face(g, nose - 0.12, nose + 0.12, car.v + 0.55, 5, 8, car.speed > 0 ? "#f6efd0" : "#e0503c")
+}
+
+function pb_paper(g, paper) {
+	var p = pb_at(paper.u, paper.v)
+	g.save()
+	g.translate(p.x, p.y - paper.z * 26)
+	g.rotate(paper.spin)
+	g.fillStyle = "#f4efe2"
+	g.fillRect(-3, -2, 7, 4)
+	g.fillStyle = "#cfc7b4"
+	g.fillRect(-3, -2, 7, 1)
+	g.restore()
+}
+
+function pb_rider(g) {
+	var p = pb_at(pb.u, pb.v)
+	pb_shadow(g, p, 9)
+	// Just knocked off: you flash while nothing can hit you, which is also how you know.
+	if (pb.safe > 0 && pb.down <= 0 && Math.floor(pb.time * 14) % 2) return
+	var pose = pb.throwing > 0.35 ? 2 : Math.floor(pb.pedal) % 2
+	g.save()
+	g.translate(Math.round(p.x + pb.lean * 3), Math.round(p.y - 13))
+	if (pb.down > 0) g.rotate(pb.spin)
+	g.drawImage(pb_art.rider[pose], -12, -16)
+	g.restore()
+}
+
+/*
+ * ---- What the screen says ----
+ *
+ * The round, across the top, one square a house: yellow means the paper is on the step,
+ * cream means it is still owed, grey means they left the list and red means they left it
+ * this morning. It is the same picture the cabinet drew, and it is also a list.
+ */
+function pb_round_strip(g) {
+	var x = 5
+	var y = 5
+	g.fillStyle = "rgba(10,14,24,.55)"
+	g.fillRect(x - 3, y - 3, PB_HOMES * 9 + 4, 15)
+	pb.homes.forEach(function (home, i) {
+		var at = x + i * 9
+		g.fillStyle = home.missed ? "#e0503c" : home.done ? "#FDC005" : home.sub ? "#efe6d0" : "#5b6270"
+		g.fillRect(at, y + 2, 7, 6)
+		g.beginPath()
+		g.moveTo(at - 1, y + 2)
+		g.lineTo(at + 3.5, y - 2)
+		g.lineTo(at + 8, y + 2)
+		g.closePath()
+		g.fill()
+	})
+	var span = (PB_HOMES - 1) * PB_GAP + 8
+	var along = Math.max(0, Math.min(1, (pb.u - PB_FIRST + 4) / span))
+	g.fillStyle = "#ffffff"
+	g.fillRect(x + Math.round(along * (PB_HOMES * 9 - 9)), y + 9, 3, 2)
+}
+
+function pb_overlay(g) {
+	pb_round_strip(g)
+	if (pb.note && pb.time - pb.note_at < 2.2) {
+		g.fillStyle = "rgba(255,250,235," + Math.min(1, (2.2 - (pb.time - pb.note_at)) * 1.6).toFixed(2) + ")"
+		g.font = 'bold 11px "Courier New", monospace'
+		g.fillText(pb.note, 6, 34)
+	}
+	if (pb.master) {
+		g.fillStyle = "rgba(253,192,5,.85)"
+		g.font = 'bold 9px "Courier New", monospace'
+		g.fillText("ROUTE MASTER", PB_W - 84, 14)
+	}
+	if (pb.phase === "ride") return
+
+	var enter = Math.floor(pb.time * 2) % 2 ? "PRESS ENTER" : ""
+	if (pb.phase === "title") {
+		return pb_card(g, "PAPERBOI", "#FDC005", [
+			"Twelve houses. Ten papers. Seven days.",
+			"Arrows steer and pedal, space throws.",
+			"BEST " + pb_best,
+			enter,
+		])
+	}
+	if (pb.phase === "day") {
+		return pb_card(g, pb.perfect ? "PERFECT ROUND" : PB_DAYS[pb.day] + " DELIVERED", pb.perfect ? "#FDC005" : "#e8e2d4", [
+			"On the step " + pb.done_today + "   Missed " + pb.missed_today,
+			pb.perfect ? "A clean round: somebody back, and a spare bike." : "Still on the round: " + pb_subs(),
+			"SCORE " + pb.score,
+			enter,
+		])
+	}
+	if (pb.phase === "week") {
+		var empty = pb_subs() === 0
+		return pb_card(g, empty ? "ROUND CANCELLED" : "END OF THE WEEK", empty ? "#e0503c" : "#FDC005", [
+			"Still on the round: " + pb_subs() + " of " + PB_HOMES,
+			"SCORE " + pb.score + "   BEST " + pb_best,
+			enter,
+		])
+	}
+	pb_card(g, "GAME OVER", "#e0503c", [
+		"You came off on " + PB_DAYS[pb.day] + ".",
+		"SCORE " + pb.score + "   BEST " + pb_best,
+		enter,
+	])
+}
+
+function pb_card(g, title, colour, lines) {
+	g.fillStyle = "rgba(8,12,22,.74)"
+	g.fillRect(0, PB_H / 2 - 44, PB_W, 92)
+	g.textAlign = "center"
+	g.fillStyle = colour
+	g.font = 'bold 22px "Arial Narrow", Impact, sans-serif'
+	g.fillText(title, PB_W / 2, PB_H / 2 - 20)
+	g.font = 'bold 11px "Courier New", monospace'
+	lines.forEach(function (line, i) {
+		g.fillStyle = i === lines.length - 1 ? "#FDC005" : "#e8e2d4"
+		g.fillText(line, PB_W / 2, PB_H / 2 + 1 + i * 14)
+	})
+	g.textAlign = "left"
+}
+
+/* The panel under the glass. Arcade cabinets put the day of the week on it, so this one does. */
+function pb_hud() {
+	$("pb-score").textContent = pb.score
+	$("pb-papers").textContent = pb.papers
+	$("pb-day").textContent = PB_DAYS[pb.day]
+	$("pb-subs").textContent = pb_subs() + "/" + PB_HOMES
+	$("pb-lives").textContent = Math.max(0, pb.lives)
+}
+
+var PB_KEYS = {
+	ArrowLeft: "houses", ArrowRight: "road", ArrowUp: "faster", ArrowDown: "slower",
+	a: "houses", d: "road", w: "faster", s: "slower",
+}
+/*
+ * The cheat. POOM's is typed and this one is pressed, because the one everybody remembers
+ * from a machine with a joystick on it is the one you do with the joystick. It gives you a
+ * round nothing can knock you off, and a bag that never runs out.
+ */
+var PB_CODE = "ArrowUp ArrowUp ArrowDown ArrowDown ArrowLeft ArrowRight ArrowLeft ArrowRight b a"
+var pb_pressed = []
+function pb_konami(key) {
+	pb_pressed.push(key.length === 1 ? key.toLowerCase() : key)
+	if (pb_pressed.length > 10) pb_pressed.shift()
+	if (pb_pressed.join(" ") !== PB_CODE) return false
+	pb_pressed = []
+	pb.master = !pb.master
+	if (pb.master) pb.papers = 30
+	pb_say(pb.master ? "ROUTE MASTER — NOTHING BOUNCES" : "ROUTE MASTER OFF")
+	return true
+}
+
+document.addEventListener("keydown", function (event) {
+	if (focused !== "paperboi" || !pb) return
+	if (pb_konami(event.key)) { event.preventDefault(); return }
+	if (event.key === "Enter") { event.preventDefault(); return pb_next() }
+	if (event.key === " ") { event.preventDefault(); return pb_throw() }
+	var name = PB_KEYS[event.key]
+	if (!name) return
+	event.preventDefault()
+	pb_keys[name] = true
+})
+document.addEventListener("keyup", function (event) {
+	var name = PB_KEYS[event.key]
+	if (name) pb_keys[name] = false
+})
+window.addEventListener("blur", function () { pb_keys = {} })
+/* One button on the cabinet, and it throws. Anywhere else in the week it is the start button. */
+$("pb-view").addEventListener("mousedown", function () {
+	if (!pb) return
+	if (pb.phase !== "ride") return pb_next()
+	pb_throw()
+})
+
+function pb_open() {
+	ensure_signed_on()
+	open_window("paperboi")
+	if (!pb) return pb_start()
+	if (!pb_frame) pb_loop()
+}
+
+/*
  * The voice. Muted state is remembered, and defaults to whatever the server was configured
  * with — a shared machine or a pairing session is exactly where an unexpected "Welcome!"
  * is least welcome.
@@ -3665,6 +4964,11 @@ function close_window(win) {
 		cancelAnimationFrame(poom_frame)
 		poom_frame = null
 		poom = null
+	}
+	if (win.id === "paperboi") {
+		cancelAnimationFrame(pb_frame)
+		pb_frame = null
+		pb = null
 	}
 	win.el.classList.add("closed")
 	if (focused === win.id) focused = null
@@ -4155,7 +5459,7 @@ $("bliss").src = api + "/desktop/blissy"
  * The desktop shortcuts. Double click to launch, the way a desktop icon works — and the drag
  * has to distinguish itself from a click, or picking an icon up would open it as well.
  */
-var LAUNCH = { "sc-app": launch_app, "sc-poom": poom_open }
+var LAUNCH = { "sc-app": launch_app, "sc-poom": poom_open, "sc-paperboi": pb_open }
 var icons = [].slice.call(document.querySelectorAll(".shortcut"))
 icons.forEach(function (icon) {
 	icon.ondblclick = LAUNCH[icon.id]
@@ -4333,6 +5637,14 @@ register("poom", "POOM.EXE", {
 	w: pm.w,
 	h: pm.h,
 })
+/* The cabinet is wider than it is tall, and the picture inside it is 320x208. */
+var pbw = { w: Math.min(680, box.w - 40), h: Math.min(470, box.h - 30) }
+register("paperboi", "PAPERBOI.EXE", {
+	x: Math.max(0, Math.round((box.w - pbw.w) / 2) + 16),
+	y: Math.max(0, Math.round((box.h - pbw.h) / 2) + 8),
+	w: pbw.w,
+	h: pbw.h,
+})
 /*
  * The handset leans against the right edge, fixed-size — relayout() re-centres windows
  * nobody has moved, and a phone snapping to the middle of the desk would break the
@@ -4435,6 +5747,9 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 		</button>
 		<button class="shortcut" id="sc-poom" style="left:22px;top:112px">
 			<img src="${POOM_ICON}" alt=""><span>POOM.EXE</span>
+		</button>
+		<button class="shortcut" id="sc-paperboi" style="left:22px;top:206px">
+			<img src="${PAPERBOI_ICON}" alt=""><span>PAPERBOI.EXE</span>
 		</button>
 	</div>
 
@@ -4771,6 +6086,29 @@ export function inbox_ui({ sounds = true, intro = true }: InboxUiOptions = {}): 
 			<span class="stat">SPAM<b id="poom-spam">20</b></span>
 			<span class="spacer"></span>
 			<span class="keys">Arrows / WASD move &#183; drag to look<br>Space shoots. Clear the inbox.</span>
+		</div>
+		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
+	</div>
+
+	<!-- Starts closed for the same reason POOM does: it is an icon on the desktop. -->
+	<div id="paperboi" class="child window closed">
+		<div class="title-bar">
+			<div class="title-bar-text">&#128690; <span>PAPERBOI.EXE</span></div>
+			<div class="title-bar-controls">
+				<button aria-label="Minimize" data-act="min"></button>
+				<button aria-label="Maximize" data-act="max"></button>
+				<button aria-label="Close" data-act="close"></button>
+			</div>
+		</div>
+		<div id="pbstage"><canvas id="pb-view" width="320" height="208"></canvas></div>
+		<div id="pbhud">
+			<span class="stat">SCORE<b id="pb-score">0</b></span>
+			<span class="stat">PAPERS<b id="pb-papers">10</b></span>
+			<span class="stat day">DAY<b id="pb-day">MON</b></span>
+			<span class="stat">ROUND<b id="pb-subs">12/12</b></span>
+			<span class="stat">BIKES<b id="pb-lives">4</b></span>
+			<span class="spacer"></span>
+			<span class="keys">&#8592; &#8594; steer &#183; &#8593; &#8595; pedal &#183; space throws<br>Twelve houses. Ride past one and it's off the round.</span>
 		</div>
 		<span class="edge edge-r"></span><span class="edge edge-b"></span><span class="grip"></span>
 	</div>
