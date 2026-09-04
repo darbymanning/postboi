@@ -23,6 +23,13 @@ and check preconditions.
 notifications, and a `notify()` that fans out across them. Read it before starting any
 channel work; it carries the `ProviderBase` split that everything else depends on.
 
+**`postboi-app/LIFECYCLE.md`** (in the app repo) is the plan for lifecycle email — events,
+segments, sequences, campaigns, integrations, MCP and hosted generation. The library's share
+of it is `mail.events` / `mail.segments` / `mail.sequences`, a typed `sequence()` for
+sequences-as-code, the `postboi/better-auth`, `postboi/convex` and `postboi/lunora`
+plugins, `postboi mcp`, `postboi import`, and the skill's Lifecycle section. Read it before
+starting any of those.
+
 ## Conventions
 
 - Code style: snake_case, no semicolons. Run `bun run check` and `bun run lint`.

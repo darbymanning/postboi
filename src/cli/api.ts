@@ -2,6 +2,17 @@ import { stdout } from "node:process"
 import { ensure_env_loaded, read_env } from "../library/env.js"
 import { cloud_base, open_browser, type PostboiDomain } from "./postboi.js"
 import { bold, cyan, dim, green, red, strip_ansi, yellow } from "./prompts.js"
+import { load_config } from "../library/config.js"
+import { walk_steps, type SequenceDefinition, type SequenceStep } from "../library/sequence.js"
+import {
+	DEFAULT_DIR,
+	load_sequence_files,
+	pull_sequences,
+	push_sequences,
+	read_lockfile,
+	write_lockfile,
+	type SequenceApi,
+} from "./sequence_files.js"
 
 /**
  * The resource commands (`postboi lists`, `postboi domains add …`) — thin wrappers over
@@ -229,38 +240,112 @@ interface ContactWire {
 	name?: string
 	phone?: string
 	data?: Record<string, string>
+	external_id?: string
+	timezone?: string
+	tags?: Array<string>
+	last_opened_at?: string
 	created_at: string
 	updated_at: string
+}
+
+interface EventWire {
+	id: string
+	event: string
+	properties?: Record<string, unknown>
+	at: string
+	source: string
+	message_id?: string
+}
+
+/** A JSON object flag (`--data`, `--props`), or a usage error naming the flag. */
+function json_object_flag(
+	flag: string,
+	value: string | undefined
+): Record<string, unknown> | undefined {
+	if (!value) return undefined
+	try {
+		const parsed: unknown = JSON.parse(value)
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error()
+		return parsed as Record<string, unknown>
+	} catch {
+		throw new ApiCommandError(`--${flag} must be a JSON object, e.g. '{"plan":"pro"}'`)
+	}
+}
+
+/** One timeline row: when, what, and the properties worth a glance. */
+function event_row(event: EventWire): Array<string> {
+	const skip = new Set(["message_id"])
+	const props = Object.entries(event.properties ?? {})
+		.filter(([key]) => !skip.has(key))
+		.map(([key, value]) => `${key}=${typeof value === "string" ? value : JSON.stringify(value)}`)
+		.join(" ")
+	return [day(event.at), event.event, dim(props)]
 }
 
 async function contacts(args: Array<string>): Promise<void> {
 	const [action, ...rest_args] = args
 
 	if (action === "add") {
-		const { flags, rest } = take_flags(rest_args, ["name", "phone", "data"])
+		const { flags, rest } = take_flags(rest_args, [
+			"name",
+			"data",
+			"phone",
+			"external-id",
+			"timezone",
+		])
 		const email = rest[0]
 		if (!email) {
 			throw new ApiCommandError(
-				"Usage: postboi contacts add <email> [--name <name>] [--phone <+E.164>] [--data <json>]"
+				"Usage: postboi contacts add <email> [--name <name>] [--data <json>] [--phone <e164>] [--external-id <id>] [--timezone <iana>]"
 			)
 		}
-		let data: Record<string, string> | undefined
-		if (flags.data) {
-			try {
-				const parsed: unknown = JSON.parse(flags.data)
-				if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error()
-				data = Object.fromEntries(
-					Object.entries(parsed).map(([key, value]) => [key, String(value)])
-				)
-			} catch {
-				throw new ApiCommandError('--data must be a JSON object, e.g. \'{"plan":"pro"}\'')
-			}
-		}
+		const parsed = json_object_flag("data", flags.data)
+		const data = parsed
+			? Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value)]))
+			: undefined
 		const contact = await api<ContactWire>("/v1/contacts", {
 			method: "POST",
-			body: { email, name: flags.name, phone: flags.phone, data },
+			body: {
+				email,
+				name: flags.name,
+				data,
+				phone: flags.phone,
+				external_id: flags["external-id"],
+				timezone: flags.timezone,
+			},
 		})
 		return console.log(`${green("✓")} saved ${bold(contact.email)}`)
+	}
+
+	// Tags: `contacts tag <email> <tag…>` puts them on, `untag` takes one off.
+	if (action === "tag" || action === "untag") {
+		const [email, ...tags] = rest_args
+		if (!email || tags.length === 0) {
+			throw new ApiCommandError(
+				`Usage: postboi contacts ${action} <email> <tag>${action === "tag" ? "…" : ""}`
+			)
+		}
+		const path = `/v1/contacts/${encodeURIComponent(email)}/tags`
+		const { tags: now } =
+			action === "tag"
+				? await api<{ tags: Array<string> }>(path, { method: "POST", body: { tags } })
+				: await api<{ tags: Array<string> }>(`${path}/${encodeURIComponent(tags[0])}`, {
+						method: "DELETE",
+					})
+		return console.log(
+			`${green("✓")} ${bold(email)} ${dim("tags:")} ${now.length > 0 ? now.join(", ") : dim("none")}`
+		)
+	}
+
+	// The account's tags, with how many contacts carry each.
+	if (action === "tags") {
+		const { tags } = await api<{ tags: Array<{ tag: string; contacts: number }> }>("/v1/tags")
+		if (tags.length === 0)
+			return console.log(dim("No tags yet — postboi contacts tag <email> <tag>"))
+		return table(
+			["TAG", "CONTACTS"],
+			tags.map((entry) => [entry.tag, String(entry.contacts)])
+		)
 	}
 
 	if (action === "remove") {
@@ -282,6 +367,17 @@ async function contacts(args: Array<string>): Promise<void> {
 		if (contact.data && Object.keys(contact.data).length > 0) {
 			console.log(`  ${dim("data:")} ${JSON.stringify(contact.data)}`)
 		}
+		const profile = [
+			contact.phone && `phone ${contact.phone}`,
+			contact.external_id && `id ${contact.external_id}`,
+			contact.timezone && contact.timezone,
+		].filter(Boolean)
+		if (profile.length > 0) console.log(`  ${dim(profile.join(" · "))}`)
+		if (contact.tags && contact.tags.length > 0) {
+			console.log(`  ${dim("tags:")} ${contact.tags.join(", ")}`)
+		}
+		if (contact.last_opened_at)
+			console.log(`  ${dim("last opened:")} ${day(contact.last_opened_at)}`)
 		if (contact.memberships.length === 0) return console.log(dim("  On no lists."))
 		console.log()
 		return table(
@@ -301,6 +397,436 @@ async function contacts(args: Array<string>): Promise<void> {
 		["EMAIL", "NAME", "CREATED"],
 		rows.map((c) => [c.email, c.name ?? "", day(c.created_at)])
 	)
+}
+
+// ── Events ─────────────────────────────────────────────────────────────────
+
+async function events(args: Array<string>): Promise<void> {
+	const [action, ...rest_args] = args
+
+	// `events track <email|ext:id> <name> [--props <json>] [--at <iso>] [--key <k>]`
+	if (action === "track") {
+		const { flags, rest } = take_flags(rest_args, ["props", "at", "key"])
+		const [target, name] = rest
+		if (!target || !name) {
+			throw new ApiCommandError(
+				"Usage: postboi events track <email|ext:<external_id>> <event> [--props <json>] [--at <iso>] [--key <idempotency-key>]"
+			)
+		}
+		const who = target.startsWith("ext:") ? { external_id: target.slice(4) } : { email: target }
+		const event = await api<EventWire>("/v1/events", {
+			method: "POST",
+			body: {
+				...who,
+				event: name,
+				properties: json_object_flag("props", flags.props),
+				at: flags.at,
+				idempotency_key: flags.key,
+			},
+		})
+		return console.log(`${green("✓")} ${bold(event.event)} ${dim(`on ${target} · ${event.id}`)}`)
+	}
+
+	// `events schemas` — the documented names and what this account has recorded.
+	if (action === "schemas") {
+		const { events: schemas, seen } = await api<{
+			events: Array<{ name: string; recorded_by: string; properties: Record<string, string> }>
+			seen: Array<{ name: string; count: number; last_at: string }>
+		}>("/v1/events/schemas")
+		table(
+			["EVENT", "BY", "PROPERTIES"],
+			schemas.map((schema) => [
+				schema.name,
+				schema.recorded_by,
+				dim(Object.keys(schema.properties).join(", ")),
+			])
+		)
+		if (seen.length > 0) {
+			console.log()
+			table(
+				["SEEN", "COUNT", "LAST"],
+				seen.map((entry) => [entry.name, String(entry.count), day(entry.last_at)])
+			)
+		}
+		return
+	}
+
+	// `events rules` — the event → tags rules.
+	if (action === "rules") {
+		const { rules } = await api<{
+			rules: Array<{ event: string; add_tags: Array<string>; remove_tags: Array<string> }>
+		}>("/v1/sync-rules")
+		if (rules.length === 0) return console.log(dim("No sync rules."))
+		return table(
+			["EVENT", "ADDS", "REMOVES"],
+			rules.map((rule) => [rule.event, rule.add_tags.join(", "), dim(rule.remove_tags.join(", "))])
+		)
+	}
+
+	// A bare `events <email>` is the contact's timeline, newest first.
+	if (action) {
+		const { events: rows } = await api<{ events: Array<EventWire> }>(
+			`/v1/contacts/${encodeURIComponent(action)}/events`
+		)
+		if (rows.length === 0) return console.log(dim(`Nothing on ${action}'s timeline yet.`))
+		return table(["WHEN", "EVENT", "DETAILS"], rows.map(event_row))
+	}
+
+	throw new ApiCommandError(
+		"Usage: postboi events <email> · track <email|ext:id> <event> [--props <json>] · schemas · rules"
+	)
+}
+
+// ── Segments ───────────────────────────────────────────────────────────────
+
+interface SegmentWire {
+	id: string
+	name: string
+	definition: unknown
+	updated_at: string
+}
+
+async function segments(args: Array<string>): Promise<void> {
+	const [action, ...rest] = args
+
+	// `segments create <name> --definition '<json>'`
+	if (action === "create") {
+		const { flags, rest: words } = take_flags(rest, ["definition"])
+		const name = words.join(" ").trim()
+		if (!name || !flags.definition) {
+			throw new ApiCommandError(
+				'Usage: postboi segments create <name> --definition \'{"match":"all","rules":[…]}\''
+			)
+		}
+		const segment = await api<SegmentWire>("/v1/segments", {
+			method: "POST",
+			body: { name, definition: json_object_flag("definition", flags.definition) },
+		})
+		return console.log(`${green("✓")} created ${bold(segment.name)} ${dim(`(${segment.id})`)}`)
+	}
+
+	if (action === "delete") {
+		const ref = rest.join(" ").trim()
+		if (!ref) throw new ApiCommandError("Usage: postboi segments delete <name or id>")
+		const gone = await api<{ id: string }>(`/v1/segments/${encodeURIComponent(ref)}`, {
+			method: "DELETE",
+		})
+		return console.log(`${green("✓")} deleted ${bold(ref)} ${dim(`(${gone.id})`)}`)
+	}
+
+	// `segments tag <ref> <tag…> [--remove]`
+	if (action === "tag") {
+		const { flags, rest: words } = take_flags(rest, ["remove"])
+		const [ref, ...tags] = words
+		if (!ref || tags.length === 0) {
+			throw new ApiCommandError("Usage: postboi segments tag <ref> <tag…> [--remove]")
+		}
+		const { contacts, capped } = await api<{ contacts: number; capped: boolean }>(
+			`/v1/segments/${encodeURIComponent(ref)}/tags`,
+			{ method: "POST", body: flags.remove !== undefined ? { remove: tags } : { add: tags } }
+		)
+		return console.log(
+			`${green("✓")} ${flags.remove !== undefined ? "untagged" : "tagged"} ${bold(String(contacts))} contact${contacts === 1 ? "" : "s"}${capped ? dim(" (capped — run again for the rest)") : ""}`
+		)
+	}
+
+	// A bare `segments <ref>` shows the segment, its counts and the first page of contacts.
+	if (action) {
+		const segment = await api<SegmentWire & { matching: number; reachable: number }>(
+			`/v1/segments/${encodeURIComponent(action)}`
+		)
+		console.log(`${bold(segment.name)} ${dim(`(${segment.id})`)}`)
+		console.log(
+			`  ${dim("matching:")} ${segment.matching}  ${dim("reachable:")} ${segment.reachable}`
+		)
+		console.log(`  ${dim("definition:")} ${JSON.stringify(segment.definition)}`)
+		const { contacts } = await api<{ contacts: Array<ContactWire> }>(
+			`/v1/segments/${encodeURIComponent(action)}/contacts`
+		)
+		if (contacts.length === 0) return console.log(dim("  Nobody matches."))
+		console.log()
+		return table(
+			["EMAIL", "NAME", "TAGS"],
+			contacts.map((c) => [c.email, c.name ?? "", dim((c.tags ?? []).join(", "))])
+		)
+	}
+
+	const { segments: rows } = await api<{ segments: Array<SegmentWire> }>("/v1/segments")
+	if (rows.length === 0) {
+		return console.log(dim("No segments yet — postboi segments create <name> --definition <json>"))
+	}
+	table(
+		["NAME", "UPDATED", "ID"],
+		rows.map((s) => [bold(s.name), day(s.updated_at), dim(s.id)])
+	)
+}
+
+// ── Sequences ──────────────────────────────────────────────────────────────
+
+interface SequenceWire {
+	id: string
+	name: string
+	status: string
+	version: number
+	definition: SequenceDefinition
+	test: { emails: Array<string>; scale: number } | null
+	updated_at: string
+}
+
+async function sequences(args: Array<string>): Promise<void> {
+	const [action, ...rest] = args
+	const ref = (words: Array<string>) => words.join(" ").trim()
+	const one = (path: string) => `/v1/sequences/${encodeURIComponent(path)}`
+
+	if (action === "create") {
+		const { flags, rest: words } = take_flags(rest, ["definition"])
+		const name = ref(words)
+		if (!name || !flags.definition) {
+			throw new ApiCommandError(
+				'Usage: postboi sequences create <name> --definition \'{"trigger":{…},"steps":[…]}\''
+			)
+		}
+		const row = await api<SequenceWire>("/v1/sequences", {
+			method: "POST",
+			body: { name, definition: json_object_flag("definition", flags.definition) },
+		})
+		return console.log(
+			`${green("✓")} created ${bold(row.name)} as a draft ${dim(`(${row.id}) — postboi sequences enable ${JSON.stringify(row.name)} when it's ready`)}`
+		)
+	}
+
+	if (action === "enable" || action === "pause" || action === "disable") {
+		const name = ref(rest)
+		if (!name) throw new ApiCommandError(`Usage: postboi sequences ${action} <name or id>`)
+		const row = await api<SequenceWire & { warnings?: Array<string> }>(`${one(name)}/${action}`, {
+			method: "POST",
+			body: {},
+		})
+		console.log(`${green("✓")} ${bold(row.name)} is ${row.status}`)
+		for (const warning of row.warnings ?? []) console.log(`  ${yellow("!")} ${warning}`)
+		return
+	}
+
+	if (action === "delete") {
+		const { flags, rest: words } = take_flags(rest, ["purge"])
+		const name = ref(words)
+		if (!name) throw new ApiCommandError("Usage: postboi sequences delete <name or id> [--purge]")
+		const gone = await api<{ id: string; deleted: boolean }>(
+			`${one(name)}${flags.purge !== undefined ? "?purge=1" : ""}`,
+			{ method: "DELETE" }
+		)
+		return console.log(
+			`${green("✓")} ${gone.deleted ? "deleted" : "archived"} ${bold(name)} ${dim(`(${gone.id})`)}`
+		)
+	}
+
+	// `sequences simulate <ref> <email>` — every step and what it would do.
+	if (action === "simulate") {
+		const email = rest[rest.length - 1]
+		const name = ref(rest.slice(0, -1))
+		if (!name || !email?.includes("@")) {
+			throw new ApiCommandError("Usage: postboi sequences simulate <ref> <email>")
+		}
+		const { contact, steps } = await api<{
+			contact: { email: string; synthetic: boolean }
+			steps: Array<{ path: string; kind: string; outcome: string; reason?: string; next: string }>
+		}>(`${one(name)}/simulate`, { method: "POST", body: { email } })
+		console.log(
+			`${bold(name)} for ${contact.email}${contact.synthetic ? dim(" (synthetic — not a contact yet)") : ""}`
+		)
+		return table(
+			["STEP", "KIND", "OUTCOME", "THEN"],
+			steps.map((step) => [
+				step.path,
+				step.kind,
+				`${step.outcome}${step.reason ? dim(` · ${step.reason}`) : ""}`,
+				dim(step.next),
+			])
+		)
+	}
+
+	// `sequences enrol <ref> <email…>`
+	if (action === "enrol" || action === "enroll") {
+		const emails = rest.filter((word) => word.includes("@"))
+		const name = ref(rest.filter((word) => !word.includes("@")))
+		if (!name || emails.length === 0) {
+			throw new ApiCommandError("Usage: postboi sequences enrol <ref> <email…>")
+		}
+		const { results } = await api<{
+			enrolled: number
+			results: Array<{ email?: string; enrolled: boolean; reason?: string }>
+		}>(`${one(name)}/enrollments`, { method: "POST", body: { emails } })
+		for (const result of results) {
+			console.log(
+				result.enrolled
+					? `${green("✓")} ${result.email} enrolled`
+					: `${yellow("–")} ${result.email} not enrolled ${dim(`(${result.reason})`)}`
+			)
+		}
+		return
+	}
+
+	if (action === "templates") {
+		const { templates } = await api<{
+			templates: Array<{ key: string; name: string; blurb: string }>
+		}>("/v1/sequences/templates")
+		return table(
+			["KEY", "NAME", "WHAT IT DOES"],
+			templates.map((t) => [bold(t.key), t.name, dim(t.blurb)])
+		)
+	}
+
+	if (action === "install") {
+		const key = rest[0]
+		if (!key) throw new ApiCommandError("Usage: postboi sequences install <template key>")
+		const row = await api<SequenceWire>(`/v1/sequences/templates/${encodeURIComponent(key)}`, {
+			method: "POST",
+			body: {},
+		})
+		return console.log(`${green("✓")} installed ${bold(row.name)} as a draft ${dim(`(${row.id})`)}`)
+	}
+
+	// `sequences pull [name]` — the account's copy as sequences/<slug>.ts, lock moved forward.
+	if (action === "pull") {
+		const wanted = ref(rest)
+		const { sequences: rows } = await api<{ sequences: Array<SequenceWire> }>("/v1/sequences")
+		const chosen = wanted
+			? rows.filter((row) => row.name.toLowerCase() === wanted.toLowerCase() || row.id === wanted)
+			: rows
+		if (chosen.length === 0) {
+			throw new ApiCommandError(wanted ? `No sequence named ${wanted}.` : "No sequences to pull.")
+		}
+		const dir = await sequences_dir()
+		const { written, lock } = pull_sequences(chosen, read_lockfile(), dir)
+		write_lockfile(lock)
+		for (const file of written) console.log(`${green("✓")} wrote ${bold(file)}`)
+		return
+	}
+
+	// `sequences push [--force]` — what `postboi sync` does for sequences, on its own.
+	if (action === "push") {
+		const { flags } = take_flags(rest, ["force"])
+		await push_sequence_files({ force: flags.force !== undefined })
+		return
+	}
+
+	// A bare `sequences <ref>` shows the sequence, its counts and its steps.
+	if (action) {
+		const name = ref([action, ...rest])
+		const row = await api<SequenceWire & { enrollments: Record<string, number> }>(one(name))
+		console.log(`${bold(row.name)} ${dim(`(${row.id}) · ${row.status} · v${row.version}`)}`)
+		const counts = row.enrollments
+		console.log(
+			`  ${dim("live:")} ${(counts.active ?? 0) + (counts.waiting ?? 0)}  ${dim("completed:")} ${counts.completed ?? 0}  ${dim("exited:")} ${counts.exited ?? 0}  ${dim("failed:")} ${counts.failed ?? 0}`
+		)
+		if (row.test)
+			console.log(`  ${yellow("test run")} ÷${row.test.scale} for ${row.test.emails.join(", ")}`)
+		console.log(`  ${dim("trigger:")} ${JSON.stringify(row.definition.trigger)}`)
+		console.log()
+		return table(
+			["#", "STEP"],
+			walk_steps(row.definition.steps).map((step, index) => [
+				dim(String(index + 1)),
+				step_line(step),
+			])
+		)
+	}
+
+	const { sequences: rows } = await api<{ sequences: Array<SequenceWire> }>("/v1/sequences")
+	if (rows.length === 0) {
+		return console.log(
+			dim(
+				"No sequences yet — postboi sequences templates, or write sequences/welcome.ts and postboi sync"
+			)
+		)
+	}
+	table(
+		["NAME", "STATUS", "VERSION", "UPDATED", "ID"],
+		rows.map((s) => [bold(s.name), s.status, `v${s.version}`, day(s.updated_at), dim(s.id)])
+	)
+}
+
+/** One step as a line for the table. */
+function step_line(step: SequenceStep): string {
+	switch (step.kind) {
+		case "email":
+			return `email “${step.subject}”${step.transactional ? dim(" transactional") : ""}`
+		case "sms":
+		case "slack":
+			return `${step.kind} “${step.text.slice(0, 40)}”`
+		case "whatsapp":
+			return `whatsapp ${step.template}`
+		case "push":
+			return `push “${step.title}”`
+		case "delay":
+			return `wait ${JSON.stringify(step.for ?? step.until)}`
+		case "wait_for_event":
+			return `wait for ${step.name} (timeout ${JSON.stringify(step.timeout)})`
+		case "condition":
+			return "if / else"
+		case "branch":
+			return `branch ${step.branches.map((lane) => lane.name).join(" / ")}`
+		case "tag":
+			return `tag ${[...(step.add ?? []).map((t) => `+${t}`), ...(step.remove ?? []).map((t) => `-${t}`)].join(" ")}`
+		case "list":
+			return `${step.action} ${step.list_id}`
+		case "webhook":
+			return `POST ${step.url}`
+		default:
+			return step.kind
+	}
+}
+
+/** The sequences directory from postboi.config, or the default. */
+async function sequences_dir(): Promise<string> {
+	try {
+		const config = await load_config()
+		return config.sequences ?? DEFAULT_DIR
+	} catch {
+		return DEFAULT_DIR
+	}
+}
+
+/**
+ * Push `sequences/*.ts` to the account — `postboi sync` calls this with a token in hand;
+ * `postboi sequences push` calls it on its own. Says what happened per file.
+ */
+export async function push_sequence_files(options: { force?: boolean } = {}): Promise<void> {
+	const dir = await sequences_dir()
+	const { sequences: files, problems } = await load_sequence_files(dir)
+	for (const problem of problems) console.log(`${yellow("!")} ${problem}`)
+	if (files.length === 0) return
+	const remote: SequenceApi = {
+		list: async () =>
+			(await api<{ sequences: Array<SequenceWire> }>("/v1/sequences?archived=1")).sequences,
+		create: (name, definition) =>
+			api<SequenceWire>("/v1/sequences", { method: "POST", body: { name, definition } }),
+		update: async (id, changes) => {
+			try {
+				return await api<SequenceWire>(`/v1/sequences/${encodeURIComponent(id)}`, {
+					method: "PATCH",
+					body: changes,
+				})
+			} catch (error) {
+				const match = /version (\d+)/.exec(error instanceof Error ? error.message : "")
+				if (match) return { conflict: Number(match[1]) }
+				throw error
+			}
+		},
+	}
+	const { outcomes, lock } = await push_sequences(remote, files, read_lockfile(), options)
+	write_lockfile(lock)
+	for (const outcome of outcomes) {
+		if (outcome.action === "conflict") {
+			console.log(
+				`${yellow("!")} ${bold(outcome.name)} ${dim(`(${outcome.file})`)} is at v${outcome.remote} on the dashboard, newer than the v${outcome.local ?? "?"} this file was pulled at — ${cyan("postboi sequences pull")} to take theirs, or ${cyan("postboi sequences push --force")} to overwrite`
+			)
+		} else if (outcome.action !== "unchanged") {
+			console.log(
+				`${green("✓")} ${outcome.action} ${bold(outcome.name)} ${dim(`v${outcome.version} (${outcome.file})`)}`
+			)
+		}
+	}
 }
 
 // ── Domains ────────────────────────────────────────────────────────────────
@@ -611,6 +1137,9 @@ const COMMANDS: Record<string, (args: Array<string>) => Promise<void>> = {
 	lists,
 	recipients,
 	contacts,
+	events,
+	segments,
+	sequences,
 	domains,
 	webhooks,
 	members,

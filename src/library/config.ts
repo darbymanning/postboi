@@ -53,6 +53,11 @@ export interface PostboiConfig {
 	 * provider env var (e.g. `MAILGUN_DOMAIN`) still wins. Keep secrets out of here — in env.
 	 */
 	options?: Record<string, string>
+	/**
+	 * Where `bunx postboi sync` looks for sequences-as-code files (`*.ts` exporting what
+	 * `sequence()` returns). Default `sequences`.
+	 */
+	sequences?: string
 	/** Per-request timeout in milliseconds. */
 	timeout?: number
 	/** Retries on network / 429 / 5xx errors. */

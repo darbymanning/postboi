@@ -89,6 +89,7 @@ import {
 	PostboiAuthError,
 	type ConnectResult,
 	type PostboiDomain,
+	fetch_sequence_names,
 } from "./postboi.js"
 import { credential_env_keys } from "../library/registry.js"
 import { generate_vapid_keys } from "../library/push/webpush.js"
@@ -103,7 +104,7 @@ import {
 import { fetch_whatsapp_templates } from "./whatsapp_templates.js"
 import { offer_skill, refresh_skill, skill_command } from "./skill.js"
 import { detect_domains, hostname_of, type DomainHint } from "./domain_hint.js"
-import { api_command } from "./api.js"
+import { api_command, push_sequence_files } from "./api.js"
 import { dev_command } from "./dev.js"
 import { inspect_command } from "./inspect.js"
 import { ensure_env_loaded, read_env } from "../library/env.js"
@@ -135,7 +136,7 @@ ${bold("Usage")}
   ${cyan("bunx postboi init")}     Set up the Postboi provider or a provider of your own
   ${dim("                          · --agent: zero prompts, zero sign-in — provisions a claimable")}
   ${dim("                            sandbox account (made for AI coding agents and CI)")}
-  ${cyan("bunx postboi sync")}     Pull synced team credentials and refresh the generated from/template types
+  ${cyan("bunx postboi sync")}     Pull synced team credentials, push sequences/*.ts, refresh the generated types
   ${cyan("bunx postboi env")}      The synced credentials ${dim("· push · pull [--force] · remove <KEY>")}
   ${cyan("bunx postboi vapid")}    Mint a VAPID key pair for Web Push, printed to stdout
   ${cyan("bunx postboi skill")}    Install the agent skill, so AI coding agents know the library
@@ -150,7 +151,12 @@ ${bold("Account")} ${dim("(Postboi provider — full reference: https://api.post
   ${cyan("bunx postboi send-address")}    Default sending address ${dim("· [name@yourdomain.com]")}
   ${cyan("bunx postboi lists")}           Lists ${dim("· add <name> · delete <ref>")}
   ${cyan("bunx postboi recipients")}      A list's recipients ${dim("· <list> add <email>… · <list> remove <email>")}
-  ${cyan("bunx postboi contacts")}        The audience ${dim("· add <email> [--name --phone --data] · <email> · remove <email>")}
+  ${cyan("bunx postboi contacts")}        The audience ${dim("· add <email> [--name --data --phone --external-id --timezone]")}
+  ${dim("                                 · <email> · remove <email> · tag <email> <tag…> · untag <email> <tag> · tags")}
+  ${cyan("bunx postboi events")}          A contact's timeline ${dim("· <email> · track <email|ext:id> <event> [--props] · schemas · rules")}
+  ${cyan("bunx postboi segments")}        Saved audience filters ${dim("· <ref> · create <name> --definition <json> · tag <ref> <tag…> [--remove] · delete <ref>")}
+  ${cyan("bunx postboi sequences")}       Automations ${dim("· <ref> · create <name> --definition <json> · enable/pause/disable <ref>")}
+  ${dim("                                 · simulate <ref> <email> · enrol <ref> <email…> · templates · install <key> · pull [name] · push [--force]")}
   ${cyan("bunx postboi domains")}         Sending domains ${dim("· add <domain> · check <ref> · delete <ref>")}
   ${cyan("bunx postboi webhooks")}        Webhooks ${dim("· add <url> · delete <id> · deliveries <id>")}
   ${cyan("bunx postboi members")}         Members ${dim("· invite <email> · remove <ref> · revoke <ref>")}
@@ -964,12 +970,24 @@ async function sync(): Promise<void> {
 		}
 	}
 
+	// Sequences as code: push sequences/*.ts, then type their names for `mail.sequences`.
+	let sequence_names: Array<string> = []
+	try {
+		await push_sequence_files()
+		sequence_names = (await fetch_sequence_names(cloud_base(), token)) ?? []
+	} catch (error) {
+		console.log(
+			`${yellow("!")} sequences: ${error instanceof Error ? error.message : String(error)}`
+		)
+	}
+
 	const { names, variables } = await templates_promise
 	const file = write_types(
 		account.send_address ?? read_env("POSTBOI_FROM"),
 		account.domains,
 		names,
-		variables
+		variables,
+		sequence_names
 	)
 	if (!file) {
 		console.log(dim("postboi sync: no sending addresses on this account yet."))

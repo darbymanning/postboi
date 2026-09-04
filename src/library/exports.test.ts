@@ -42,6 +42,7 @@ describe("package exports", () => {
 			"twilio_common.ts", // Twilio plumbing shared by the SMS and WhatsApp providers
 			"channels.ts", // shared zero-config resolution, used by each channel send.ts
 			"send.ts", // the multi-channel fan-out, re-exported from the root
+			"sequence.ts", // sequences as code, re-exported from the root
 			"mock_recorder.ts", // shared mock capture machinery, used by each channel mock
 			"channel_inbox.ts", // channel captures → dev inbox bridge, used by the dev interceptions
 			"captcha.ts", // spam protection, reached via the root export

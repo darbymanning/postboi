@@ -431,6 +431,220 @@ bounce or complaint is suppressed separately (see Suppressions).
 > suppressions, not a status); and `mail.contacts.*` is a new namespace. `mail.recipients.*`
 > keeps the same signatures — it's contact-backed now.
 
+A contact also carries a `phone` (E.164), an `external_id` (your own database's id for
+them, unique per account) and a `timezone` (IANA) — pass any of them to `contacts.add` or
+`contacts.update`. They're what the lifecycle features read; nothing sends to a phone by
+itself.
+
+## Events & tags (the timeline)
+
+Every contact has a **timeline**: the sends it received, and everything that happened to
+it — opens, clicks, bounces, replies, list changes — written by Postboi as they occur. Your
+app adds its own events to the same timeline:
+
+```ts
+await mail.events.track("ada@example.com", "auth.signed_up", { plan: "trial" })
+await mail.events.track("ada@example.com", "billing.purchase", { amount: 4900, currency: "GBP", plan: "pro" })
+await mail.events.track({ external_id: "user_42" }, "feature_used", { feature: "export" })
+await mail.contacts.events("ada@example.com") // the whole timeline, newest first
+```
+
+A contact named by email is created if it isn't known yet; one named by `external_id`
+must already exist. Names are `snake_case`, optionally namespaced once — use the
+documented `auth.*`, `billing.*` and `commerce.*` names where they fit (a
+`billing.purchase` with an `amount` counts as revenue) and anything you like otherwise.
+The `contact.*`, `email.*`, `sms.*` and `whatsapp.*` prefixes are Postboi's own. Pass
+`{ idempotency_key }` when a retry might send the same event twice, and `{ at }` when it
+happened earlier than now. `mail.events.record([...])` takes up to 100 at once, and
+`mail.events.schemas()` lists every documented event with its property names, plus every
+name your account has recorded.
+
+**Tags** are a contact's current state, as labels; events are its history. Put them on
+by hand, or let **sync rules** do it — when an event is recorded, its rule's `remove_tags`
+come off and `add_tags` go on:
+
+```ts
+await mail.contacts.tag("ada@example.com", "customer", "beta") // case-insensitive; the first spelling is kept
+await mail.contacts.untag("ada@example.com", "beta")
+await mail.contacts.all({ tag: "customer" })
+
+await mail.events.rules() // every account starts with the SaaS preset…
+await mail.events.set_rules([
+	{ event: "billing.purchase", add_tags: ["customer"], remove_tags: ["trial", "lead"] },
+	{ event: "billing.churned", add_tags: ["churned"], remove_tags: ["customer"] },
+]) // …and this replaces the whole set
+```
+
+The preset makes a `billing.trial_started` contact `trial`, a `billing.purchase` one
+`customer` (clearing `trial`, `lead`, `past-due`, `cancelled` and `churned`), a
+`billing.payment_failed` one `past-due`, and a `billing.churned` one `churned`.
+
+Free accounts keep 90 days of timeline and paid accounts 13 months; the `last_opened_at`,
+`last_clicked_at`, `last_replied_at` and `last_event_at` stamps on the contact outlive it.
+
+## Segments
+
+A **segment** is a saved filter over the audience — tags, `data` fields, list membership,
+engagement, events, suppression, phone — matched `all` (and) or `any` (or), with groups
+nested up to three deep. It is evaluated fresh every time it's used, so it is always who
+your contacts are _now_, never a snapshot:
+
+```ts
+const lapsed = await mail.segments.create("Lapsed customers", {
+	match: "all",
+	rules: [
+		{ kind: "tag", tag: "customer", has: true },
+		{ kind: "engagement", metric: "opened", within_days: 60, happened: false },
+	],
+})
+
+await mail.segments.count("Lapsed customers") // { matching: 212, reachable: 190 }
+await mail.segments.contacts(lapsed.id) // every matching contact, pagination followed
+await mail.segments.broadcast("Lapsed customers", { subject: "We miss you, {name}", body })
+await mail.segments.tag("Lapsed customers", { add: ["win-back"] })
+await mail.contacts.all({ segment: "Lapsed customers" })
+```
+
+The predicates, each an object with a `kind`:
+
+| kind         | fields                                                                                       |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| `tag`        | `tag`, `has`                                                                                 |
+| `attribute`  | `key` (a `data` field), `op` (`eq` `neq` `contains` `starts` `exists` `missing` `gt` `gte` `lt` `lte` `before` `after`), `value` |
+| `list`       | `list_id`, `member`, optional `status`                                                       |
+| `engagement` | `metric` (`opened` `clicked` `replied` `any`), `within_days`, `happened`                     |
+| `event`      | `name`, `happened`, optional `within_days`, `min_count`, `property: { key, op, value }`      |
+| `suppressed` | `is`                                                                                         |
+| `phone`      | `has`                                                                                        |
+
+Numbers in `data` compare as numbers whether they were stored as `49` or `"49"`, and dates
+as dates. Engagement reads the counters on the contact, so "hasn't opened in 60 days" is
+one column, not a scan of the timeline.
+
+**Who a broadcast reaches.** A segment can match contacts who exist only because an event
+named them and who never joined a list. A `segments.broadcast` reaches only the matching
+contacts **subscribed on at least one list** — that is what `reachable` counts, and the
+response's `matching` says how many were matched in all, so nobody is dropped in silence.
+Suppressions apply as they do everywhere. `mail.segments.preview(definition)` tries a
+definition without saving it.
+
+Three definitions worth copying:
+
+```ts
+// Trial users who never opened anything
+{ match: "all", rules: [
+	{ kind: "tag", tag: "trial", has: true },
+	{ kind: "engagement", metric: "opened", within_days: 730, happened: false },
+] }
+
+// Paying customers on the pro plan, by the data your app keeps on them
+{ match: "all", rules: [
+	{ kind: "event", name: "billing.purchase", happened: true },
+	{ kind: "attribute", key: "plan", op: "eq", value: "pro" },
+] }
+
+// Anyone who replied in the last month, or clicked twice this quarter
+{ match: "any", rules: [
+	{ kind: "engagement", metric: "replied", within_days: 30, happened: true },
+	{ kind: "event", name: "email.clicked", happened: true, within_days: 90, min_count: 2 },
+] }
+```
+
+## Sequences
+
+A **sequence** is an automation: one trigger, then the steps a contact walks through on
+their own clock — emails, waits, branches, tags, webhooks, a text or a push. The hosted
+engine runs it once a minute; the library's job is to describe it, switch it on, and
+watch it.
+
+The quickest start is a shipped template:
+
+```ts
+await mail.sequences.templates() // welcome, trial_onboarding, dunning, win_back, re_engagement, post_purchase
+const draft = await mail.sequences.install("welcome")
+await mail.sequences.enable(draft.id)
+```
+
+Or write one as code. A `sequences/welcome.ts` file exports what `sequence()` returns, and
+`bunx postboi sync` pushes every such file to the account (the directory is `sequences`
+unless `postboi.config.ts` sets `sequences: "..."`):
+
+```ts
+// sequences/welcome.ts
+import { sequence, sequence_email as email, delay, condition, tag } from "postboi"
+
+export default sequence({
+	name: "Welcome",
+	trigger: { kind: "contact_added" },
+	entry: "one_time",
+	steps: [
+		email({ subject: "Welcome aboard, {name}", html: "<p>Hi {name} — start here: …</p>" }),
+		delay({ days: 2 }),
+		condition(
+			{ match: "all", rules: [{ kind: "engagement", metric: "opened", within_days: 3, happened: true }] },
+			{
+				then: [email({ subject: "Three things people miss", html: "…" })],
+				else: [email({ subject: "Still there, {name}?", html: "…" })],
+			}
+		),
+		tag({ add: ["welcomed"] }),
+	],
+})
+```
+
+A pushed sequence arrives as a **draft**; `mail.sequences.enable("Welcome")` or `bunx
+postboi sequences enable Welcome` switches it on. Every save on the dashboard or from a
+push bumps the sequence's `version`, and `.postboi/sequences.json` remembers the version
+each file was last synced at. A push that would overwrite a newer dashboard save stops
+with a conflict: `bunx postboi sequences pull` takes the dashboard's copy as a file, or
+`bunx postboi sequences push --force` overwrites it. Once synced, `sequence` in the
+generated types narrows to your sequence names.
+
+**Triggers** (one per sequence; several values inside it are ORed): `contact_added`
+(any new contact, or `list_ids` for joining particular lists), `tag_added`,
+`segment_entered`, `event` (with an optional `property` filter), `inbound_webhook`,
+`inactivity` (N days without an event, checked daily), `frequency` (an event N times
+in D days) and `manual`. Updating attributes alone never starts a walk.
+
+**Steps**, each an object with a `kind` (the helpers `sequence_email`, `sequence_sms`,
+`sequence_whatsapp`, `sequence_push`, `sequence_slack`, `delay`, `wait_for_event`,
+`condition`, `branch`, `tag`, `list_step`, `webhook_step` and `exit_step` build them):
+
+| kind             | what it does                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| `email`          | `subject`, `html` and/or `text` in the `{key}` / `{#if}` / `{#each}` grammar, with `contact.*`, `data.*`, `event.*`, `webhook.*` in scope |
+| `sms` `whatsapp` `push` `slack` | through the account's synced provider credentials (`bunx postboi env push`); `provider` picks one when several are configured |
+| `delay`          | `for: { days, hours, minutes }`, or `until: { time, weekday? }` in the contact's timezone, or `until: { attribute, offset?, before? }` for a date in their data |
+| `wait_for_event` | park until `name` happens, or take `on_timeout` after `timeout`                                  |
+| `condition`      | an inline segment definition; `then` / `else` lanes                                              |
+| `branch`         | lanes by condition (last one the fallback) or a random split by `weight`                          |
+| `tag` `list`     | `add` / `remove` tags; `subscribe` / `unsubscribe` a list                                        |
+| `webhook`        | POST the contact and the walk's context; a JSON reply is readable later as `{webhook.<key>.…}`   |
+| `exit`           | the walk ends                                                                                    |
+
+**Who gets sent to.** Marketing steps — email, SMS, WhatsApp, push — skip a contact who
+isn't subscribed on any list, and the walk carries on to the next step; a step with
+`transactional: true` sends anyway. A suppressed address is never sent to by any step. A
+sequence can also carry `only: [emails]` (nothing else enters, whatever the trigger says),
+`entry: "one_time"` or `entry: "matching_field"` with a data key, and `quiet_hours`.
+
+**Before switching on**, simulate: every step reports what it would do for a real contact
+or a synthetic one, and nothing is sent. Then a test run — a few named addresses, every
+wait divided by up to 480 — lets you watch the real thing in minutes:
+
+```ts
+await mail.sequences.simulate("Welcome", { email: "you@example.com", name: "You" })
+await mail.sequences.test("Welcome", ["you@example.com"], 480) // enabled for you only, 2 days → 6 min
+await mail.sequences.enrol("Welcome", "you@example.com")
+await mail.sequences.untest("Welcome", { keep: true }) // now for everyone
+```
+
+Watch it with `mail.sequences.stats(ref)` (per step: reached, each outcome, and for email
+delivered / opened / clicked), `mail.sequences.enrollments(ref, { status })`,
+`mail.sequences.runs(ref, enrollment_id)` (every step of one walk and why), and
+`mail.contacts.sequences(email)`. `cancel`, `move` and `realign` manage live walks;
+`pause`, `enable` and `disable` the sequence itself.
+
 ## Confirmation (double opt-in)
 
 Lists can require **confirmation**: new recipients start `pending` and receive an

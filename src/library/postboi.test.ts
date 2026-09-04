@@ -587,6 +587,207 @@ describe("the Postboi provider — account API", () => {
 		expect(error.code).toBe("not_found")
 		expect(error.status).toBe(404)
 	})
+
+	describe("lifecycle API", () => {
+		beforeEach(() => fetch.mockResolvedValue(respond({ json: { id: "ev_1", event: "x", at: "" } })))
+
+		it("events.track posts one event; an address creates, an external id names", async () => {
+			await provider().events.track("Ada@test.com", "billing.purchase", { amount: 4900 })
+			expect(sent_url()).toBe("https://postboi.app/v1/events")
+			expect(sent_init().method).toBe("POST")
+			expect(sent_json()).toEqual({
+				email: "Ada@test.com",
+				event: "billing.purchase",
+				properties: { amount: 4900 },
+			})
+
+			await provider().events.track({ external_id: "user_42" }, "feature_used", undefined, {
+				at: new Date("2026-08-01T00:00:00Z"),
+				idempotency_key: "k1",
+			})
+			expect(sent_json()).toEqual({
+				external_id: "user_42",
+				event: "feature_used",
+				at: "2026-08-01T00:00:00.000Z",
+				idempotency_key: "k1",
+			})
+		})
+
+		it("events.record sends the batch and unwraps it", async () => {
+			fetch.mockResolvedValue(respond({ json: { events: [{ id: "ev_1" }, { id: "ev_2" }] } }))
+			const out = await provider().events.record([
+				{ to: "a@test.com", event: "auth.signed_up" },
+				{ to: { external_id: "u2" }, event: "auth.signed_in", properties: { provider: "github" } },
+			])
+			expect(sent_json()).toEqual({
+				events: [
+					{ email: "a@test.com", event: "auth.signed_up" },
+					{ external_id: "u2", event: "auth.signed_in", properties: { provider: "github" } },
+				],
+			})
+			expect(out).toEqual([{ id: "ev_1" }, { id: "ev_2" }])
+		})
+
+		it("contacts.tag / untag hit the tag routes and return the tags", async () => {
+			fetch.mockResolvedValue(respond({ json: { email: "ada@test.com", tags: ["beta", "VIP"] } }))
+			expect(await provider().contacts.tag("ada@test.com", "VIP", "beta")).toEqual(["beta", "VIP"])
+			expect(sent_url()).toBe("https://postboi.app/v1/contacts/ada%40test.com/tags")
+			expect(sent_json()).toEqual({ tags: ["VIP", "beta"] })
+
+			await provider().contacts.untag("ada@test.com", "a b")
+			expect(sent_url()).toBe("https://postboi.app/v1/contacts/ada%40test.com/tags/a%20b")
+			expect(sent_init().method).toBe("DELETE")
+		})
+
+		it("contacts.events follows the cursor and filters by event", async () => {
+			fetch
+				.mockResolvedValueOnce(respond({ json: { events: [{ id: "ev_2" }], cursor: "c1" } }))
+				.mockResolvedValueOnce(respond({ json: { events: [{ id: "ev_1" }], cursor: null } }))
+			const events = await provider().contacts.events("ada@test.com", { event: "email.opened" })
+			expect(events.map((event) => event.id)).toEqual(["ev_2", "ev_1"])
+			expect(fetch.mock.calls[0][0]).toBe(
+				"https://postboi.app/v1/contacts/ada%40test.com/events?event=email.opened"
+			)
+			expect(fetch.mock.calls[1][0]).toBe(
+				"https://postboi.app/v1/contacts/ada%40test.com/events?event=email.opened&cursor=c1"
+			)
+		})
+
+		it("events.rules / set_rules and schemas unwrap their envelopes", async () => {
+			fetch.mockResolvedValue(respond({ json: { rules: [{ event: "billing.purchase" }] } }))
+			expect(await provider().events.rules()).toEqual([{ event: "billing.purchase" }])
+			expect(sent_url()).toBe("https://postboi.app/v1/sync-rules")
+			await provider().events.set_rules([])
+			expect(sent_init().method).toBe("PUT")
+			expect(sent_json()).toEqual({ rules: [] })
+			fetch.mockResolvedValue(respond({ json: { events: [], seen: [] } }))
+			expect(await provider().events.schemas()).toEqual({ events: [], seen: [] })
+			expect(sent_url()).toBe("https://postboi.app/v1/events/schemas")
+		})
+
+		it("segments: create, get, count, contacts, broadcast, tag hit their routes", async () => {
+			const definition = {
+				match: "all" as const,
+				rules: [{ kind: "tag" as const, tag: "vip", has: true }],
+			}
+			fetch.mockResolvedValue(respond({ json: { id: "seg_1", name: "VIPs", definition } }))
+			await provider().segments.create("VIPs", definition)
+			expect(sent_url()).toBe("https://postboi.app/v1/segments")
+			expect(sent_json()).toEqual({ name: "VIPs", definition })
+
+			await provider().segments.get("VIPs")
+			expect(sent_url()).toBe("https://postboi.app/v1/segments/VIPs")
+			await provider().segments.count("seg_1")
+			expect(sent_url()).toBe("https://postboi.app/v1/segments/seg_1/count")
+			await provider().segments.update("seg_1", { name: "Very important" })
+			expect(sent_init().method).toBe("PATCH")
+			await provider().segments.delete("seg_1")
+			expect(sent_init().method).toBe("DELETE")
+
+			fetch
+				.mockResolvedValueOnce(
+					respond({ json: { contacts: [{ email: "a@x.test" }], cursor: "c1" } })
+				)
+				.mockResolvedValueOnce(
+					respond({ json: { contacts: [{ email: "b@x.test" }], cursor: null } })
+				)
+			const contacts = await provider().segments.contacts("seg_1")
+			expect(contacts.map((contact) => contact.email)).toEqual(["a@x.test", "b@x.test"])
+			expect(fetch.mock.calls.at(-1)![0]).toBe(
+				"https://postboi.app/v1/segments/seg_1/contacts?cursor=c1"
+			)
+
+			fetch.mockResolvedValue(
+				respond({ json: { ids: ["m1"], recipients: 1, matching: 3, scheduled_at: "" } })
+			)
+			const sent = await provider().segments.broadcast("VIPs", {
+				subject: "Hi {name}",
+				body: "<p>Hello</p>",
+				from: "Ada <ada@test.com>",
+			})
+			expect(sent_url()).toBe("https://postboi.app/v1/segments/VIPs/send")
+			expect(sent_json()).toEqual({
+				from: { email: "ada@test.com", name: "Ada" },
+				subject: "Hi {name}",
+				html: "<p>Hello</p>",
+			})
+			expect(sent.matching).toBe(3)
+
+			fetch.mockResolvedValue(respond({ json: { contacts: 3, capped: false } }))
+			await provider().segments.tag("VIPs", { add: ["reached"], remove: ["cold"] })
+			expect(sent_url()).toBe("https://postboi.app/v1/segments/VIPs/tags")
+			expect(sent_json()).toEqual({ add: ["reached"], remove: ["cold"] })
+		})
+
+		it("sequences: the lifecycle calls hit their routes", async () => {
+			const definition = {
+				trigger: { kind: "manual" as const },
+				steps: [{ kind: "email" as const, subject: "Hi", text: "hello" }],
+			}
+			fetch.mockResolvedValue(respond({ json: { id: "seq_1", name: "Welcome", definition } }))
+			await provider().sequences.create("Welcome", definition)
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences")
+			expect(sent_json()).toEqual({ name: "Welcome", definition })
+
+			await provider().sequences.update("Welcome", { definition, expected_version: 2 })
+			expect(sent_init().method).toBe("PATCH")
+			expect(sent_json()).toEqual({ definition, expected_version: 2 })
+			await provider().sequences.enable("Welcome")
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/Welcome/enable")
+			await provider().sequences.pause("seq_1")
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/seq_1/pause")
+			await provider().sequences.delete("seq_1", { purge: true })
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/seq_1?purge=1")
+			expect(sent_init().method).toBe("DELETE")
+
+			fetch.mockResolvedValue(respond({ json: { contact: { email: "a@x.test" }, steps: [] } }))
+			await provider().sequences.simulate("Welcome", { email: "a@x.test", name: "A" })
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/Welcome/simulate")
+			expect(sent_json()).toEqual({ email: "a@x.test", name: "A" })
+			await provider().sequences.test("Welcome", ["a@x.test"])
+			expect(sent_json()).toEqual({ emails: ["a@x.test"], scale: 480 })
+			await provider().sequences.untest("Welcome", { keep: true })
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/Welcome/test?keep=1")
+
+			fetch
+				.mockResolvedValueOnce(respond({ json: { enrollments: [{ id: "enr_1" }], cursor: "c1" } }))
+				.mockResolvedValueOnce(respond({ json: { enrollments: [{ id: "enr_2" }], cursor: null } }))
+			const walks = await provider().sequences.enrollments("Welcome", { status: "active" })
+			expect(walks.map((walk) => walk.id)).toEqual(["enr_1", "enr_2"])
+			expect(fetch.mock.calls.at(-1)![0]).toBe(
+				"https://postboi.app/v1/sequences/Welcome/enrollments?status=active&cursor=c1"
+			)
+
+			fetch.mockResolvedValue(respond({ json: { enrolled: 1, results: [] } }))
+			await provider().sequences.enrol("Welcome", ["a@x.test", "b@x.test"], { plan: "pro" })
+			expect(sent_json()).toEqual({ emails: ["a@x.test", "b@x.test"], context: { plan: "pro" } })
+			await provider().sequences.move("Welcome", "enr_1", "2.then.0")
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/Welcome/enrollments/enr_1/move")
+			fetch.mockResolvedValue(respond({ json: { runs: [{ id: "run_1" }] } }))
+			expect(await provider().sequences.runs("Welcome", "enr_1")).toEqual([{ id: "run_1" }])
+			fetch.mockResolvedValue(respond({ json: { templates: [{ key: "welcome" }] } }))
+			expect(await provider().sequences.templates()).toEqual([{ key: "welcome" }])
+			fetch.mockResolvedValue(respond({ json: { id: "seq_2" } }))
+			await provider().sequences.install("welcome", "Hello")
+			expect(sent_url()).toBe("https://postboi.app/v1/sequences/templates/welcome")
+			expect(sent_json()).toEqual({ name: "Hello" })
+			fetch.mockResolvedValue(respond({ json: { enrollments: [] } }))
+			await provider().contacts.sequences("a@x.test")
+			expect(sent_url()).toBe("https://postboi.app/v1/contacts/a%40x.test/sequences")
+		})
+
+		it("contacts.add carries the profile fields; contacts.all a tag", async () => {
+			await provider().contacts.add("ada@test.com", { phone: "+447700900123", external_id: "u1" })
+			expect(sent_json()).toEqual({
+				email: "ada@test.com",
+				phone: "+447700900123",
+				external_id: "u1",
+			})
+			fetch.mockResolvedValue(respond({ json: { contacts: [], cursor: null } }))
+			await provider().contacts.all({ tag: "VIP" })
+			expect(sent_url()).toBe("https://postboi.app/v1/contacts?tag=VIP")
+		})
+	})
 })
 
 describe("top-level mail() — provider-agnostic dispatch", () => {

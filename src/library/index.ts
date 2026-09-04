@@ -79,6 +79,31 @@ export {
 	type TransportOptions,
 } from "./transport.js"
 
+// Sequences as code: `sequences/*.ts` files export what `sequence()` returns, and
+// `bunx postboi sync` pushes them. The step helpers keep a file reading as a list.
+export {
+	sequence,
+	email as sequence_email,
+	sms as sequence_sms,
+	whatsapp as sequence_whatsapp,
+	push as sequence_push,
+	slack as sequence_slack,
+	delay,
+	wait_for_event,
+	condition,
+	branch,
+	tag,
+	list as list_step,
+	webhook as webhook_step,
+	exit as exit_step,
+	walk_steps,
+	type SequenceBranch,
+	type SequenceDefinition,
+	type SequenceDuration,
+	type SequenceFile,
+	type SequenceStep,
+	type SequenceTrigger,
+} from "./sequence.js"
 // Global configuration (`postboi.config.ts`) is part of the public surface from the package root.
 export { configure, config, type PostboiConfig } from "./config.js"
 // Spam protection (honeypot + Turnstile) is part of the public surface too.

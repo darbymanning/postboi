@@ -11,6 +11,7 @@ import type {
 } from "./index.js"
 import { ProviderBase, PostboiError } from "./index.js"
 import { read_env, env_defaults } from "./env.js"
+import type { SequenceDefinition } from "./sequence.js"
 
 /** Options for the Postboi provider. */
 export type PostboiOptions = CommonProviderOptions & {
@@ -150,20 +151,223 @@ export type ListRecipientInput = Email | NewListRecipient
  * this. */
 export type MembershipStatus = "subscribed" | "pending" | "unsubscribed"
 
-/**
- * A contact — one per address per account. `email` is the handle; `data` holds the
- * contact's global `{key}` broadcast variables, shared across every list it's on.
- * `phone` is the contact's mobile number in E.164, the one SMS and WhatsApp reach —
- * the first of the delivery profile that multi-channel sending is built on.
- */
+/** A contact — one per address per account. `email` is the handle; `data` holds the
+ * contact's global `{key}` broadcast variables, shared across every list it's on;
+ * `tags` are its current labels, and the `last_*` stamps are kept current by its
+ * timeline (see `events`). */
 export interface Contact {
 	email: string
 	name?: string
 	/** E.164 (`+447788223344`), or absent when the contact has no number on file. */
 	phone?: string
 	data?: Record<string, string>
+	/** Your own id for this person, unique per account. */
+	external_id?: string
+	/** IANA zone, e.g. "Europe/London". */
+	timezone?: string
+	tags?: Array<string>
+	last_event_at?: string
+	last_opened_at?: string
+	last_clicked_at?: string
+	last_replied_at?: string
 	created_at: string
 	updated_at: string
+}
+
+/** One entry on a contact's timeline. */
+export interface ContactEvent {
+	id: string
+	/** The event name — `email.opened`, `billing.purchase`, `feature_used`, … */
+	event: string
+	properties?: Record<string, unknown>
+	at: string
+	/** Who recorded it: `api` is you; the rest are Postboi. */
+	source: "api" | "integration" | "email" | "sms" | "whatsapp" | "list" | "system"
+	/** The message (msg_ or in_) the event is about, when it is about one. */
+	message_id?: string
+}
+
+/** Who an event is about: an address (created if unknown) or your own id (must exist). */
+export type EventTarget = string | { email?: string; external_id?: string }
+
+/** Options `events.track` takes beyond the name and properties. */
+export interface TrackOptions {
+	/** When it happened — a `Date` or ISO string. Defaults to now; never the future. */
+	at?: Date | string
+	/** Unique per account; a retry with the same key returns the original event. */
+	idempotency_key?: string
+}
+
+/** One event for `events.record` — a target plus what `events.track` takes. */
+export interface EventRecord extends TrackOptions {
+	to: EventTarget
+	event: string
+	properties?: Record<string, unknown>
+}
+
+/** A documented event: the property names a merge tag or a segment can rely on. */
+export interface EventSchema {
+	name: string
+	description: string
+	/** Property name → a one-line description including its type. */
+	properties: Record<string, string>
+	recorded_by: "postboi" | "you"
+}
+
+/** When `event` is recorded, `remove_tags` come off the contact and `add_tags` go on. */
+export interface SyncRule {
+	event: string
+	add_tags: Array<string>
+	remove_tags: Array<string>
+}
+
+/** How a `data` field or event property is compared. `exists`/`missing` take no value. */
+export type SegmentOp =
+	| "eq"
+	| "neq"
+	| "contains"
+	| "starts"
+	| "exists"
+	| "missing"
+	| "gt"
+	| "gte"
+	| "lt"
+	| "lte"
+	| "before"
+	| "after"
+
+/** One test on a contact — `kind` picks the shape. */
+export type SegmentPredicate =
+	| { kind: "tag"; tag: string; has: boolean }
+	| { kind: "attribute"; key: string; op: SegmentOp; value?: string }
+	| { kind: "list"; list_id: string; member: boolean; status?: MembershipStatus }
+	| {
+			kind: "engagement"
+			metric: "opened" | "clicked" | "replied" | "any"
+			within_days: number
+			happened: boolean
+	  }
+	| {
+			kind: "event"
+			name: string
+			happened: boolean
+			within_days?: number
+			min_count?: number
+			property?: { key: string; op: SegmentOp; value?: string }
+	  }
+	| { kind: "suppressed"; is: boolean }
+	| { kind: "phone"; has: boolean }
+
+/**
+ * A segment's rule: `all` (and) or `any` (or) of its rules, each a predicate or a nested
+ * group — at most 25 predicates, 3 levels deep. Evaluated fresh every time it's used.
+ */
+export interface SegmentDefinition {
+	match: "all" | "any"
+	rules: Array<SegmentPredicate | SegmentDefinition>
+}
+
+/** A saved segment. */
+export interface Segment {
+	id: string
+	name: string
+	definition: SegmentDefinition
+	created_at: string
+	updated_at: string
+}
+
+/** How many contacts a segment matches, and how many a broadcast could reach. */
+export interface SegmentCounts {
+	matching: number
+	/** Matching contacts subscribed on at least one list — the ones marketing mail may reach. */
+	reachable: number
+}
+
+/** A saved sequence — the definition is the {@link SequenceDefinition} shape from `postboi`. */
+export interface Sequence {
+	id: string
+	name: string
+	status: "draft" | "active" | "paused" | "archived"
+	definition: SequenceDefinition
+	/** Bumps on every definition save — the sync conflict rule. */
+	version: number
+	/** The test run in progress, if any. */
+	test: { emails: Array<string>; scale: number } | null
+	enabled_at: string | null
+	created_at: string
+	updated_at: string
+}
+
+/** One contact's walk through a sequence. */
+export interface Enrollment {
+	id: string
+	sequence_id: string
+	contact_id: string
+	email?: string
+	name?: string | null
+	status: "active" | "waiting" | "completed" | "exited" | "failed"
+	/** Dotted path into the definition, like `2.then.0`. Null once finished. */
+	step: string | null
+	next_step_at: string | null
+	waiting_for: string | null
+	/** Which trigger started it: `event:billing.purchase`, `tag:trial`, `manual`, `api`… */
+	entered_via: string
+	version: number
+	exited_reason: string | null
+	context: Record<string, unknown>
+	created_at: string
+	updated_at: string
+}
+
+/** One step of one walk — the flight recorder's line. */
+export interface SequenceRun {
+	id: string
+	enrollment_id: string
+	step: string
+	step_id: string
+	kind: string
+	outcome: "sent" | "skipped" | "done" | "waited" | "branched" | "exited" | "failed"
+	reason: string | null
+	message_id: string | null
+	at: string
+}
+
+/** What simulate reports per step. */
+export interface SimulatedStep {
+	path: string
+	step_id: string
+	kind: string
+	outcome: SequenceRun["outcome"]
+	reason?: string
+	detail?: Record<string, unknown>
+	/** Where the walk went next, in words. */
+	next: string
+}
+
+/** Per-step counts and walk totals. */
+export interface SequenceStats {
+	enrollments: Record<string, number>
+	steps: Array<{
+		path: string
+		step_id: string
+		kind: string
+		lane?: string
+		depth: number
+		reached: number
+		outcomes: Partial<Record<SequenceRun["outcome"], number>>
+		delivered: number
+		opened: number
+		clicked: number
+		bounced: number
+	}>
+}
+
+/** A shipped template, installable as a draft. */
+export interface SequenceTemplate {
+	key: string
+	name: string
+	blurb: string
+	definition: SequenceDefinition
 }
 
 /** A contact's presence on one list, with its per-list status. */
@@ -180,9 +384,13 @@ export type ContactDetails = Contact & { memberships: Array<Membership> }
 /** Fields `contacts.add`/`contacts.update` accept. Absent fields keep stored values. */
 export interface ContactInput {
 	name?: string
-	/** The contact's mobile number, in E.164 (`+447788223344`). */
+	/** The contact's mobile number, in E.164 (`+447788223344`; spaces and dashes are stripped). */
 	phone?: string
 	data?: Record<string, string>
+	/** Your own id for this person, unique per account. */
+	external_id?: string
+	/** IANA zone. */
+	timezone?: string
 }
 
 /**
@@ -352,6 +560,19 @@ export interface NotificationDetails {
  * await mailer.recipients.add("Newsletter", "ada@example.com")
  * ```
  */
+/** One `EventRecord` as POST /v1/events takes it. */
+function event_body(record: EventRecord): Record<string, unknown> {
+	const target = typeof record.to === "string" ? { email: record.to } : record.to
+	return {
+		email: target.email,
+		external_id: target.external_id,
+		event: record.event,
+		properties: record.properties,
+		at: record.at instanceof Date ? record.at.toISOString() : record.at,
+		idempotency_key: record.idempotency_key,
+	}
+}
+
 export default class Postboi extends ProviderBase<SendResponse> {
 	protected readonly provider = "postboi"
 	// The API defaults `from` to the account's sending address, so none is required here.
@@ -601,21 +822,22 @@ export default class Postboi extends ProviderBase<SendResponse> {
 		 * ```
 		 */
 		add: (email: string, contact: ContactInput = {}): Promise<Contact> =>
-			this.#api("/contacts", {
-				body: { email, name: contact.name, phone: contact.phone, data: contact.data },
-			}),
+			this.#api("/contacts", { body: { email, ...contact } }),
 
 		/** One contact with its list memberships. */
 		get: (email: string): Promise<ContactDetails> =>
 			this.#api(`/contacts/${encodeURIComponent(email)}`, { method: "GET" }),
 
-		/** Update a contact's global name, phone and/or `data`. Pass `null` to clear a field. */
+		/** Update a contact's name, `data`, phone, external id and/or timezone. Pass `null`
+		 * to clear a field; omit it to keep it. */
 		update: (
 			email: string,
 			changes: {
 				name?: string | null
-				phone?: string | null
 				data?: Record<string, string> | null
+				phone?: string | null
+				external_id?: string | null
+				timezone?: string | null
 			}
 		): Promise<Contact> =>
 			this.#api(`/contacts/${encodeURIComponent(email)}`, { method: "PATCH", body: changes }),
@@ -624,13 +846,30 @@ export default class Postboi extends ProviderBase<SendResponse> {
 		remove: (email: string): Promise<{ email: string; deleted: boolean }> =>
 			this.#api(`/contacts/${encodeURIComponent(email)}`, { method: "DELETE" }),
 
+		/** Every sequence walk this contact has taken, newest first, with the sequence's name. */
+		sequences: async (
+			email: string
+		): Promise<Array<Enrollment & { sequence_name: string | null }>> => {
+			const data = await this.#api<{
+				enrollments: Array<Enrollment & { sequence_name: string | null }>
+			}>(`/contacts/${encodeURIComponent(email)}/sequences`, { method: "GET" })
+			return data.enrollments
+		},
+
 		/**
 		 * The whole audience, newest first — following pagination for you. Narrow with
-		 * `list` (a name or id), a membership `status`, and/or a case-insensitive
+		 * `list` (a name or id), a membership `status`, a `tag`, and/or a case-insensitive
 		 * `search` over email and name.
 		 */
 		all: async (
-			options: { list?: string; status?: MembershipStatus; search?: string } = {}
+			options: {
+				list?: string
+				status?: MembershipStatus
+				search?: string
+				tag?: string
+				/** A saved segment, by id or name. */
+				segment?: string
+			} = {}
 		): Promise<Array<Contact>> => {
 			const out: Array<Contact> = []
 			let cursor: string | undefined
@@ -639,6 +878,8 @@ export default class Postboi extends ProviderBase<SendResponse> {
 				if (options.list) params.set("list", options.list)
 				if (options.status) params.set("status", options.status)
 				if (options.search) params.set("search", options.search)
+				if (options.tag) params.set("tag", options.tag)
+				if (options.segment) params.set("segment", options.segment)
 				if (cursor) params.set("cursor", cursor)
 				const query = params.toString()
 				const page = await this.#api<{ contacts: Array<Contact>; cursor: string | null }>(
@@ -658,6 +899,376 @@ export default class Postboi extends ProviderBase<SendResponse> {
 				{ method: "GET" }
 			)
 			return data.lists
+		},
+
+		/**
+		 * Put tags on a contact — its current state, as labels (case-insensitive; the
+		 * first spelling is kept). Returns the contact's tags afterwards.
+		 *
+		 * @example
+		 * ```ts
+		 * await mail.contacts.tag("ada@example.com", "customer", "beta")
+		 * ```
+		 */
+		tag: async (email: string, ...tags: Array<string>): Promise<Array<string>> => {
+			const data = await this.#api<{ tags: Array<string> }>(
+				`/contacts/${encodeURIComponent(email)}/tags`,
+				{ body: { tags } }
+			)
+			return data.tags
+		},
+
+		/** Take one tag off a contact. Returns the contact's tags afterwards. */
+		untag: async (email: string, tag: string): Promise<Array<string>> => {
+			const data = await this.#api<{ tags: Array<string> }>(
+				`/contacts/${encodeURIComponent(email)}/tags/${encodeURIComponent(tag)}`,
+				{ method: "DELETE" }
+			)
+			return data.tags
+		},
+
+		/**
+		 * A contact's timeline, newest first — opens, clicks, replies, list changes and
+		 * your own events in one list, following pagination for you. Narrow to one
+		 * `event` name.
+		 */
+		events: async (
+			email: string,
+			options: { event?: string } = {}
+		): Promise<Array<ContactEvent>> => {
+			const out: Array<ContactEvent> = []
+			let cursor: string | undefined
+			do {
+				const params = new URLSearchParams()
+				if (options.event) params.set("event", options.event)
+				if (cursor) params.set("cursor", cursor)
+				const query = params.toString()
+				const page = await this.#api<{ events: Array<ContactEvent>; cursor: string | null }>(
+					`/contacts/${encodeURIComponent(email)}/events${query ? `?${query}` : ""}`,
+					{ method: "GET" }
+				)
+				out.push(...page.events)
+				cursor = page.cursor ?? undefined
+			} while (cursor)
+			return out
+		},
+	}
+
+	/**
+	 * Segments — saved filters over the audience, evaluated fresh every time they're used.
+	 * `ref` is an id or a name throughout. A broadcast to a segment reaches the matching
+	 * contacts who are subscribed on at least one list; `count` says how many that is.
+	 */
+	readonly segments = {
+		/** Every saved segment, by name. */
+		all: async (): Promise<Array<Segment>> => {
+			const data = await this.#api<{ segments: Array<Segment> }>("/segments", { method: "GET" })
+			return data.segments
+		},
+
+		/** One segment with its counts. */
+		get: (ref: string): Promise<Segment & SegmentCounts> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}`, { method: "GET" }),
+
+		/**
+		 * Save a segment.
+		 *
+		 * @example
+		 * ```ts
+		 * await mail.segments.create("Lapsed customers", {
+		 * 	match: "all",
+		 * 	rules: [
+		 * 		{ kind: "tag", tag: "customer", has: true },
+		 * 		{ kind: "engagement", metric: "opened", within_days: 60, happened: false },
+		 * 	],
+		 * })
+		 * ```
+		 */
+		create: (name: string, definition: SegmentDefinition): Promise<Segment> =>
+			this.#api("/segments", { body: { name, definition } }),
+
+		/** Rename and/or redefine a segment. */
+		update: (
+			ref: string,
+			changes: { name?: string; definition?: SegmentDefinition }
+		): Promise<Segment> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}`, { method: "PATCH", body: changes }),
+
+		/** Delete a segment. Contacts are untouched. */
+		delete: (ref: string): Promise<{ id: string; deleted: boolean }> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}`, { method: "DELETE" }),
+
+		/** How many contacts match right now, and how many a broadcast could reach. */
+		count: (ref: string): Promise<SegmentCounts> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}/count`, { method: "GET" }),
+
+		/** Try a definition without saving it: counts and the first few matches. */
+		preview: (definition: SegmentDefinition): Promise<SegmentCounts & { sample: Array<Contact> }> =>
+			this.#api("/segments/preview", { body: { definition } }),
+
+		/** The contacts a segment matches, newest first — following pagination for you. */
+		contacts: async (ref: string): Promise<Array<Contact>> => {
+			const out: Array<Contact> = []
+			let cursor: string | undefined
+			do {
+				const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""
+				const page = await this.#api<{ contacts: Array<Contact>; cursor: string | null }>(
+					`/segments/${encodeURIComponent(ref)}/contacts${query}`,
+					{ method: "GET" }
+				)
+				out.push(...page.contacts)
+				cursor = page.cursor ?? undefined
+			} while (cursor)
+			return out
+		},
+
+		/**
+		 * One message to everyone the segment matches who a broadcast may reach — the same
+		 * `{key}` templating and one-click unsubscribe as `lists.broadcast`. `matching` in
+		 * the response counts everyone the segment matched, reachable or not.
+		 */
+		broadcast: (
+			ref: string,
+			options: BroadcastOptions
+		): Promise<BroadcastResponse & { matching: number }> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}/send`, {
+				body: {
+					from: options.from ? this.email_name(this.parse_email_address(options.from)) : undefined,
+					reply_to: options.reply_to
+						? this.email_name(this.parse_email_address(options.reply_to))
+						: undefined,
+					subject: options.subject,
+					html: options.body,
+					text: options.text,
+					scheduled_at: options.scheduled_at
+						? this.resolve_scheduled_at(options.scheduled_at).toISOString()
+						: undefined,
+				},
+			}),
+
+		/** Put tags on, or take them off, everyone the segment matches (up to 10,000 a call). */
+		tag: (
+			ref: string,
+			changes: { add?: Array<string>; remove?: Array<string> }
+		): Promise<{ contacts: number; capped: boolean }> =>
+			this.#api(`/segments/${encodeURIComponent(ref)}/tags`, { body: changes }),
+	}
+
+	/**
+	 * Sequences — automations that walk a contact through steps on their own clock. `ref`
+	 * is an id or a name throughout. A definition is the {@link SequenceDefinition} shape;
+	 * `sequence()` from `postboi` builds one in a file, and `bunx postboi sync` pushes it.
+	 */
+	readonly sequences = {
+		/** Every sequence on the account; archived ones too with `{ archived: true }`. */
+		all: async (options: { archived?: boolean } = {}): Promise<Array<Sequence>> => {
+			const data = await this.#api<{ sequences: Array<Sequence> }>(
+				`/sequences${options.archived ? "?archived=1" : ""}`,
+				{ method: "GET" }
+			)
+			return data.sequences
+		},
+
+		/** One sequence with its walk counts by status. */
+		get: (ref: string): Promise<Sequence & { enrollments: Record<string, number> }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}`, { method: "GET" }),
+
+		/** Save a draft. Enable it separately. */
+		create: (name: string, definition: SequenceDefinition): Promise<Sequence> =>
+			this.#api("/sequences", { body: { name, definition } }),
+
+		/**
+		 * Rename and/or redefine. Pass `expected_version` to refuse overwriting a newer
+		 * save — the API answers 409 `version_conflict` with the current version.
+		 */
+		update: (
+			ref: string,
+			changes: { name?: string; definition?: SequenceDefinition; expected_version?: number }
+		): Promise<Sequence> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}`, { method: "PATCH", body: changes }),
+
+		/** Archive (live walks exit), or `{ purge: true }` to delete the row and its history. */
+		delete: (
+			ref: string,
+			options: { purge?: boolean } = {}
+		): Promise<{ id: string; deleted: boolean }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}${options.purge ? "?purge=1" : ""}`, {
+				method: "DELETE",
+			}),
+
+		/** Switch on. The answer carries `warnings` for channel steps with no synced provider. */
+		enable: (ref: string): Promise<Sequence & { warnings: Array<string> }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/enable`, { body: {} }),
+
+		/** Hold: live walks stay where they are; nothing new enters. */
+		pause: (ref: string): Promise<Sequence> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/pause`, { body: {} }),
+
+		/** Archive: every live walk exits with reason `disabled`. */
+		disable: (ref: string): Promise<Sequence> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/disable`, { body: {} }),
+
+		/**
+		 * Dry-run for one contact — an existing one by email, or a synthetic one — and get
+		 * every step with what it would have done. Nothing is sent or enrolled.
+		 */
+		simulate: (
+			ref: string,
+			who: {
+				email: string
+				name?: string
+				data?: Record<string, unknown>
+				tags?: Array<string>
+				phone?: string
+				timezone?: string
+			}
+		): Promise<{ contact: { email: string; synthetic: boolean }; steps: Array<SimulatedStep> }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/simulate`, { body: who }),
+
+		/** Start a test run: these addresses only, every delay divided by `scale` (60–480). */
+		test: (ref: string, emails: Array<string>, scale = 480): Promise<Sequence> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/test`, { body: { emails, scale } }),
+
+		/** End a test run — pausing, unless `{ keep: true }` says to run for everyone. */
+		untest: (ref: string, options: { keep?: boolean } = {}): Promise<Sequence> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/test${options.keep ? "?keep=1" : ""}`, {
+				method: "DELETE",
+			}),
+
+		/** Per-step counts and walk totals. */
+		stats: (ref: string): Promise<SequenceStats> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/stats`, { method: "GET" }),
+
+		/** The walks of a sequence, newest first — following pagination for you. */
+		enrollments: async (
+			ref: string,
+			options: { status?: Enrollment["status"] } = {}
+		): Promise<Array<Enrollment>> => {
+			const out: Array<Enrollment> = []
+			let cursor: string | undefined
+			do {
+				const params = new URLSearchParams()
+				if (options.status) params.set("status", options.status)
+				if (cursor) params.set("cursor", cursor)
+				const query = params.size ? `?${params}` : ""
+				const page = await this.#api<{ enrollments: Array<Enrollment>; cursor: string | null }>(
+					`/sequences/${encodeURIComponent(ref)}/enrollments${query}`,
+					{ method: "GET" }
+				)
+				out.push(...page.enrollments)
+				cursor = page.cursor ?? undefined
+			} while (cursor)
+			return out
+		},
+
+		/**
+		 * Start a walk by hand for one address or several (up to 100). Each result says
+		 * whether it started or why not.
+		 */
+		enrol: (
+			ref: string,
+			who: string | Array<string>,
+			context?: Record<string, unknown>
+		): Promise<{ enrolled: number; results: Array<Record<string, unknown>> }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/enrollments`, {
+				body: { ...(Array.isArray(who) ? { emails: who } : { email: who }), context },
+			}),
+
+		/** Exit a live walk. */
+		cancel: (ref: string, enrollment_id: string): Promise<{ id: string; cancelled: boolean }> =>
+			this.#api(
+				`/sequences/${encodeURIComponent(ref)}/enrollments/${encodeURIComponent(enrollment_id)}`,
+				{ method: "DELETE" }
+			),
+
+		/** Put a live walk at another step (a path like `2.then.0`), due on the next tick. */
+		move: (ref: string, enrollment_id: string, step: string): Promise<Enrollment> =>
+			this.#api(
+				`/sequences/${encodeURIComponent(ref)}/enrollments/${encodeURIComponent(enrollment_id)}/move`,
+				{ body: { step } }
+			),
+
+		/** After an edit: exit walks whose step moved, move the rest to the new version. */
+		realign: (ref: string): Promise<{ exited: number; kept: number }> =>
+			this.#api(`/sequences/${encodeURIComponent(ref)}/enrollments/realign`, { body: {} }),
+
+		/** One walk's runs, oldest first — every step, its outcome and why. */
+		runs: async (ref: string, enrollment_id: string): Promise<Array<SequenceRun>> => {
+			const data = await this.#api<{ runs: Array<SequenceRun> }>(
+				`/sequences/${encodeURIComponent(ref)}/enrollments/${encodeURIComponent(enrollment_id)}/runs`,
+				{ method: "GET" }
+			)
+			return data.runs
+		},
+
+		/** The templates that ship. */
+		templates: async (): Promise<Array<SequenceTemplate>> => {
+			const data = await this.#api<{ templates: Array<SequenceTemplate> }>("/sequences/templates", {
+				method: "GET",
+			})
+			return data.templates
+		},
+
+		/** Install a shipped template as a draft, under its name or `name`. */
+		install: (key: string, name?: string): Promise<Sequence & { template: string }> =>
+			this.#api(`/sequences/templates/${encodeURIComponent(key)}`, {
+				body: name ? { name } : {},
+			}),
+	}
+
+	/**
+	 * Events — what happened to a contact, from your app's point of view: a signup, a
+	 * purchase, a feature used. They land on the same timeline Postboi writes opens,
+	 * clicks and replies to, and sync rules turn them into tags on the way through.
+	 * Names are snake_case, optionally namespaced once (`billing.purchase`); the
+	 * `contact.*` / `email.*` / `sms.*` / `whatsapp.*` prefixes are Postboi's own.
+	 */
+	readonly events = {
+		/**
+		 * Record one event. `to` is an address (the contact is created if unknown) or
+		 * `{ external_id }` for a contact your own database knows by id.
+		 *
+		 * @example
+		 * ```ts
+		 * await mail.events.track("ada@example.com", "billing.purchase", { amount: 4900, plan: "pro" })
+		 * await mail.events.track({ external_id: "user_42" }, "feature_used", { feature: "export" })
+		 * ```
+		 */
+		track: (
+			to: EventTarget,
+			event: string,
+			properties?: Record<string, unknown>,
+			options: TrackOptions = {}
+		): Promise<ContactEvent> =>
+			this.#api("/events", { body: event_body({ to, event, properties, ...options }) }),
+
+		/** Record up to 100 events in one call — validated together, recorded in order. */
+		record: async (events: Array<EventRecord>): Promise<Array<ContactEvent>> => {
+			const data = await this.#api<{ events: Array<ContactEvent> }>("/events", {
+				body: { events: events.map(event_body) },
+			})
+			return data.events
+		},
+
+		/** The documented events and their properties, plus every name this account has recorded. */
+		schemas: (): Promise<{
+			events: Array<EventSchema>
+			seen: Array<{ name: string; count: number; last_at: string }>
+		}> => this.#api("/events/schemas", { method: "GET" }),
+
+		/** The account's event → tags rules. */
+		rules: async (): Promise<Array<SyncRule>> => {
+			const data = await this.#api<{ rules: Array<SyncRule> }>("/sync-rules", { method: "GET" })
+			return data.rules
+		},
+
+		/** Replace the account's event → tags rules — send back every rule you want to keep. */
+		set_rules: async (rules: Array<SyncRule>): Promise<Array<SyncRule>> => {
+			const data = await this.#api<{ rules: Array<SyncRule> }>("/sync-rules", {
+				method: "PUT",
+				body: { rules },
+			})
+			return data.rules
 		},
 	}
 
